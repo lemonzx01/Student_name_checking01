@@ -1,0 +1,68 @@
+{
+  "..\\node_modules\\jspdf\\dist\\jspdf.es.min.js -> canvg": {
+    "id": "..\\node_modules\\jspdf\\dist\\jspdf.es.min.js -> canvg",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_canvg_lib_index_es_js.js"
+    ]
+  },
+  "..\\node_modules\\jspdf\\dist\\jspdf.es.min.js -> dompurify": {
+    "id": "..\\node_modules\\jspdf\\dist\\jspdf.es.min.js -> dompurify",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_dompurify_dist_purify_es_mjs.js"
+    ]
+  },
+  "..\\node_modules\\jspdf\\dist\\jspdf.es.min.js -> html2canvas": {
+    "id": "..\\node_modules\\jspdf\\dist\\jspdf.es.min.js -> html2canvas",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_html2canvas_dist_html2canvas_js.js"
+    ]
+  },
+  "app\\export-excel\\page.tsx -> jspdf": {
+    "id": "app\\export-excel\\page.tsx -> jspdf",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_jspdf_dist_jspdf_es_min_js.js"
+    ]
+  },
+  "app\\export-excel\\page.tsx -> jspdf-autotable": {
+    "id": "app\\export-excel\\page.tsx -> jspdf-autotable",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_jspdf-autotable_dist_jspdf_plugin_autotable_mjs.js"
+    ]
+  },
+  "app\\export-excel\\page.tsx -> xlsx": {
+    "id": "app\\export-excel\\page.tsx -> xlsx",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_xlsx_xlsx_mjs.js"
+    ]
+  },
+  "app\\grades\\page.tsx -> xlsx": {
+    "id": "app\\grades\\page.tsx -> xlsx",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_xlsx_xlsx_mjs.js"
+    ]
+  },
+  "app\\health\\page.tsx -> xlsx": {
+    "id": "app\\health\\page.tsx -> xlsx",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_xlsx_xlsx_mjs.js"
+    ]
+  },
+  "app\\schedule\\page.tsx -> jspdf": {
+    "id": "app\\schedule\\page.tsx -> jspdf",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_jspdf_dist_jspdf_es_min_js.js"
+    ]
+  },
+  "app\\schedule\\page.tsx -> jspdf-autotable": {
+    "id": "app\\schedule\\page.tsx -> jspdf-autotable",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_jspdf-autotable_dist_jspdf_plugin_autotable_mjs.js"
+    ]
+  },
+  "app\\students\\page.tsx -> xlsx": {
+    "id": "app\\students\\page.tsx -> xlsx",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_xlsx_xlsx_mjs.js"
+    ]
+  }
+}

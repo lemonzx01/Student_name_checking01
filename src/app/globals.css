@@ -1,0 +1,52 @@
+@import url('https://fonts.googleapis.com/css2?family=Kanit:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #F8FAFC;
+  --surface: #FFFFFF;
+  --primary: #3B82F6;
+  --primary-hover: #2563EB;
+  --success: #10B981;
+  --warning: #F59E0B;
+  --danger: #EF4444;
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --border: #E2E8F0;
+  --sidebar-bg: #0F172A;
+  --sidebar-hover: #1E293B;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Kanit', 'TH Sarabun New', system-ui, sans-serif;
+  background-color: var(--background);
+  color: var(--text-primary);
+  margin: 0;
+  padding: 0;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a1a1a1;
+}

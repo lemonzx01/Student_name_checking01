@@ -1,0 +1,62 @@
+{
+  "name": "school_system",
+  "version": "1.0.0",
+  "description": "ระบบจัดการชั้นเรียนและนักเรียน",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "electron": "electron .",
+    "electron:dev": "concurrently \"next dev\" \"wait-on http://localhost:3000 && electron .\"",
+    "build:electron": "next build && electron-builder"
+  },
+  "dependencies": {
+    "@fontsource/noto-sans-thai": "^5.2.8",
+    "@hookform/resolvers": "^5.2.2",
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "autoprefixer": "^10.4.24",
+    "better-sqlite3": "^12.6.2",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8",
+    "electron-log": "^5.4.3",
+    "file-saver": "^2.0.5",
+    "jspdf": "^4.2.0",
+    "jspdf-autotable": "^5.0.7",
+    "lucide-react": "^0.575.0",
+    "next": "^14.2.0",
+    "postcss": "^8.5.6",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-hook-form": "^7.71.2",
+    "tailwind-merge": "^3.5.0",
+    "tailwindcss": "^3.4.0",
+    "typescript": "^5.4.0",
+    "xlsx": "^0.18.5",
+    "zod": "^4.3.6",
+    "zustand": "^5.0.11"
+  },
+  "devDependencies": {
+    "@types/file-saver": "^2.0.7",
+    "concurrently": "^8.2.0",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.school.management",
+    "productName": "School Management System",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*"
+    ],
+    "win": {
+      "target": "portable",
+      "icon": "public/icon.ico"
+    }
+  }
+}
