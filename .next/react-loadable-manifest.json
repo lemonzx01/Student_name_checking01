@@ -35,18 +35,6 @@
       "static/chunks/_app-pages-browser_node_modules_xlsx_xlsx_mjs.js"
     ]
   },
-  "app\\grades\\page.tsx -> xlsx": {
-    "id": "app\\grades\\page.tsx -> xlsx",
-    "files": [
-      "static/chunks/_app-pages-browser_node_modules_xlsx_xlsx_mjs.js"
-    ]
-  },
-  "app\\health\\page.tsx -> xlsx": {
-    "id": "app\\health\\page.tsx -> xlsx",
-    "files": [
-      "static/chunks/_app-pages-browser_node_modules_xlsx_xlsx_mjs.js"
-    ]
-  },
   "app\\schedule\\page.tsx -> jspdf": {
     "id": "app\\schedule\\page.tsx -> jspdf",
     "files": [

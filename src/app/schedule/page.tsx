@@ -7,19 +7,15 @@ import type { Classroom } from '@/types/index'
 import { NotoSansThai } from '@/lib/thai-font'
 
 const DAYS = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์']
-const PERIODS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+const PERIODS = [1, 2, 3, 4, 5, 6]
 
 const PERIOD_TIMES = [
-  '08.10-09.00',
-  '09.00-09.50',
-  '09.50-10.40',
-  '10.40-11.30',
-  '11.30-12.20',
-  '12.30-13.10',
-  '13.10-14.00',
-  '14.00-14.50',
-  '14.50-15.40',
-  '15.40-16.30',
+  '08.30-09.30',
+  '09.30-10.30',
+  '10.30-11.10',
+  '12.20-13.20',
+  '13.20-14.20',
+  '14.20-15.20',
 ]
 
 const SUBJECT_GROUPS = [
@@ -233,24 +229,32 @@ export default function SchedulePage() {
       doc.text(title, 148.5, 14, { align: 'center' })
 
       doc.setFont('NotoSansThai', 'normal')
-      const headerRow1 = ['ชั่วโมงที่', ...PERIODS.map(p => String(p))]
-      const headerRow2 = ['เวลา', ...PERIOD_TIMES]
+      const headerRow1 = ['ชั่วโมงที่', '1', '2', '3', 'พักกลางวัน', '4', '5', '6']
+      const headerRow2 = ['เวลา', '08.30-09.30', '09.30-10.30', '10.30-11.10', '11.10-12.20', '12.20-13.20', '13.20-14.20', '14.20-15.20']
 
       const bodyRows = DAYS.map((day, dayIndex) => {
         const dayNum = dayIndex + 1
-        const cells = PERIODS.map(period => {
+        const cells: string[] = []
+        PERIODS.forEach(period => {
           const key = `${dayNum}-${period}`
           const slot = schedule[key]
-          if (!slot) return ''
-          const parts: string[] = []
-          if (slot.subject_code) parts.push(slot.subject_code)
-          if (slot.subject_name) parts.push(slot.subject_name)
-          if (slot.class_level) parts.push(slot.class_level)
-          if (slot.room) parts.push(slot.room)
-          return parts.join('\n')
+          let cellText = ''
+          if (slot) {
+            const parts: string[] = []
+            if (slot.subject_code) parts.push(slot.subject_code)
+            if (slot.subject_name) parts.push(slot.subject_name)
+            if (slot.class_level) parts.push(slot.class_level)
+            if (slot.room) parts.push(slot.room)
+            cellText = parts.join('\n')
+          }
+          cells.push(cellText)
+          if (period === 3) cells.push('')
         })
         return [day, ...cells]
       })
+
+      // Collect lunch column cells for manual merge drawing
+      const lunchCells: { x: number; y: number; w: number; h: number }[] = []
 
       ;(autoTable as any)(doc, {
         head: [headerRow1, headerRow2],
@@ -279,13 +283,60 @@ export default function SchedulePage() {
         },
         columnStyles: {
           0: { cellWidth: 22, fontStyle: 'bold' },
+          4: { cellWidth: 24 },
         },
         didParseCell: (data: any) => {
           if (data.column.index === 0 && data.section === 'body') {
             data.cell.styles.fontStyle = 'bold'
           }
         },
+        didDrawCell: (data: any) => {
+          if (data.column.index === 4 && data.section === 'body') {
+            lunchCells.push({
+              x: data.cell.x,
+              y: data.cell.y,
+              w: data.cell.width,
+              h: data.cell.height,
+            })
+          }
+        },
       })
+
+      // Draw merged lunch cell over all body rows
+      if (lunchCells.length > 0) {
+        const first = lunchCells[0]
+        const last = lunchCells[lunchCells.length - 1]
+        const mx = first.x
+        const my = first.y
+        const mw = first.w
+        const mh = (last.y + last.h) - my
+
+        // White fill to cover inner cell borders
+        doc.setFillColor(255, 255, 255)
+        doc.rect(mx + 0.15, my + 0.15, mw - 0.3, mh - 0.3, 'F')
+
+        // Outer border
+        doc.setDrawColor(0, 0, 0)
+        doc.setLineWidth(0.3)
+        doc.rect(mx, my, mw, mh, 'S')
+
+        // Draw "พักกลางวัน" rotated 90° CCW (reads bottom-to-top)
+        doc.setFont('NotoSansThai', 'bold')
+        doc.setFontSize(18)
+        doc.setTextColor(0, 0, 0)
+        // Use internal transform to rotate text precisely at center
+        const cx = mx + mw / 2
+        const cy = my + mh / 2
+
+        // Get text width to calculate baseline offset
+        const textWidth = doc.getTextWidth('พักกลางวัน')
+        
+        // Draw rotated: translate to center, then use angle
+        // jsPDF angle:90 rotates CCW → text baseline shifts right
+        // Offset X by ~fontSize*0.35 to compensate for baseline
+        const baselineOffset = 18 * 0.35 * (25.4 / 72) // fontSize * factor * pt→mm
+        doc.text('พักกลางวัน', cx + baselineOffset + 14, cy + 10, { angle: 90, align: 'center' })
+      }
 
       // Signature lines
       const finalY = (doc as any).lastAutoTable?.finalY || 160
@@ -409,21 +460,35 @@ export default function SchedulePage() {
       ) : (
         <div>
           <div ref={gridRef} className="overflow-x-auto">
-            <table className="w-full min-w-[1200px] border-collapse">
+            <table className="w-full min-w-[900px] border-collapse">
               <thead>
                 <tr className="bg-primary text-white">
                   <th className="border border-blue-400 px-2 py-3 text-sm font-medium w-24 whitespace-nowrap">
                     วัน / คาบ
                   </th>
-                  {PERIODS.map((period, i) => (
-                    <th
-                      key={period}
-                      className="border border-blue-400 px-2 py-2 text-center min-w-[100px]"
-                    >
-                      <div className="text-sm font-bold">คาบที่ {period}</div>
-                      <div className="text-xs font-normal opacity-80">{PERIOD_TIMES[i]}</div>
-                    </th>
-                  ))}
+                  {PERIODS.map((period, i) => {
+                    const cells = [
+                      <th
+                        key={period}
+                        className="border border-blue-400 px-2 py-2 text-center min-w-[100px]"
+                      >
+                        <div className="text-sm font-bold">คาบที่ {period}</div>
+                        <div className="text-xs font-normal opacity-80">{PERIOD_TIMES[i]}</div>
+                      </th>
+                    ]
+                    if (period === 3) {
+                      cells.push(
+                        <th
+                          key="lunch-header"
+                          className="border border-blue-400 px-1 py-2 text-center w-[40px] bg-amber-500"
+                        >
+                          <div className="text-xs font-bold leading-tight">พักกลางวัน</div>
+                          <div className="text-[10px] font-normal opacity-80">11.10-12.20</div>
+                        </th>
+                      )
+                    }
+                    return cells
+                  })}
                 </tr>
               </thead>
               <tbody>
@@ -434,11 +499,11 @@ export default function SchedulePage() {
                       <td className="border border-border px-3 py-3 font-bold text-sm text-text-primary bg-gray-50 whitespace-nowrap text-center">
                         {day}
                       </td>
-                      {PERIODS.map(period => {
+                      {PERIODS.map((period, i) => {
                         const key = `${dayNum}-${period}`
                         const slot = schedule[key]
 
-                        return (
+                        const cells = [
                           <td
                             key={period}
                             className="border border-border p-1 text-center cursor-pointer hover:bg-blue-50 transition-colors"
@@ -473,7 +538,38 @@ export default function SchedulePage() {
                               </div>
                             )}
                           </td>
-                        )
+                        ]
+                        if (period === 3 && dayNum === 1) {
+                          cells.push(
+                            <td
+                              key="lunch"
+                              rowSpan={DAYS.length}
+                              className="border border-border bg-amber-50 relative"
+                              style={{ width: '44px', minWidth: '44px', maxWidth: '44px', padding: 0 }}
+                            >
+                              <div
+                                style={{
+                                  position: 'absolute',
+                                  inset: 0,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                              >
+                                <span
+                                  className="text-amber-700 font-bold text-base whitespace-nowrap"
+                                  style={{
+                                    transform: 'rotate(-90deg)',
+                                    display: 'block',
+                                  }}
+                                >
+                                  พักกลางวัน
+                                </span>
+                              </div>
+                            </td>
+                          )
+                        }
+                        return cells
                       })}
                     </tr>
                   )

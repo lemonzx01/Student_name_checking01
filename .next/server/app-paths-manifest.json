@@ -1,14 +1,5 @@
 {
   "/schedule/page": "app/schedule/page.js",
-  "/export-excel/page": "app/export-excel/page.js",
-  "/health/page": "app/health/page.js",
-  "/settings/page": "app/settings/page.js",
-  "/page": "app/page.js",
-  "/api/classrooms/route": "app/api/classrooms/route.js",
   "/students/page": "app/students/page.js",
-  "/api/students/route": "app/api/students/route.js",
-  "/api/health/route": "app/api/health/route.js",
-  "/api/schedule/route": "app/api/schedule/route.js",
-  "/attendance/page": "app/attendance/page.js",
-  "/api/attendance/route": "app/api/attendance/route.js"
+  "/page": "app/page.js"
 }

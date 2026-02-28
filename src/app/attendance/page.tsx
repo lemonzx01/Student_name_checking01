@@ -10,10 +10,9 @@ const STATUS_COLORS = {
   'มา': { bg: 'bg-green-100', text: 'text-green-700' },
   'ขาด': { bg: 'bg-red-100', text: 'text-red-700' },
   'ลา': { bg: 'bg-yellow-100', text: 'text-yellow-700' },
-  'สาย': { bg: 'bg-orange-100', text: 'text-orange-700' },
 }
 
-const STATUS_OPTIONS = ['มา', 'ขาด', 'ลา', 'สาย']
+const STATUS_OPTIONS = ['มา', 'ขาด', 'ลา']
 
 export default function AttendancePage() {
   const searchParams = useSearchParams()

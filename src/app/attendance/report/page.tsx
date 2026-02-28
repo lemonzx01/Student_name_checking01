@@ -75,7 +75,6 @@ export default function AttendanceReportPage() {
           const stats = {
             present: attendance.filter((a: any) => a.status === 'มา').length,
             absent: attendance.filter((a: any) => a.status === 'ขาด').length,
-            late: attendance.filter((a: any) => a.status === 'สาย').length,
             leave: attendance.filter((a: any) => a.status === 'ลา').length,
           }
 
@@ -87,7 +86,6 @@ export default function AttendanceReportPage() {
             day: d.toLocaleDateString('th-TH', { weekday: 'short' }),
             present: stats.present,
             absent: stats.absent,
-            late: stats.late,
             leave: stats.leave,
             presentPercent,
             total
@@ -123,7 +121,6 @@ export default function AttendanceReportPage() {
         'วัน': r.day,
         'มา': r.present,
         'ขาด': r.absent,
-        'สาย': r.late,
         'ลา': r.leave,
         'รวม': r.total,
         'เปอร์เซ็นต์มา': r.presentPercent + '%'
@@ -224,12 +221,6 @@ export default function AttendanceReportPage() {
                   {reportData.reduce((sum, r) => sum + r.absent, 0)}
                 </p>
               </div>
-              <div>
-                <p className="text-sm text-orange-600">สาย</p>
-                <p className="text-2xl font-bold text-orange-700">
-                  {reportData.reduce((sum, r) => sum + r.late, 0)}
-                </p>
-              </div>
             </div>
             <button
               onClick={exportToExcel}
@@ -248,7 +239,6 @@ export default function AttendanceReportPage() {
                 <th className="px-4 py-3 text-center text-sm font-medium text-text-secondary">วัน</th>
                 <th className="px-4 py-3 text-center text-sm font-medium text-green-600">มา</th>
                 <th className="px-4 py-3 text-center text-sm font-medium text-red-600">ขาด</th>
-                <th className="px-4 py-3 text-center text-sm font-medium text-orange-600">สาย</th>
                 <th className="px-4 py-3 text-center text-sm font-medium text-yellow-600">ลา</th>
                 <th className="px-4 py-3 text-center text-sm font-medium text-text-secondary">% มา</th>
               </tr>
@@ -260,7 +250,6 @@ export default function AttendanceReportPage() {
                   <td className="px-4 py-3 text-sm text-center">{row.day}</td>
                   <td className="px-4 py-3 text-sm text-center text-green-600 font-medium">{row.present}</td>
                   <td className="px-4 py-3 text-sm text-center text-red-600 font-medium">{row.absent}</td>
-                  <td className="px-4 py-3 text-sm text-center text-orange-600 font-medium">{row.late}</td>
                   <td className="px-4 py-3 text-sm text-center text-yellow-600 font-medium">{row.leave}</td>
                   <td className="px-4 py-3 text-sm text-center font-medium">{row.presentPercent}%</td>
                 </tr>

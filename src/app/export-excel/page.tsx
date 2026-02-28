@@ -139,7 +139,7 @@ export default function ExportPage() {
     const workbook = XLSX.utils.book_new()
 
     // Sheet 1: สรุปเช็คชื่อ
-    const attHeaders = ['#', 'รหัส', 'ชื่อ-นามสกุล', 'มา', 'ขาด', 'ลา', 'สาย', 'รวมวัน']
+    const attHeaders = ['#', 'รหัส', 'ชื่อ-นามสกุล', 'มา', 'ขาด', 'ลา', 'รวมวัน']
     const attRows: (string | number)[][] = []
     students.forEach((student: Student, index: number) => {
       const studentAtt = attendance.filter((a: AttendanceEntry) => a.student_id === student.id)
@@ -148,12 +148,11 @@ export default function ExportPage() {
         studentAtt.filter((a: AttendanceEntry) => a.status === 'มา').length,
         studentAtt.filter((a: AttendanceEntry) => a.status === 'ขาด').length,
         studentAtt.filter((a: AttendanceEntry) => a.status === 'ลา').length,
-        studentAtt.filter((a: AttendanceEntry) => a.status === 'สาย').length,
         attendanceDates.length,
       ])
     })
     const wsAtt = XLSX.utils.aoa_to_sheet([attHeaders, ...attRows])
-    wsAtt['!cols'] = [{ wch: 5 }, { wch: 10 }, { wch: 25 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 10 }]
+    wsAtt['!cols'] = [{ wch: 5 }, { wch: 10 }, { wch: 25 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 10 }]
     XLSX.utils.book_append_sheet(workbook, wsAtt, 'สรุปเช็คชื่อ')
 
     const fileName = `เช็คชื่อ_${currentClassroomName || selectedClassroom}_${startDate}_${endDate}.xlsx`
@@ -249,7 +248,7 @@ export default function ExportPage() {
     doc.text(`ช่วงวันที่: ${formatDateThai(startDate)} - ${formatDateThai(endDate)}`, 14, 22)
 
     // Summary table
-    const tableHeaders = [['#', 'รหัส', 'ชื่อ-นามสกุล', 'มา', 'ขาด', 'ลา', 'สาย', 'รวมวัน']]
+    const tableHeaders = [['#', 'รหัส', 'ชื่อ-นามสกุล', 'มา', 'ขาด', 'ลา', 'รวมวัน']]
     const tableRows = students.map((student: Student, index: number) => {
       const studentAtt = attendance.filter((a: AttendanceEntry) => a.student_id === student.id)
       return [
@@ -259,7 +258,6 @@ export default function ExportPage() {
         studentAtt.filter((a: AttendanceEntry) => a.status === 'มา').length,
         studentAtt.filter((a: AttendanceEntry) => a.status === 'ขาด').length,
         studentAtt.filter((a: AttendanceEntry) => a.status === 'ลา').length,
-        studentAtt.filter((a: AttendanceEntry) => a.status === 'สาย').length,
         attendanceDates.length,
       ]
     })
@@ -278,8 +276,7 @@ export default function ExportPage() {
         3: { halign: 'center', cellWidth: 22 },
         4: { halign: 'center', cellWidth: 22 },
         5: { halign: 'center', cellWidth: 22 },
-        6: { halign: 'center', cellWidth: 22 },
-        7: { halign: 'center', cellWidth: 25 },
+        6: { halign: 'center', cellWidth: 25 },
       },
     })
 
@@ -368,7 +365,7 @@ export default function ExportPage() {
       students: Student[]; attendance: AttendanceEntry[]; attendanceDates: string[]
     }
 
-    const headers = ['ลำดับ', 'รหัส', 'ชื่อ-นามสกุล', 'มา', 'ขาด', 'ลา', 'สาย', 'รวมวัน']
+    const headers = ['ลำดับ', 'รหัส', 'ชื่อ-นามสกุล', 'มา', 'ขาด', 'ลา', 'รวมวัน']
     const rows = students.map((student: Student, index: number) => {
       const studentAtt = attendance.filter((a: AttendanceEntry) => a.student_id === student.id)
       return [
@@ -378,7 +375,6 @@ export default function ExportPage() {
         studentAtt.filter((a: AttendanceEntry) => a.status === 'มา').length,
         studentAtt.filter((a: AttendanceEntry) => a.status === 'ขาด').length,
         studentAtt.filter((a: AttendanceEntry) => a.status === 'ลา').length,
-        studentAtt.filter((a: AttendanceEntry) => a.status === 'สาย').length,
         attendanceDates.length,
       ].map(v => csvEscape(String(v))).join(',')
     })
@@ -663,7 +659,7 @@ export default function ExportPage() {
           color="blue"
           format={selectedFormat}
           details={[
-            { color: 'bg-blue-500', label: 'สรุปเช็คชื่อ', desc: 'มา/ขาด/ลา/สาย ต่อคน' },
+            { color: 'bg-blue-500', label: 'สรุปเช็คชื่อ', desc: 'มา/ขาด/ลา ต่อคน' },
           ]}
           exporting={exporting === `attendance-${selectedFormat}`}
           exported={exportedFiles.includes(`attendance-${selectedFormat}`)}

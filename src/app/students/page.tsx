@@ -10,7 +10,7 @@ import StudentModal from '@/components/StudentModal'
 const loadXLSX = async () => {
   try {
     const xlsx = await import('xlsx')
-    return xlsx.default
+    return xlsx.default || xlsx
   } catch (e) {
     console.error('Failed to load xlsx:', e)
     return null
