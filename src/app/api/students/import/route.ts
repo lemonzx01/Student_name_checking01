@@ -1,53 +1,19 @@
 import { NextResponse } from 'next/server'
-import { createStudent } from '@/lib/db'
-import { isElectron, getElectronAPI } from '@/lib/electron'
+import { importStudents } from '@/lib/db'
 
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { students, classroom_id } = body
-    
-    if (!students || !Array.isArray(students)) {
-      return NextResponse.json({ error: 'Invalid data format' }, { status: 400 })
-    }
-    
-    // Check for Electron API
-    const electronMode = isElectron(request)
-    const electronAPI = getElectronAPI()
-    
-    if (electronMode && electronAPI) {
-      const result = await electronAPI.importStudentsExcel(students)
-      return NextResponse.json(result)
-    }
-    
-    // Validate classroom_id
-    if (!classroom_id) {
-      return NextResponse.json({ error: 'Missing classroom_id' }, { status: 400 })
+    const students = Array.isArray(body.students) ? body.students : []
+
+    if (students.length === 0) {
+      return NextResponse.json({ error: 'Missing students payload' }, { status: 400 })
     }
 
-    // Fallback to in-memory db for web mode
-    let imported = 0
-    for (const s of students) {
-      try {
-        const cid = s.classroom_id || classroom_id
-        if (!cid) continue // skip if still no classroom
-        createStudent({
-          student_id: s.student_id || String(imported + 1),
-          first_name: s.first_name || '',
-          last_name: s.last_name || '',
-          classroom_id: Number(cid),
-          gender: s.gender || '',
-          birth_date: s.birth_date || undefined,
-        })
-        imported++
-      } catch (e) {
-        console.error('Failed to import student:', e)
-      }
-    }
-
-    return NextResponse.json({ success: true, imported })
+    const result = importStudents(students, body.academic_year)
+    return NextResponse.json(result)
   } catch (error) {
-    console.error('[API] POST /api/students/import error:', error)
-    return NextResponse.json({ error: 'Failed to import' }, { status: 500 })
+    console.error('[API] POST /api/students/import', error)
+    return NextResponse.json({ error: 'Failed to import students' }, { status: 500 })
   }
 }

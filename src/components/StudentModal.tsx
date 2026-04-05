@@ -1,11 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { X } from 'lucide-react'
-import { Student, Classroom } from '@/types'
+import { useEffect, useMemo, useState } from 'react'
+import { User, UserPlus, X } from 'lucide-react'
+import { Classroom, Student, StudentFormInput } from '@/types'
+import { createStudentRecord, getClassrooms, updateStudentRecord } from '@/lib/client-data'
 import CalendarPicker from '@/components/CalendarPicker'
+import CustomSelect from '@/components/CustomSelect'
 
-interface StudentModalProps {
+interface Props {
   isOpen: boolean
   onClose: () => void
   onSuccess: () => void
@@ -13,216 +15,326 @@ interface StudentModalProps {
   classroomId?: number | null
 }
 
-export default function StudentModal({ isOpen, onClose, onSuccess, student, classroomId }: StudentModalProps) {
-  const [formData, setFormData] = useState({
+function getInitialFormData(classroomId?: number | null): StudentFormInput {
+  return {
     student_id: '',
+    national_id: '',
+    student_number: '',
+    title: '',
     first_name: '',
     last_name: '',
-    classroom_id: 1,
-    gender: 'ชาย',
-    birth_date: ''
-  })
+    classroom_id: classroomId || 0,
+    classroom_label: '',
+    gender: '',
+    birth_date: '',
+    age_years: '',
+    weight_kg: null,
+    height_cm: null,
+    house_no: '',
+    village_no: '',
+    guardian_title: '',
+    guardian_first_name: '',
+    guardian_last_name: '',
+    guardian_occupation: '',
+    guardian_relation: '',
+    father_title: '',
+    father_first_name: '',
+    father_last_name: '',
+    father_occupation: '',
+    mother_title: '',
+    mother_first_name: '',
+    mother_last_name: '',
+    mother_occupation: '',
+    disadvantage: '',
+    source_payload: null,
+  }
+}
+
+function FormField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-semibold text-slate-600">{label}</span>
+      {children}
+    </label>
+  )
+}
+
+const inputClass = 'w-full rounded-xl border border-[var(--line)] px-3 py-2 text-sm outline-none transition focus:border-[var(--primary)] focus:ring-0'
+
+export default function StudentModal({
+  isOpen,
+  onClose,
+  onSuccess,
+  student,
+  classroomId,
+}: Props) {
   const [classrooms, setClassrooms] = useState<Classroom[]>([])
-  const [loading, setLoading] = useState(false)
+  const [formData, setFormData] = useState<StudentFormInput>(getInitialFormData(classroomId))
+  const [saving, setSaving] = useState(false)
+
+  const activeClassroomName = useMemo(
+    () => classrooms.find((item) => item.id === formData.classroom_id)?.name || '',
+    [classrooms, formData.classroom_id]
+  )
 
   useEffect(() => {
-    if (isOpen) {
-      loadClassrooms()
-      if (student) {
-        setFormData({
-          student_id: student.student_id,
-          first_name: student.first_name,
-          last_name: student.last_name,
-          classroom_id: student.classroom_id,
-          gender: student.gender,
-          birth_date: student.birth_date || ''
-        })
-      } else {
-        setFormData({
-          student_id: '',
-          first_name: '',
-          last_name: '',
-          classroom_id: classroomId || 0,
-          gender: 'ชาย',
-          birth_date: ''
-        })
-      }
+    if (!isOpen) {
+      return
     }
-  }, [isOpen, student, classroomId])
 
-  const loadClassrooms = async () => {
-    try {
-      const res = await fetch('/api/classrooms')
-      const data = await res.json()
-      setClassrooms(data)
-      if (data.length > 0 && !student) {
-        // Use classroomId prop if available, otherwise first classroom
-        const targetId = classroomId && data.some((c: Classroom) => c.id === classroomId) ? classroomId : data[0].id
-        setFormData(prev => ({ ...prev, classroom_id: targetId }))
-      }
-    } catch (error) {
-      console.error('Failed to load classrooms:', error)
+    getClassrooms().then(setClassrooms)
+  }, [isOpen])
+
+  useEffect(() => {
+    if (!isOpen) {
+      return
     }
-  }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!formData.student_id || !formData.first_name || !formData.last_name) return
-
-    setLoading(true)
-    try {
-      const url = student ? `/api/students?id=${student.id}` : '/api/students'
-      const method = student ? 'PUT' : 'POST'
-      
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+    if (student) {
+      setFormData({
+        student_id: student.student_id,
+        national_id: student.national_id ?? '',
+        student_number: student.student_number ?? '',
+        title: student.title ?? '',
+        first_name: student.first_name,
+        last_name: student.last_name,
+        classroom_id: student.classroom_id,
+        classroom_label: student.classroom_label ?? '',
+        gender: student.gender,
+        birth_date: student.birth_date ?? '',
+        age_years: student.age_years ?? '',
+        weight_kg: student.weight_kg ?? null,
+        height_cm: student.height_cm ?? null,
+        house_no: student.house_no ?? '',
+        village_no: student.village_no ?? '',
+        guardian_title: student.guardian_title ?? '',
+        guardian_first_name: student.guardian_first_name ?? '',
+        guardian_last_name: student.guardian_last_name ?? '',
+        guardian_occupation: student.guardian_occupation ?? '',
+        guardian_relation: student.guardian_relation ?? '',
+        father_title: student.father_title ?? '',
+        father_first_name: student.father_first_name ?? '',
+        father_last_name: student.father_last_name ?? '',
+        father_occupation: student.father_occupation ?? '',
+        mother_title: student.mother_title ?? '',
+        mother_first_name: student.mother_first_name ?? '',
+        mother_last_name: student.mother_last_name ?? '',
+        mother_occupation: student.mother_occupation ?? '',
+        disadvantage: student.disadvantage ?? '',
+        source_payload: student.source_payload ?? null,
       })
+      return
+    }
 
-      if (res.ok) {
-        onSuccess()
-        onClose()
+    setFormData(getInitialFormData(classroomId))
+  }, [classroomId, isOpen, student])
+
+  if (!isOpen) {
+    return null
+  }
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    const payload: StudentFormInput = {
+      ...formData,
+      classroom_label: activeClassroomName,
+      student_number: formData.student_number || formData.student_id,
+      gender: formData.gender || (formData.title?.includes('หญิง') ? 'หญิง' : formData.title?.includes('ชาย') ? 'ชาย' : ''),
+    }
+
+    setSaving(true)
+
+    try {
+      if (student) {
+        await updateStudentRecord(student.id, payload)
+      } else {
+        await createStudentRecord(payload)
       }
-    } catch (error) {
-      console.error('Failed to save student:', error)
+
+      onSuccess()
+      onClose()
     } finally {
-      setLoading(false)
+      setSaving(false)
     }
   }
 
-  if (!isOpen) return null
+  function updateField(field: keyof StudentFormInput, value: any) {
+    setFormData((prev) => ({ ...prev, [field]: value }))
+  }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      
-      <div className="relative bg-surface rounded-2xl shadow-xl w-full max-w-lg mx-4">
-        <div className="flex items-center justify-between p-5 border-b border-border">
-          <div>
-            <h2 className="text-lg font-bold text-text-primary">
-              {student ? 'แก้ไขนักเรียน' : 'เพิ่มนักเรียนใหม่'}
-            </h2>
-            {classroomId && classrooms.length > 0 && (
-              <p className="text-xs text-text-secondary mt-0.5">
-                ห้อง {classrooms.find(c => c.id === classroomId)?.name || classroomId}
-              </p>
-            )}
-          </div>
-          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg">
-            <X size={20} className="text-text-secondary" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-text-primary mb-1">
-                รหัสนักเรียน <span className="text-danger">*</span>
-              </label>
-              <input
-                type="text"
-                value={formData.student_id}
-                onChange={(e) => setFormData({ ...formData, student_id: e.target.value })}
-                placeholder="เช่น 001"
-                className="w-full px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                required
-              />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="modal-overlay absolute inset-0 bg-slate-950/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="modal-content relative max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-[var(--radius-lg)] bg-white shadow-2xl">
+        {/* Sticky Header */}
+        <div className="sticky top-0 z-10 border-b border-[var(--line)] bg-white/95 px-6 py-4 backdrop-blur">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-3">
+              <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${student ? 'bg-blue-50 text-blue-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                {student ? <User size={20} /> : <UserPlus size={20} />}
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">
+                  {student ? 'แก้ไขข้อมูลนักเรียน' : 'เพิ่มนักเรียน'}
+                </h2>
+                <p className="text-xs text-[var(--muted)]">กรอกข้อมูลหลักให้ครบ</p>
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-text-primary mb-1">
-                ห้องเรียน <span className="text-danger">*</span>
-              </label>
-              {classrooms.length === 0 ? (
-                <p className="px-4 py-2 text-sm text-danger bg-red-50 rounded-lg border border-red-200">
-                  กรุณาสร้างห้องเรียนก่อน
-                </p>
-              ) : classroomId && !student ? (
-                <div className="w-full px-4 py-2 border border-border rounded-lg bg-gray-50 text-text-primary font-medium">
-                  {classrooms.find(c => c.id === classroomId)?.name || classroomId}
-                </div>
-              ) : (
-                <select
-                  value={formData.classroom_id}
-                  onChange={(e) => setFormData({ ...formData, classroom_id: Number(e.target.value) })}
-                  className="w-full px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 bg-white"
-                >
-                  {classrooms.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-              )}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-text-primary mb-1">
-                ชื่อ <span className="text-danger">*</span>
-              </label>
-              <input
-                type="text"
-                value={formData.first_name}
-                onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
-                placeholder="ชื่อ"
-                className="w-full px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-text-primary mb-1">
-                นามสกุล <span className="text-danger">*</span>
-              </label>
-              <input
-                type="text"
-                value={formData.last_name}
-                onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
-                placeholder="นามสกุล"
-                className="w-full px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                required
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-text-primary mb-1">
-                เพศ
-              </label>
-              <select
-                value={formData.gender}
-                onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
-                className="w-full px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 bg-white"
-              >
-                <option value="ชาย">ชาย</option>
-                <option value="หญิง">หญิง</option>
-              </select>
-            </div>
-            <div>
-              <CalendarPicker
-                value={formData.birth_date}
-                onChange={(date) => setFormData({ ...formData, birth_date: date })}
-                label="วันเกิด"
-                compact
-                placeholder="เลือกวันเกิด"
-              />
-            </div>
-          </div>
-
-          <div className="flex gap-3 pt-2">
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2 border border-border rounded-lg text-text-secondary hover:bg-gray-50 transition-colors"
+              className="btn-press flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6">
+          {/* Section: รหัสและห้อง */}
+          <div className="mb-5">
+            <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-800">
+              <div className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+              รหัสและห้องเรียน
+            </h3>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <FormField label="รหัสหลัก">
+                <input
+                  value={formData.student_id}
+                  onChange={(e) => updateField('student_id', e.target.value)}
+                  className={inputClass}
+                  required
+                />
+              </FormField>
+              <FormField label="เลขที่/รหัสนักเรียน">
+                <input
+                  value={formData.student_number ?? ''}
+                  onChange={(e) => updateField('student_number', e.target.value)}
+                  className={inputClass}
+                />
+              </FormField>
+              <FormField label="เลข 13 หลัก">
+                <input
+                  value={formData.national_id ?? ''}
+                  onChange={(e) => updateField('national_id', e.target.value)}
+                  className={inputClass}
+                />
+              </FormField>
+              <FormField label="ห้องเรียน">
+                <CustomSelect
+                  value={formData.classroom_id}
+                  onChange={(v) => updateField('classroom_id', Number(v))}
+                  options={[
+                    { value: 0, label: 'เลือกห้องเรียน' },
+                    ...classrooms.map((item) => ({ value: item.id, label: item.name })),
+                  ]}
+                  placeholder="เลือกห้องเรียน"
+                />
+              </FormField>
+            </div>
+          </div>
+
+          {/* Section: ข้อมูลส่วนตัว */}
+          <div className="mb-5">
+            <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-800">
+              <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              ข้อมูลส่วนตัว
+            </h3>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <FormField label="คำนำหน้า">
+                <input
+                  value={formData.title ?? ''}
+                  onChange={(e) => updateField('title', e.target.value)}
+                  className={inputClass}
+                />
+              </FormField>
+              <FormField label="ชื่อ">
+                <input
+                  value={formData.first_name}
+                  onChange={(e) => updateField('first_name', e.target.value)}
+                  className={inputClass}
+                  required
+                />
+              </FormField>
+              <FormField label="นามสกุล">
+                <input
+                  value={formData.last_name}
+                  onChange={(e) => updateField('last_name', e.target.value)}
+                  className={inputClass}
+                  required
+                />
+              </FormField>
+              <FormField label="เพศ">
+                <CustomSelect
+                  value={formData.gender}
+                  onChange={(v) => updateField('gender', String(v))}
+                  options={[
+                    { value: '', label: 'ระบุอัตโนมัติ' },
+                    { value: 'ชาย', label: 'ชาย' },
+                    { value: 'หญิง', label: 'หญิง' },
+                  ]}
+                  placeholder="ระบุอัตโนมัติ"
+                />
+              </FormField>
+            </div>
+          </div>
+
+          {/* Section: ข้อมูลเพิ่มเติม */}
+          <div className="mb-5">
+            <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-800">
+              <div className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              ข้อมูลเพิ่มเติม
+            </h3>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <CalendarPicker
+                value={formData.birth_date ?? ''}
+                onChange={(value) => updateField('birth_date', value)}
+                label="วันเกิด"
+              />
+              <FormField label="อายุ (ปี)">
+                <input
+                  value={formData.age_years ?? ''}
+                  onChange={(e) => updateField('age_years', e.target.value)}
+                  className={inputClass}
+                />
+              </FormField>
+              <FormField label="น้ำหนัก (กก.)">
+                <input
+                  type="number"
+                  step="0.1"
+                  value={formData.weight_kg ?? ''}
+                  onChange={(e) => updateField('weight_kg', e.target.value === '' ? null : Number(e.target.value))}
+                  className={inputClass}
+                />
+              </FormField>
+              <FormField label="ส่วนสูง (ซม.)">
+                <input
+                  type="number"
+                  step="0.1"
+                  value={formData.height_cm ?? ''}
+                  onChange={(e) => updateField('height_cm', e.target.value === '' ? null : Number(e.target.value))}
+                  className={inputClass}
+                />
+              </FormField>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="flex gap-3 border-t border-[var(--line)] pt-5">
+            <button
+              type="button"
+              onClick={onClose}
+              className="btn-press flex-1 rounded-xl border border-[var(--line)] px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
             >
               ยกเลิก
             </button>
             <button
               type="submit"
-              disabled={loading || !formData.student_id || !formData.first_name || !formData.last_name || classrooms.length === 0}
-              className="flex-1 px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg font-medium transition-colors disabled:opacity-50"
+              disabled={saving || !formData.student_id || !formData.first_name || !formData.last_name || !formData.classroom_id}
+              className="btn-press flex-1 rounded-xl bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--primary-strong)] disabled:opacity-50"
             >
-              {loading ? 'กำลังบันทึก...' : student ? 'บันทึก' : 'เพิ่มนักเรียน'}
+              {saving ? 'กำลังบันทึก...' : student ? 'บันทึกข้อมูล' : 'เพิ่มนักเรียน'}
             </button>
           </div>
         </form>

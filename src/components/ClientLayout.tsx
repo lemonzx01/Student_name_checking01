@@ -1,42 +1,60 @@
 'use client'
 
-import { useSearchParams, usePathname } from 'next/navigation'
-import { Suspense, useState, useEffect } from 'react'
+import { ReactNode, Suspense, useEffect, useState } from 'react'
+import { usePathname, useSearchParams } from 'next/navigation'
+import { Menu } from 'lucide-react'
 import Sidebar from '@/components/Sidebar'
-import { ReactNode } from 'react'
 
 function LayoutContent({ children }: { children: ReactNode }) {
-  const searchParams = useSearchParams()
   const pathname = usePathname()
-  const classroomIdFromUrl = searchParams.get('classroom')
-  const [mounted, setMounted] = useState(false)
+  const searchParams = useSearchParams()
   const [storedClassroomId, setStoredClassroomId] = useState<string | null>(null)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  const classroomIdFromUrl = searchParams.get('classroom')
+  const classroomId = classroomIdFromUrl || storedClassroomId
+  const showSidebar = pathname !== '/' && !!classroomId
 
   useEffect(() => {
-    setMounted(true)
-    // Read from localStorage on mount
     const saved = localStorage.getItem('selectedClassroom')
-    if (saved) setStoredClassroomId(saved)
+    if (saved) {
+      setStoredClassroomId(saved)
+    }
   }, [])
 
   useEffect(() => {
-    // Persist classroom ID to localStorage whenever it changes in URL
     if (classroomIdFromUrl) {
       localStorage.setItem('selectedClassroom', classroomIdFromUrl)
       setStoredClassroomId(classroomIdFromUrl)
     }
   }, [classroomIdFromUrl])
 
-  const classroomId = classroomIdFromUrl || storedClassroomId
-  const isHomePage = pathname === '/'
-
-  // Show sidebar when classroom is selected AND not on home page
-  const showSidebar = mounted && !!classroomId && !isHomePage
+  useEffect(() => {
+    setSidebarOpen(false)
+  }, [pathname])
 
   return (
-    <div className="flex min-h-screen">
-      {showSidebar && <Sidebar classroomId={classroomId!} />}
-      <main className={`flex-1 p-6 ${showSidebar ? 'ml-[220px]' : ''}`}>
+    <div className="min-h-screen">
+      {showSidebar && (
+        <>
+          {/* Mobile menu button */}
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(true)}
+            className="btn-press fixed left-4 top-4 z-40 flex h-10 w-10 items-center justify-center rounded-xl bg-white shadow-md md:hidden"
+            aria-label="เปิดเมนู"
+          >
+            <Menu size={20} className="text-slate-700" />
+          </button>
+
+          <Sidebar
+            classroomId={classroomId!}
+            mobileOpen={sidebarOpen}
+            onMobileClose={() => setSidebarOpen(false)}
+          />
+        </>
+      )}
+      <main className={`min-h-screen p-5 md:p-7 ${showSidebar ? 'md:ml-[260px]' : ''} ${showSidebar ? 'pt-16 md:pt-7' : ''}`}>
         {children}
       </main>
     </div>
@@ -45,7 +63,7 @@ function LayoutContent({ children }: { children: ReactNode }) {
 
 export default function ClientLayout({ children }: { children: ReactNode }) {
   return (
-    <Suspense fallback={<div className="flex min-h-screen"><main className="flex-1 p-6">{children}</main></div>}>
+    <Suspense fallback={<main className="min-h-screen p-5 md:p-7">{children}</main>}>
       <LayoutContent>{children}</LayoutContent>
     </Suspense>
   )

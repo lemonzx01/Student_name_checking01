@@ -1,6 +1,6 @@
 /**
  * Electron environment check utilities
- * 
+ *
  * For Next.js API routes, we cannot use `window` because they run on server (Node.js).
  * Instead, we check for custom header sent from the client or use process.env
  */
@@ -11,7 +11,7 @@ export function isElectron(request?: Request): boolean {
   if (process.env.ELECTRON === 'true') {
     return true
   }
-  
+
   // If request is provided, check for custom header
   if (request) {
     const electronHeader = request.headers.get('x-electron')
@@ -19,13 +19,13 @@ export function isElectron(request?: Request): boolean {
       return true
     }
   }
-  
+
   // Fallback: check window only in browser context
   // This won't work in API routes (server-side) but helps in client-side code
   if (typeof window !== 'undefined' && (window as any).electronAPI) {
     return true
   }
-  
+
   return false
 }
 

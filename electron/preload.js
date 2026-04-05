@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Classrooms
   getClassrooms: () => ipcRenderer.invoke('get-classrooms'),
   createClassroom: (data) => ipcRenderer.invoke('create-classroom', data),
+  updateClassroom: (data) => ipcRenderer.invoke('update-classroom', data),
   deleteClassroom: (id) => ipcRenderer.invoke('delete-classroom', id),
 
   // Students

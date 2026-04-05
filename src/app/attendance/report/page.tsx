@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Download, Calendar, FileText } from 'lucide-react'
 import { Classroom } from '@/types'
 import CalendarPicker from '@/components/CalendarPicker'
+import CustomSelect from '@/components/CustomSelect'
 
 // Lazy load xlsx
 const loadXLSX = async () => {
@@ -157,15 +158,12 @@ export default function AttendanceReportPage() {
           {/* Classroom */}
           <div>
             <label className="block text-sm font-medium text-text-secondary mb-2">ห้องเรียน</label>
-            <select
+            <CustomSelect
               value={selectedClassroom || ''}
-              onChange={(e) => setSelectedClassroom(Number(e.target.value))}
-              className="w-full px-4 py-2.5 border border-border rounded-xl bg-white"
-            >
-              {classrooms.map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
+              onChange={(v) => setSelectedClassroom(Number(v))}
+              options={classrooms.map(c => ({ value: c.id, label: c.name }))}
+              placeholder="เลือกห้องเรียน"
+            />
           </div>
 
           {/* Start Date */}
@@ -185,7 +183,6 @@ export default function AttendanceReportPage() {
               onChange={setEndDate}
               label="วันที่สิ้นสุด"
               compact
-              dropdownAlign="right"
             />
           </div>
 

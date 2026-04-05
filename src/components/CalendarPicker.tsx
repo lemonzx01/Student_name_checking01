@@ -1,237 +1,321 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
 
 interface CalendarPickerProps {
   value: string
   onChange: (date: string) => void
   label?: string
-  placeholder?: string
   compact?: boolean
-  dropdownAlign?: 'left' | 'right'
+  /** Allow picking years far in the past (e.g. for birth dates). Default range: 100 years back */
+  yearRange?: number
 }
 
-export default function CalendarPicker({ value, onChange, label, placeholder, compact = false, dropdownAlign = 'left' }: CalendarPickerProps) {
-  const [isOpen, setIsOpen] = useState(false)
-  const [openUpward, setOpenUpward] = useState(false)
-  const initDate = value ? new Date(value) : new Date()
-  const [viewDate, setViewDate] = useState(initDate)
-  const dropdownRef = useRef<HTMLDivElement>(null)
-  const triggerRef = useRef<HTMLDivElement>(null)
+const DAYS = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา']
+const MONTHS = [
+  'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+  'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
+]
+const MONTHS_SHORT = [
+  'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
+  'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.',
+]
 
-  const daysInMonth = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0).getDate()
-  const firstDayOfMonth = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1).getDay()
+function pad(n: number) {
+  return String(n).padStart(2, '0')
+}
 
-  const monthNames = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม']
-  const monthNamesShort = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
-  const dayNames = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
-  const dayNamesFull = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์']
+function formatDisplay(dateStr: string) {
+  if (!dateStr) return ''
+  const [y, m, d] = dateStr.split('-').map(Number)
+  return `${d} ${MONTHS[m - 1]?.slice(0, 3) ?? ''} ${y + 543}`
+}
 
-  // Sync viewDate when value changes externally
+function getDaysInMonth(year: number, month: number) {
+  return new Date(year, month + 1, 0).getDate()
+}
+
+function getFirstDayOfWeek(year: number, month: number) {
+  const day = new Date(year, month, 1).getDay()
+  return day === 0 ? 6 : day - 1 // Monday = 0
+}
+
+export default function CalendarPicker({
+  value,
+  onChange,
+  label,
+  compact = false,
+  yearRange = 100,
+}: CalendarPickerProps) {
+  const today = new Date()
+  const todayStr = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`
+
+  const initial = value ? new Date(value) : today
+  const [viewYear, setViewYear] = useState(initial.getFullYear())
+  const [viewMonth, setViewMonth] = useState(initial.getMonth())
+  const [open, setOpen] = useState(false)
+  const [mode, setMode] = useState<'calendar' | 'month' | 'year'>('calendar')
+  const [yearPageStart, setYearPageStart] = useState(Math.floor(initial.getFullYear() / 12) * 12)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
+
   useEffect(() => {
     if (value) {
-      setViewDate(new Date(value))
+      const d = new Date(value)
+      setViewYear(d.getFullYear())
+      setViewMonth(d.getMonth())
     }
   }, [value])
 
-  const selectDate = (day: number) => {
-    const newDate = new Date(viewDate.getFullYear(), viewDate.getMonth(), day)
-    onChange(newDate.toISOString().split('T')[0])
-    setIsOpen(false)
-  }
-
-  const prevMonth = () => {
-    setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1))
-  }
-
-  const nextMonth = () => {
-    setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1))
-  }
-
-  const prevYear = () => {
-    setViewDate(new Date(viewDate.getFullYear() - 1, viewDate.getMonth(), 1))
-  }
-
-  const nextYear = () => {
-    setViewDate(new Date(viewDate.getFullYear() + 1, viewDate.getMonth(), 1))
-  }
-
-  const hasValue = !!value
-  const currentDate = hasValue ? new Date(value) : null
-  const selectedDay = currentDate?.getDate() ?? -1
-  const selectedMonth = currentDate?.getMonth() ?? -1
-  const selectedYear = currentDate?.getFullYear() ?? -1
-
-  const formatDisplay = () => {
-    if (!currentDate) return placeholder || 'เลือกวันที่'
-    if (compact) {
-      return `${currentDate.getDate()} ${monthNamesShort[currentDate.getMonth()]} ${currentDate.getFullYear() + 543}`
+  useEffect(() => {
+    if (open) {
+      setMode('calendar')
     }
-    return `${currentDate.getDate()} ${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear() + 543}`
+  }, [open])
+
+  function prevMonth() {
+    if (viewMonth === 0) {
+      setViewMonth(11)
+      setViewYear(viewYear - 1)
+    } else {
+      setViewMonth(viewMonth - 1)
+    }
   }
 
-  const formatSubtext = () => {
-    if (!currentDate) return ''
-    return `วัน${dayNamesFull[currentDate.getDay()]}`
+  function nextMonth() {
+    if (viewMonth === 11) {
+      setViewMonth(0)
+      setViewYear(viewYear + 1)
+    } else {
+      setViewMonth(viewMonth + 1)
+    }
+  }
+
+  function selectDate(day: number) {
+    const dateStr = `${viewYear}-${pad(viewMonth + 1)}-${pad(day)}`
+    onChange(dateStr)
+    setOpen(false)
+  }
+
+  function selectToday() {
+    onChange(todayStr)
+    setViewYear(today.getFullYear())
+    setViewMonth(today.getMonth())
+    setOpen(false)
+  }
+
+  const daysInMonth = getDaysInMonth(viewYear, viewMonth)
+  const firstDay = getFirstDayOfWeek(viewYear, viewMonth)
+  const prevMonthDays = getDaysInMonth(viewYear, viewMonth - 1)
+
+  const cells: { day: number; current: boolean }[] = []
+  for (let i = firstDay - 1; i >= 0; i--) {
+    cells.push({ day: prevMonthDays - i, current: false })
+  }
+  for (let d = 1; d <= daysInMonth; d++) {
+    cells.push({ day: d, current: true })
+  }
+  const remaining = 7 - (cells.length % 7)
+  if (remaining < 7) {
+    for (let d = 1; d <= remaining; d++) {
+      cells.push({ day: d, current: false })
+    }
   }
 
   return (
-    <div className="relative">
+    <div className="relative" ref={ref}>
       {label && (
-        <label className="block text-sm font-medium text-text-secondary mb-2">{label}</label>
+        <span className={`mb-1.5 block font-semibold text-slate-600 ${compact ? 'text-xs' : 'text-xs'}`}>
+          {label}
+        </span>
       )}
-      {/* Trigger */}
-      <div 
-        className={`flex items-center gap-3 bg-white border border-border rounded-xl cursor-pointer hover:border-primary/50 transition-all hover:shadow-sm ${
-          compact ? 'px-3 py-2' : 'px-4 py-2.5 shadow-sm'
-        } ${isOpen ? 'border-primary ring-2 ring-primary/20' : ''}`}
-        onClick={() => {
-          if (!isOpen && triggerRef.current) {
-            const rect = triggerRef.current.getBoundingClientRect()
-            const spaceBelow = window.innerHeight - rect.bottom
-            setOpenUpward(spaceBelow < 420)
-          }
-          setIsOpen(!isOpen)
-        }}
-        ref={triggerRef}
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-3.5 py-2.5 text-left text-sm outline-none transition hover:border-slate-300 focus:border-[var(--primary)]"
       >
-        <div className={`${compact ? 'w-8 h-8' : 'w-9 h-9'} bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0`}>
-          <Calendar size={compact ? 16 : 18} className="text-primary" />
-        </div>
-        <div className="min-w-0">
-          <p className={`${compact ? 'text-xs' : 'text-sm'} font-medium text-text-primary truncate`}>
-            {formatDisplay()}
-          </p>
-          {!compact && formatSubtext() && (
-            <p className="text-xs text-text-secondary">
-              {formatSubtext()}
-            </p>
-          )}
-        </div>
-      </div>
+        <CalendarDays size={15} className="flex-shrink-0 text-slate-400" />
+        <span className={value ? 'text-slate-900' : 'text-slate-400'}>
+          {value ? formatDisplay(value) : 'เลือกวันที่'}
+        </span>
+      </button>
 
-      {/* Calendar Dropdown */}
-      {isOpen && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setIsOpen(false)} />
-          <div 
-            ref={dropdownRef}
-            className={`absolute ${openUpward ? 'bottom-full mb-2' : 'top-full mt-2'} bg-white rounded-2xl shadow-2xl border border-border z-20 p-4 w-[300px] animate-in fade-in duration-200 ${
-              dropdownAlign === 'right' ? 'right-0' : 'left-0'
-            }`}
-          >
-            {/* Year Navigation */}
-            <div className="flex items-center justify-between mb-1">
-              <button 
-                type="button"
-                onClick={prevYear}
-                className="px-2 py-0.5 text-xs text-text-secondary hover:text-primary hover:bg-primary/5 rounded-md transition-colors"
-              >
-                « {viewDate.getFullYear() + 542}
-              </button>
-              <span className="text-xs font-medium text-text-secondary">
-                พ.ศ. {viewDate.getFullYear() + 543}
-              </span>
-              <button 
-                type="button"
-                onClick={nextYear}
-                className="px-2 py-0.5 text-xs text-text-secondary hover:text-primary hover:bg-primary/5 rounded-md transition-colors"
-              >
-                {viewDate.getFullYear() + 544} »
-              </button>
-            </div>
+      {open && (
+        <div className="absolute left-0 top-full z-50 mt-1.5 w-[280px] rounded-xl border border-[var(--line)] bg-white p-4 shadow-xl">
 
-            {/* Month Navigation */}
-            <div className="flex items-center justify-between mb-4">
-              <button 
-                type="button"
-                onClick={prevMonth}
-                className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
-              >
-                <ChevronLeft size={18} className="text-text-secondary" />
-              </button>
-              <span className="text-sm font-semibold text-text-primary">
-                {monthNames[viewDate.getMonth()]}
-              </span>
-              <button 
-                type="button"
-                onClick={nextMonth}
-                className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
-              >
-                <ChevronRight size={18} className="text-text-secondary" />
-              </button>
-            </div>
-
-            {/* Day Names */}
-            <div className="grid grid-cols-7 gap-1 mb-2">
-              {dayNames.map((day, i) => (
-                <div key={i} className={`text-center text-xs font-semibold py-1.5 ${
-                  i === 0 || i === 6 ? 'text-red-400' : 'text-text-secondary'
-                }`}>
-                  {day}
-                </div>
-              ))}
-            </div>
-
-            {/* Days */}
-            <div className="grid grid-cols-7 gap-1">
-              {Array.from({ length: firstDayOfMonth }).map((_, i) => (
-                <div key={`empty-${i}`} />
-              ))}
-              {Array.from({ length: daysInMonth }).map((_, i) => {
-                const day = i + 1
-                const isSelected = day === selectedDay && viewDate.getMonth() === selectedMonth && viewDate.getFullYear() === selectedYear
-                const isToday = day === new Date().getDate() && viewDate.getMonth() === new Date().getMonth() && viewDate.getFullYear() === new Date().getFullYear()
-                const dayOfWeek = new Date(viewDate.getFullYear(), viewDate.getMonth(), day).getDay()
-                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6
-
-                return (
-                  <button
-                    type="button"
-                    key={day}
-                    onClick={() => selectDate(day)}
-                    className={`
-                      w-9 h-9 rounded-xl text-sm transition-all font-medium
-                      ${isSelected 
-                        ? 'bg-primary text-white shadow-md shadow-primary/30 scale-110' 
-                        : isToday 
-                          ? 'bg-primary/10 text-primary ring-1 ring-primary/30'
-                          : isWeekend
-                            ? 'text-red-400 hover:bg-red-50'
-                            : 'hover:bg-gray-100 text-text-primary'
-                      }
-                    `}
-                  >
-                    {day}
-                  </button>
-                )
-              })}
-            </div>
-
-            {/* Footer */}
-            <div className="flex items-center justify-between mt-4 pt-3 border-t border-border">
-              <button
-                type="button"
-                onClick={() => {
-                  const today = new Date()
-                  setViewDate(today)
-                  onChange(today.toISOString().split('T')[0])
-                  setIsOpen(false)
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-primary hover:bg-primary/5 rounded-lg transition-colors font-medium"
-              >
-                <Calendar size={14} />
-                วันนี้
-              </button>
-              {hasValue && (
-                <span className="text-xs text-text-secondary">
-                  {currentDate!.getDate()} {monthNamesShort[currentDate!.getMonth()]} {currentDate!.getFullYear() + 543}
+          {/* ── Year picker mode ── */}
+          {mode === 'year' && (
+            <>
+              <div className="mb-3 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setYearPageStart(yearPageStart - 12)}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <span className="text-sm font-semibold text-slate-800">
+                  {yearPageStart + 543} – {yearPageStart + 11 + 543}
                 </span>
-              )}
-            </div>
+                <button
+                  type="button"
+                  onClick={() => setYearPageStart(yearPageStart + 12)}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+              <div className="grid grid-cols-3 gap-1.5">
+                {Array.from({ length: 12 }, (_, i) => yearPageStart + i).map((yr) => {
+                  const isCurrent = yr === viewYear
+                  const isThisYear = yr === today.getFullYear()
+                  return (
+                    <button
+                      key={yr}
+                      type="button"
+                      onClick={() => { setViewYear(yr); setMode('month') }}
+                      className={`rounded-lg py-2 text-xs font-medium transition
+                        ${isCurrent ? 'bg-blue-600 text-white shadow-sm' : ''}
+                        ${isThisYear && !isCurrent ? 'font-bold text-blue-600 ring-1 ring-blue-200' : ''}
+                        ${!isCurrent && !isThisYear ? 'text-slate-700 hover:bg-blue-50 hover:text-blue-600' : ''}
+                      `}
+                    >
+                      {yr + 543}
+                    </button>
+                  )
+                })}
+              </div>
+            </>
+          )}
+
+          {/* ── Month picker mode ── */}
+          {mode === 'month' && (
+            <>
+              <div className="mb-3 flex items-center justify-center">
+                <button
+                  type="button"
+                  onClick={() => { setYearPageStart(Math.floor(viewYear / 12) * 12); setMode('year') }}
+                  className="rounded-lg px-3 py-1 text-sm font-semibold text-slate-800 transition hover:bg-slate-100"
+                >
+                  {viewYear + 543}
+                </button>
+              </div>
+              <div className="grid grid-cols-3 gap-1.5">
+                {MONTHS_SHORT.map((m, i) => {
+                  const isCurrent = i === viewMonth && viewYear === viewYear
+                  return (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => { setViewMonth(i); setMode('calendar') }}
+                      className={`rounded-lg py-2.5 text-xs font-medium transition
+                        ${isCurrent ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-700 hover:bg-blue-50 hover:text-blue-600'}
+                      `}
+                    >
+                      {m}
+                    </button>
+                  )
+                })}
+              </div>
+            </>
+          )}
+
+          {/* ── Calendar (day) mode ── */}
+          {mode === 'calendar' && (
+            <>
+              {/* Month/Year header — clickable to switch modes */}
+              <div className="mb-3 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={prevMonth}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setYearPageStart(Math.floor(viewYear / 12) * 12); setMode('year') }}
+                  className="rounded-lg px-2 py-1 text-sm font-semibold text-slate-800 transition hover:bg-slate-100"
+                >
+                  {MONTHS[viewMonth]} {viewYear + 543}
+                </button>
+                <button
+                  type="button"
+                  onClick={nextMonth}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+
+          {/* Day headers */}
+          <div className="mb-1 grid grid-cols-7 text-center">
+            {DAYS.map((d) => (
+              <div key={d} className="py-1 text-[11px] font-medium text-slate-400">
+                {d}
+              </div>
+            ))}
           </div>
-        </>
+
+          {/* Day cells */}
+          <div className="grid grid-cols-7 text-center">
+            {cells.map((cell, i) => {
+              const dateStr = cell.current
+                ? `${viewYear}-${pad(viewMonth + 1)}-${pad(cell.day)}`
+                : ''
+              const isSelected = cell.current && dateStr === value
+              const isToday = cell.current && dateStr === todayStr
+
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  disabled={!cell.current}
+                  onClick={() => cell.current && selectDate(cell.day)}
+                  className={`relative m-0.5 flex h-8 w-8 items-center justify-center rounded-lg text-xs transition
+                    ${!cell.current ? 'text-slate-200' : ''}
+                    ${cell.current && !isSelected && !isToday ? 'text-slate-700 hover:bg-blue-50 hover:text-blue-600' : ''}
+                    ${isToday && !isSelected ? 'font-bold text-blue-600 ring-1 ring-blue-200' : ''}
+                    ${isSelected ? 'bg-blue-600 font-bold text-white shadow-sm' : ''}
+                  `}
+                >
+                  {cell.day}
+                </button>
+              )
+            })}
+          </div>
+
+            </>
+          )}
+
+          {/* Footer */}
+          <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
+            <button
+              type="button"
+              onClick={() => { onChange(''); setOpen(false) }}
+              className="text-xs font-medium text-slate-400 transition hover:text-slate-600"
+            >
+              ล้าง
+            </button>
+            <button
+              type="button"
+              onClick={selectToday}
+              className="rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-600 transition hover:bg-blue-100"
+            >
+              วันนี้
+            </button>
+          </div>
+        </div>
       )}
     </div>
   )

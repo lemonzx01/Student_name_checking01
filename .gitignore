@@ -1,1 +1,24 @@
-node_modules
+node_modules/
+
+# next.js build
+.next/
+out/
+
+# database
+*.db
+*.db-wal
+*.db-shm
+
+# misc
+.DS_Store
+Thumbs.db
+
+# debug
+npm-debug.log*
+
+# typescript
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+
+# electron build
+dist/

@@ -1,23 +1,24 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import {
   FileSpreadsheet,
   FileText,
   FileDown,
   Download,
+  BookOpenCheck,
   ClipboardCheck,
   Heart,
   Loader2,
   CheckCircle2,
-  School,
   File,
   Activity,
 } from 'lucide-react'
-import type { Classroom, Student } from '@/types/index'
+import { type Classroom, type Student, DEFAULT_SUBJECTS, calculateGrade } from '@/types/index'
 import CalendarPicker from '@/components/CalendarPicker'
-import { NotoSansThai } from '@/lib/thai-font'
+import CustomSelect from '@/components/CustomSelect'
+const loadThaiFont = () => import('@/lib/thai-font').then((m) => m.NotoSansThai)
 
 // Lazy loaders
 const loadXLSX = async () => {
@@ -71,14 +72,14 @@ interface WeightHeightRecord {
 }
 
 type ExportFormat = 'excel' | 'pdf' | 'csv'
-type ExportType = 'attendance' | 'health' | 'weight_height'
+type ExportType = 'attendance' | 'health' | 'weight_height' | 'grades'
 
-export default function ExportPage() {
+function ExportPageContent() {
   const searchParams = useSearchParams()
-  const classroomId = searchParams.get('classroom') || (typeof window !== 'undefined' ? localStorage.getItem('selectedClassroom') : null)
-  const selectedClassroom = classroomId ? Number(classroomId) : null
+  const initialClassroomId = searchParams.get('classroom') || (typeof window !== 'undefined' ? localStorage.getItem('selectedClassroom') : null)
 
   const [classrooms, setClassrooms] = useState<Classroom[]>([])
+  const [selectedClassroom, setSelectedClassroom] = useState<number | null>(initialClassroomId ? Number(initialClassroomId) : null)
   const [currentClassroomName, setCurrentClassroomName] = useState('')
   const [startDate, setStartDate] = useState(() => {
     const d = new Date()
@@ -89,6 +90,8 @@ export default function ExportPage() {
   const [exporting, setExporting] = useState<string | null>(null)
   const [exportedFiles, setExportedFiles] = useState<string[]>([])
   const [selectedFormat, setSelectedFormat] = useState<ExportFormat>('excel')
+  const [gradeSemester, setGradeSemester] = useState(1)
+  const [gradeYear, setGradeYear] = useState(String(new Date().getFullYear() + 543))
   const [toast, setToast] = useState<string | null>(null)
 
   const showToast = useCallback((message: string) => {
@@ -105,8 +108,8 @@ export default function ExportPage() {
       const res = await fetch('/api/classrooms')
       const data = await res.json()
       setClassrooms(data)
-      if (classroomId) {
-        const current = data.find((c: Classroom) => c.id === Number(classroomId))
+      if (selectedClassroom) {
+        const current = data.find((c: Classroom) => c.id === selectedClassroom)
         if (current) setCurrentClassroomName(current.name)
       }
     } catch (error) {
@@ -220,6 +223,50 @@ export default function ExportPage() {
     XLSX.writeFile(workbook, fileName)
   }
 
+  const fetchGradeData = async () => {
+    const res = await fetch(
+      `/api/grades?classroom=${selectedClassroom}&semester=${gradeSemester}&year=${gradeYear}`
+    )
+    if (!res.ok) throw new Error('Failed to fetch grade data')
+    const rows = await res.json() as { id: number; student_id: string; first_name: string; last_name: string; subject: string; score: number }[]
+
+    // Group by student
+    const studentMap = new Map<number, { id: number; student_id: string; first_name: string; last_name: string; scores: Record<string, number> }>()
+    rows.forEach((row) => {
+      if (!studentMap.has(row.id)) {
+        studentMap.set(row.id, { id: row.id, student_id: row.student_id, first_name: row.first_name, last_name: row.last_name, scores: {} })
+      }
+      if (row.subject && row.score !== null) {
+        studentMap.get(row.id)!.scores[row.subject] = row.score
+      }
+    })
+    return Array.from(studentMap.values())
+  }
+
+  const exportGradesExcel = async () => {
+    const XLSX = await loadXLSX()
+    if (!XLSX) throw new Error('ไม่สามารถโหลด xlsx')
+
+    const students = await fetchGradeData()
+    const workbook = XLSX.utils.book_new()
+
+    const headers = ['#', 'รหัส', 'ชื่อ-นามสกุล', ...DEFAULT_SUBJECTS.map((s) => s.name), 'เฉลี่ย', 'เกรดเฉลี่ย']
+    const dataRows = students.map((student, i) => {
+      const scores = DEFAULT_SUBJECTS.map((s) => student.scores[s.code] ?? '')
+      const validScores = DEFAULT_SUBJECTS.map((s) => student.scores[s.code]).filter((v) => v !== undefined && v !== null)
+      const avg = validScores.length > 0 ? validScores.reduce((a, b) => a + b, 0) / validScores.length : 0
+      const avgGrade = validScores.length > 0 ? calculateGrade(avg) : '-'
+      return [i + 1, student.student_id, `${student.first_name} ${student.last_name}`, ...scores, validScores.length > 0 ? Math.round(avg * 100) / 100 : '-', avgGrade]
+    })
+
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows])
+    ws['!cols'] = [{ wch: 5 }, { wch: 12 }, { wch: 25 }, ...DEFAULT_SUBJECTS.map(() => ({ wch: 10 })), { wch: 8 }, { wch: 10 }]
+    XLSX.utils.book_append_sheet(workbook, ws, 'คะแนน-เกรด')
+
+    const fileName = `เกรด_${currentClassroomName || selectedClassroom}_ภาค${gradeSemester}_${gradeYear}.xlsx`
+    XLSX.writeFile(workbook, fileName)
+  }
+
   // ============================================================
   // PDF EXPORTS
   // ============================================================
@@ -233,6 +280,7 @@ export default function ExportPage() {
       students: Student[]; attendance: AttendanceEntry[]; attendanceDates: string[]
     }
 
+    const NotoSansThai = await loadThaiFont()
     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
 
     // Setup Thai font
@@ -293,6 +341,7 @@ export default function ExportPage() {
       students: Student[]; health: HealthEntry[]; healthDates: string[]
     }
 
+    const NotoSansThai = await loadThaiFont()
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
 
     // Setup Thai font
@@ -337,6 +386,46 @@ export default function ExportPage() {
     })
 
     doc.save(`สุขภาพ_${currentClassroomName || selectedClassroom}_${startDate}_${endDate}.pdf`)
+  }
+
+  const exportGradesPDF = async () => {
+    const loaded = await loadJsPDF()
+    if (!loaded) throw new Error('ไม่สามารถโหลด jspdf')
+    const { jsPDF, autoTable } = loaded
+
+    const students = await fetchGradeData()
+
+    const NotoSansThai = await loadThaiFont()
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+
+    doc.addFileToVFS('NotoSansThai.ttf', NotoSansThai)
+    doc.addFont('NotoSansThai.ttf', 'NotoSansThai', 'normal')
+    doc.addFont('NotoSansThai.ttf', 'NotoSansThai', 'bold')
+    doc.setFont('NotoSansThai')
+
+    doc.setFontSize(16)
+    doc.text(`สรุปคะแนน/เกรด - ${currentClassroomName || `ห้อง ${selectedClassroom}`}`, 14, 15)
+    doc.setFontSize(10)
+    doc.text(`ภาคเรียนที่ ${gradeSemester} ปีการศึกษา ${gradeYear}`, 14, 22)
+
+    const headers = [['#', 'รหัส', 'ชื่อ-นามสกุล', ...DEFAULT_SUBJECTS.map((s) => s.name), 'เฉลี่ย', 'เกรด']]
+    const rows = students.map((student, i) => {
+      const scores = DEFAULT_SUBJECTS.map((s) => student.scores[s.code] !== undefined ? String(student.scores[s.code]) : '-')
+      const validScores = DEFAULT_SUBJECTS.map((s) => student.scores[s.code]).filter((v) => v !== undefined && v !== null)
+      const avg = validScores.length > 0 ? validScores.reduce((a, b) => a + b, 0) / validScores.length : 0
+      return [String(i + 1), student.student_id, `${student.first_name} ${student.last_name}`, ...scores, validScores.length > 0 ? String(Math.round(avg * 100) / 100) : '-', validScores.length > 0 ? calculateGrade(avg) : '-']
+    })
+
+    autoTable(doc, {
+      head: headers,
+      body: rows,
+      startY: 28,
+      styles: { fontSize: 7, cellPadding: 2, font: 'NotoSansThai', halign: 'center' },
+      headStyles: { fillColor: [0, 0, 0], textColor: 255, font: 'NotoSansThai', halign: 'center' },
+      columnStyles: { 2: { halign: 'left' } },
+    })
+
+    doc.save(`เกรด_${currentClassroomName || selectedClassroom}_ภาค${gradeSemester}_${gradeYear}.pdf`)
   }
 
   // ============================================================
@@ -428,6 +517,7 @@ export default function ExportPage() {
 
     const { students, records } = await fetchWeightHeightData()
 
+    const NotoSansThai = await loadThaiFont()
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
 
     // Setup Thai font
@@ -522,6 +612,19 @@ export default function ExportPage() {
     downloadCSV(csv, `น้ำหนักส่วนสูง_${currentClassroomName || selectedClassroom}_${startDate}_${endDate}.csv`)
   }
 
+  const exportGradesCSV = async () => {
+    const students = await fetchGradeData()
+    const headers = ['ลำดับ', 'รหัส', 'ชื่อ-นามสกุล', ...DEFAULT_SUBJECTS.map((s) => s.name), 'เฉลี่ย', 'เกรดเฉลี่ย']
+    const rows = students.map((student, i) => {
+      const scores = DEFAULT_SUBJECTS.map((s) => student.scores[s.code] !== undefined ? student.scores[s.code] : '')
+      const validScores = DEFAULT_SUBJECTS.map((s) => student.scores[s.code]).filter((v) => v !== undefined && v !== null)
+      const avg = validScores.length > 0 ? validScores.reduce((a, b) => a + b, 0) / validScores.length : 0
+      return [i + 1, student.student_id, `${student.first_name} ${student.last_name}`, ...scores, validScores.length > 0 ? Math.round(avg * 100) / 100 : '-', validScores.length > 0 ? calculateGrade(avg) : '-'].map((v) => csvEscape(String(v))).join(',')
+    })
+    const csv = [headers.map((h) => csvEscape(h)).join(','), ...rows].join('\n')
+    downloadCSV(csv, `เกรด_${currentClassroomName || selectedClassroom}_ภาค${gradeSemester}_${gradeYear}.csv`)
+  }
+
   // ============================================================
   // UNIFIED EXPORT HANDLER
   // ============================================================
@@ -533,18 +636,21 @@ export default function ExportPage() {
       if (selectedFormat === 'excel') {
         if (type === 'attendance') await exportAttendanceExcel()
         else if (type === 'health') await exportHealthExcel()
+        else if (type === 'grades') await exportGradesExcel()
         else await exportWeightHeightExcel()
       } else if (selectedFormat === 'pdf') {
         if (type === 'attendance') await exportAttendancePDF()
         else if (type === 'health') await exportHealthPDF()
+        else if (type === 'grades') await exportGradesPDF()
         else await exportWeightHeightPDF()
       } else {
         if (type === 'attendance') await exportAttendanceCSV()
         else if (type === 'health') await exportHealthCSV()
+        else if (type === 'grades') await exportGradesCSV()
         else await exportWeightHeightCSV()
       }
       setExportedFiles(prev => [...prev, key])
-      const names: Record<string, string> = { attendance: 'เช็คชื่อ', health: 'สุขภาพ', weight_height: 'น้ำหนัก/ส่วนสูง' }
+      const names: Record<string, string> = { attendance: 'เช็คชื่อ', health: 'สุขภาพ', weight_height: 'น้ำหนัก/ส่วนสูง', grades: 'คะแนน/เกรด' }
       showToast(`ดาวน์โหลด${names[type] || ''}สำเร็จแล้ว!`)
     } catch (error) {
       console.error('Export error:', error)
@@ -599,28 +705,35 @@ export default function ExportPage() {
           {/* Classroom */}
           <div>
             <label className="block text-sm font-medium text-text-secondary mb-2">ห้องเรียน</label>
-            {selectedClassroom ? (
-              <div className="flex items-center gap-2 px-4 py-2.5 bg-gray-100 rounded-xl font-medium">
-                <School size={16} className="text-text-secondary" />
-                {currentClassroomName || `ห้อง ${selectedClassroom}`}
-              </div>
-            ) : (
-              <div className="px-4 py-2.5 bg-gray-100 rounded-xl text-text-secondary text-sm">
-                กรุณาเลือกห้องจากหน้าแรก
-              </div>
-            )}
+            <CustomSelect
+              value={selectedClassroom ?? ''}
+              onChange={(v) => {
+                const id = Number(v) || null
+                setSelectedClassroom(id)
+                if (id) {
+                  const found = classrooms.find((c) => c.id === id)
+                  setCurrentClassroomName(found?.name || '')
+                  localStorage.setItem('selectedClassroom', String(id))
+                }
+              }}
+              options={[
+                { value: '', label: 'เลือกห้องเรียน' },
+                ...classrooms.map((c) => ({ value: c.id, label: c.name })),
+              ]}
+              placeholder="เลือกห้องเรียน"
+            />
           </div>
 
           {/* Start Date */}
           <div>
             <label className="block text-sm font-medium text-text-secondary mb-2">วันที่เริ่ม</label>
-            <CalendarPicker value={startDate} onChange={setStartDate} compact placeholder="เลือกวันเริ่มต้น" />
+            <CalendarPicker value={startDate} onChange={setStartDate} compact />
           </div>
 
           {/* End Date */}
           <div>
             <label className="block text-sm font-medium text-text-secondary mb-2">วันที่สิ้นสุด</label>
-            <CalendarPicker value={endDate} onChange={setEndDate} compact placeholder="เลือกวันสิ้นสุด" />
+            <CalendarPicker value={endDate} onChange={setEndDate} compact />
           </div>
         </div>
 
@@ -650,7 +763,7 @@ export default function ExportPage() {
       </div>
 
       {/* Export Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-6">
         {/* Card 1: Attendance */}
         <ExportCard
           title="เช็คชื่อ"
@@ -699,6 +812,23 @@ export default function ExportPage() {
           exported={exportedFiles.includes(`weight_height-${selectedFormat}`)}
           disabled={!selectedClassroom || exporting !== null}
           onExport={() => handleExport('weight_height')}
+          formatExt={formatExt[selectedFormat]}
+        />
+
+        {/* Card 4: Grades */}
+        <ExportCard
+          title="คะแนน/เกรด"
+          subtitle="Grades"
+          icon={<BookOpenCheck size={20} className="text-white" />}
+          color="purple"
+          format={selectedFormat}
+          details={[
+            { color: 'bg-purple-500', label: 'สรุปคะแนน/เกรด', desc: `ภาคเรียนที่ ${gradeSemester} ปี ${gradeYear}` },
+          ]}
+          exporting={exporting === `grades-${selectedFormat}`}
+          exported={exportedFiles.includes(`grades-${selectedFormat}`)}
+          disabled={!selectedClassroom || exporting !== null}
+          onExport={() => handleExport('grades')}
           formatExt={formatExt[selectedFormat]}
         />
       </div>
@@ -781,7 +911,7 @@ function ExportCard({
   title: string
   subtitle: string
   icon: React.ReactNode
-  color: 'blue' | 'pink' | 'green'
+  color: 'blue' | 'pink' | 'green' | 'purple'
   format: ExportFormat
   details: { color: string; label: string; desc: string }[]
   exporting: boolean
@@ -790,9 +920,15 @@ function ExportCard({
   onExport: () => void
   formatExt: string
 }) {
-  const bgHeader = color === 'blue' ? 'bg-blue-50' : color === 'pink' ? 'bg-pink-50' : 'bg-green-50'
-  const bgIcon = color === 'blue' ? 'bg-blue-500' : color === 'pink' ? 'bg-pink-500' : 'bg-green-500'
-  const btnBg = color === 'blue' ? 'bg-blue-500 hover:bg-blue-600' : color === 'pink' ? 'bg-pink-500 hover:bg-pink-600' : 'bg-green-500 hover:bg-green-600'
+  const colorMap = {
+    blue: { header: 'bg-blue-50', icon: 'bg-blue-500', btn: 'bg-blue-500 hover:bg-blue-600' },
+    pink: { header: 'bg-pink-50', icon: 'bg-pink-500', btn: 'bg-pink-500 hover:bg-pink-600' },
+    green: { header: 'bg-green-50', icon: 'bg-green-500', btn: 'bg-green-500 hover:bg-green-600' },
+    purple: { header: 'bg-purple-50', icon: 'bg-purple-500', btn: 'bg-purple-500 hover:bg-purple-600' },
+  }
+  const bgHeader = colorMap[color].header
+  const bgIcon = colorMap[color].icon
+  const btnBg = colorMap[color].btn
 
   return (
     <div className="bg-surface rounded-xl border border-border overflow-hidden">
@@ -831,6 +967,14 @@ function ExportCard({
         </button>
       </div>
     </div>
+  )
+}
+
+export default function ExportExcelPage() {
+  return (
+    <Suspense fallback={<div className="mx-auto max-w-7xl"><div className="skeleton h-64 w-full rounded-[var(--radius-lg)]" /></div>}>
+      <ExportPageContent />
+    </Suspense>
   )
 }
 

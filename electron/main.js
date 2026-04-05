@@ -2,27 +2,232 @@ const { app, BrowserWindow, ipcMain } = require('electron')
 const path = require('path')
 const log = require('electron-log')
 
-// Configure logging
 log.transports.file.level = 'info'
-log.transports.file.maxSize = 10 * 1024 * 1024 // 10MB
+log.transports.file.maxSize = 10 * 1024 * 1024
 log.info('[Main] Starting application...')
 
 let mainWindow = null
 const isDev = !app.isPackaged
-
-// Database
 let db = null
+
+const STUDENT_EXTRA_COLUMNS = [
+  { name: 'national_id', definition: 'TEXT' },
+  { name: 'student_number', definition: 'TEXT' },
+  { name: 'title', definition: 'TEXT' },
+  { name: 'classroom_label', definition: 'TEXT' },
+  { name: 'age_years', definition: 'TEXT' },
+  { name: 'weight_kg', definition: 'REAL' },
+  { name: 'height_cm', definition: 'REAL' },
+  { name: 'house_no', definition: 'TEXT' },
+  { name: 'village_no', definition: 'TEXT' },
+  { name: 'guardian_title', definition: 'TEXT' },
+  { name: 'guardian_first_name', definition: 'TEXT' },
+  { name: 'guardian_last_name', definition: 'TEXT' },
+  { name: 'guardian_occupation', definition: 'TEXT' },
+  { name: 'guardian_relation', definition: 'TEXT' },
+  { name: 'father_title', definition: 'TEXT' },
+  { name: 'father_first_name', definition: 'TEXT' },
+  { name: 'father_last_name', definition: 'TEXT' },
+  { name: 'father_occupation', definition: 'TEXT' },
+  { name: 'mother_title', definition: 'TEXT' },
+  { name: 'mother_first_name', definition: 'TEXT' },
+  { name: 'mother_last_name', definition: 'TEXT' },
+  { name: 'mother_occupation', definition: 'TEXT' },
+  { name: 'disadvantage', definition: 'TEXT' },
+  { name: 'source_payload', definition: 'TEXT' },
+]
+
+const STUDENT_COLUMNS = [
+  'student_id',
+  'national_id',
+  'student_number',
+  'title',
+  'first_name',
+  'last_name',
+  'classroom_id',
+  'classroom_label',
+  'gender',
+  'birth_date',
+  'age_years',
+  'weight_kg',
+  'height_cm',
+  'house_no',
+  'village_no',
+  'guardian_title',
+  'guardian_first_name',
+  'guardian_last_name',
+  'guardian_occupation',
+  'guardian_relation',
+  'father_title',
+  'father_first_name',
+  'father_last_name',
+  'father_occupation',
+  'mother_title',
+  'mother_first_name',
+  'mother_last_name',
+  'mother_occupation',
+  'disadvantage',
+  'source_payload',
+]
+
+function textOrNull(value) {
+  if (value === undefined || value === null) {
+    return null
+  }
+
+  const normalized = String(value).replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim()
+  return normalized || null
+}
+
+function numberOrNull(value) {
+  const normalized = textOrNull(value)
+  if (!normalized) {
+    return null
+  }
+
+  const parsed = Number(normalized.replace(/,/g, ''))
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function inferGender(value) {
+  const normalized = textOrNull(value) || ''
+  if (normalized.includes('หญิง')) {
+    return 'หญิง'
+  }
+  if (normalized.includes('ชาย')) {
+    return 'ชาย'
+  }
+  return ''
+}
+
+function inferLevelFromClassroom(label) {
+  if (!label) {
+    return 'ห้องเรียน'
+  }
+  if (label.startsWith('ป.')) {
+    return 'ประถมศึกษา'
+  }
+  if (label.startsWith('ม.')) {
+    return 'มัธยมศึกษา'
+  }
+  if (label.includes('อนุบาล')) {
+    return 'อนุบาล'
+  }
+  return 'ห้องเรียน'
+}
+
+function currentAcademicYear() {
+  return String(new Date().getFullYear() + 543)
+}
+
+function getStudentValues(payload) {
+  return STUDENT_COLUMNS.map((column) => (payload[column] === undefined ? null : payload[column]))
+}
+
+function serializeSourcePayload(payload) {
+  if (!payload) {
+    return null
+  }
+
+  if (typeof payload === 'string') {
+    return payload
+  }
+
+  try {
+    return JSON.stringify(payload)
+  } catch (error) {
+    log.warn('[Students] Failed to serialize source payload', error)
+    return null
+  }
+}
+
+function getClassroomNameById(classroomId) {
+  const classroom = db.prepare('SELECT name FROM classrooms WHERE id = ?').get(classroomId)
+  return classroom ? classroom.name : ''
+}
+
+function normalizeStudentPayload(data, classroomName = '') {
+  const studentId = textOrNull(data.student_id || data.studentId)
+  const title = textOrNull(data.title)
+  const gender = textOrNull(data.gender) || inferGender(title)
+
+  return {
+    student_id: studentId || '',
+    national_id: textOrNull(data.national_id || data.nationalId),
+    student_number: textOrNull(data.student_number || data.studentNumber) || studentId || '',
+    title,
+    first_name: textOrNull(data.first_name || data.firstName) || '',
+    last_name: textOrNull(data.last_name || data.lastName) || '',
+    classroom_id: Number(data.classroom_id),
+    classroom_label: textOrNull(data.classroom_label || data.classroom || data['ชั้น']) || classroomName || null,
+    gender,
+    birth_date: textOrNull(data.birth_date || data.birthDate),
+    age_years: textOrNull(data.age_years || data.age),
+    weight_kg: numberOrNull(data.weight_kg || data.weight),
+    height_cm: numberOrNull(data.height_cm || data.height),
+    house_no: textOrNull(data.house_no),
+    village_no: textOrNull(data.village_no),
+    guardian_title: textOrNull(data.guardian_title),
+    guardian_first_name: textOrNull(data.guardian_first_name),
+    guardian_last_name: textOrNull(data.guardian_last_name),
+    guardian_occupation: textOrNull(data.guardian_occupation),
+    guardian_relation: textOrNull(data.guardian_relation),
+    father_title: textOrNull(data.father_title),
+    father_first_name: textOrNull(data.father_first_name),
+    father_last_name: textOrNull(data.father_last_name),
+    father_occupation: textOrNull(data.father_occupation),
+    mother_title: textOrNull(data.mother_title),
+    mother_first_name: textOrNull(data.mother_first_name),
+    mother_last_name: textOrNull(data.mother_last_name),
+    mother_occupation: textOrNull(data.mother_occupation),
+    disadvantage: textOrNull(data.disadvantage),
+    source_payload: serializeSourcePayload(data.source_payload),
+  }
+}
+
+function ensureColumns(tableName, columns) {
+  const existingColumns = new Set(
+    db.prepare(`PRAGMA table_info(${tableName})`).all().map((column) => column.name)
+  )
+
+  columns.forEach((column) => {
+    if (!existingColumns.has(column.name)) {
+      db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${column.name} ${column.definition}`)
+    }
+  })
+}
+
+function findOrCreateClassroomByName(name) {
+  const normalizedName = textOrNull(name)
+  if (!normalizedName) {
+    return null
+  }
+
+  const existing = db.prepare('SELECT id, name FROM classrooms WHERE name = ?').get(normalizedName)
+  if (existing) {
+    return existing
+  }
+
+  const insert = db
+    .prepare('INSERT INTO classrooms (name, level, academic_year) VALUES (?, ?, ?)')
+    .run(normalizedName, inferLevelFromClassroom(normalizedName), currentAcademicYear())
+
+  return {
+    id: Number(insert.lastInsertRowid),
+    name: normalizedName,
+  }
+}
+
 function initDatabase() {
   try {
     const Database = require('better-sqlite3')
-    const dbPath = isDev 
+    const dbPath = isDev
       ? path.join(process.cwd(), 'school.db')
       : path.join(app.getPath('userData'), 'school.db')
-    
+
     log.info('[DB] Opening:', dbPath)
     db = new Database(dbPath)
-    
-    // Create tables
+
     db.exec(`
       CREATE TABLE IF NOT EXISTS classrooms (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -93,10 +298,19 @@ function initDatabase() {
         FOREIGN KEY (classroom_id) REFERENCES classrooms(id),
         FOREIGN KEY (subject_id) REFERENCES subjects(id)
       );
+
+      CREATE INDEX IF NOT EXISTS idx_students_classroom_id ON students(classroom_id);
+      CREATE INDEX IF NOT EXISTS idx_students_is_active ON students(is_active);
+      CREATE INDEX IF NOT EXISTS idx_attendance_student_date ON attendance(student_id, date);
+      CREATE INDEX IF NOT EXISTS idx_health_student_date ON health_check(student_id, date);
+      CREATE INDEX IF NOT EXISTS idx_grades_student_semester_year ON grades(student_id, semester, academic_year);
+      CREATE INDEX IF NOT EXISTS idx_schedule_classroom_dow_period ON schedule(classroom_id, day_of_week, period);
     `)
 
-    // Insert default subjects if not exists
-    const subjectCount = db.prepare('SELECT COUNT(*) as count FROM subjects').get()
+    ensureColumns('students', STUDENT_EXTRA_COLUMNS)
+    db.exec('CREATE INDEX IF NOT EXISTS idx_students_student_number ON students(student_number)')
+
+    const subjectCount = db.prepare('SELECT COUNT(*) AS count FROM subjects').get()
     if (subjectCount.count === 0) {
       const insertSubject = db.prepare('INSERT INTO subjects (name, code, color) VALUES (?, ?, ?)')
       const defaultSubjects = [
@@ -110,10 +324,8 @@ function initDatabase() {
         ['การงานอาชีพ', 'WORK', '#6366F1'],
         ['ภาษาอังกฤษ', 'ENG', '#EF4444'],
       ]
-      defaultSubjects.forEach(s => insertSubject.run(s[0], s[1], s[2]))
+      defaultSubjects.forEach((subject) => insertSubject.run(subject[0], subject[1], subject[2]))
     }
-
-    // Database starts empty — user creates classrooms and students via UI
 
     log.info('[DB] Initialized successfully')
     return true
@@ -125,7 +337,7 @@ function initDatabase() {
 
 function createWindow() {
   log.info('[Main] Creating window...')
-  
+
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -134,10 +346,10 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js')
+      preload: path.join(__dirname, 'preload.js'),
     },
     frame: true,
-    show: false
+    show: false,
   })
 
   mainWindow.once('ready-to-show', () => {
@@ -157,61 +369,139 @@ function createWindow() {
   })
 }
 
-// IPC Handlers for Database
 function setupIpcHandlers() {
-  // Classrooms
   ipcMain.handle('get-classrooms', () => {
-    return db.prepare(`
-      SELECT c.*, COUNT(s.id) as student_count 
-      FROM classrooms c 
-      LEFT JOIN students s ON s.classroom_id = c.id AND s.is_active = 1 
-      GROUP BY c.id 
-      ORDER BY c.created_at DESC
-    `).all()
+    return db
+      .prepare(`
+        SELECT c.*, COUNT(s.id) AS student_count
+        FROM classrooms c
+        LEFT JOIN students s ON s.classroom_id = c.id AND s.is_active = 1
+        GROUP BY c.id
+        ORDER BY c.name
+      `)
+      .all()
   })
 
   ipcMain.handle('create-classroom', (event, { name, level, academic_year }) => {
-    const result = db.prepare('INSERT INTO classrooms (name, level, academic_year) VALUES (?, ?, ?)').run(name, level, academic_year)
-    return { id: result.lastInsertRowid, name, level, academic_year }
+    const normalizedName = textOrNull(name)
+    if (!normalizedName) {
+      throw new Error('Missing classroom name')
+    }
+
+    const existing = db.prepare('SELECT * FROM classrooms WHERE name = ?').get(normalizedName)
+    if (existing) {
+      return existing
+    }
+
+    const result = db
+      .prepare('INSERT INTO classrooms (name, level, academic_year) VALUES (?, ?, ?)')
+      .run(normalizedName, textOrNull(level) || 'ห้องเรียน', textOrNull(academic_year) || currentAcademicYear())
+
+    return {
+      id: Number(result.lastInsertRowid),
+      name: normalizedName,
+      level: textOrNull(level) || 'ห้องเรียน',
+      academic_year: textOrNull(academic_year) || currentAcademicYear(),
+    }
+  })
+
+  ipcMain.handle('update-classroom', (event, { id, name, level, academic_year }) => {
+    const normalizedName = textOrNull(name)
+    if (!id || !normalizedName) {
+      throw new Error('Missing classroom data')
+    }
+
+    db.prepare('UPDATE classrooms SET name = ?, level = ?, academic_year = ? WHERE id = ?').run(
+      normalizedName,
+      textOrNull(level) || 'ห้องเรียน',
+      textOrNull(academic_year) || currentAcademicYear(),
+      id
+    )
+    db.prepare('UPDATE students SET classroom_label = ? WHERE classroom_id = ?').run(normalizedName, id)
+
+    return { success: true }
   })
 
   ipcMain.handle('delete-classroom', (event, id) => {
+    db.prepare('DELETE FROM attendance WHERE student_id IN (SELECT id FROM students WHERE classroom_id = ?)').run(id)
+    db.prepare('DELETE FROM health_check WHERE student_id IN (SELECT id FROM students WHERE classroom_id = ?)').run(id)
+    db.prepare('DELETE FROM grades WHERE student_id IN (SELECT id FROM students WHERE classroom_id = ?)').run(id)
+    db.prepare('DELETE FROM students WHERE classroom_id = ?').run(id)
+    db.prepare('DELETE FROM schedule WHERE classroom_id = ?').run(id)
     db.prepare('DELETE FROM classrooms WHERE id = ?').run(id)
     return { success: true }
   })
 
-  // Students
   ipcMain.handle('get-students', (event, classroomId) => {
     if (classroomId) {
-      return db.prepare(`
-        SELECT s.*, c.name as classroom_name 
-        FROM students s 
-        LEFT JOIN classrooms c ON c.id = s.classroom_id 
-        WHERE s.classroom_id = ? AND s.is_active = 1 
-        ORDER BY s.student_id
-      `).all(classroomId)
+      return db
+        .prepare(`
+          SELECT s.*, c.name AS classroom_name
+          FROM students s
+          LEFT JOIN classrooms c ON c.id = s.classroom_id
+          WHERE s.classroom_id = ? AND s.is_active = 1
+          ORDER BY COALESCE(NULLIF(s.student_number, ''), s.student_id)
+        `)
+        .all(classroomId)
     }
-    return db.prepare(`
-      SELECT s.*, c.name as classroom_name 
-      FROM students s 
-      LEFT JOIN classrooms c ON c.id = s.classroom_id 
-      WHERE s.is_active = 1 
-      ORDER BY c.name, s.student_id
-    `).all()
+
+    return db
+      .prepare(`
+        SELECT s.*, c.name AS classroom_name
+        FROM students s
+        LEFT JOIN classrooms c ON c.id = s.classroom_id
+        WHERE s.is_active = 1
+        ORDER BY c.name, COALESCE(NULLIF(s.student_number, ''), s.student_id)
+      `)
+      .all()
   })
 
   ipcMain.handle('create-student', (event, data) => {
-    const result = db.prepare(`
-      INSERT INTO students (student_id, first_name, last_name, classroom_id, gender, birth_date)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(data.student_id, data.first_name, data.last_name, data.classroom_id, data.gender, data.birth_date || null)
-    return { ...data, id: result.lastInsertRowid }
+    const classroomName = getClassroomNameById(Number(data.classroom_id))
+    const payload = normalizeStudentPayload(data, classroomName)
+
+    const existing = db.prepare('SELECT id FROM students WHERE student_id = ?').get(payload.student_id)
+
+    if (existing) {
+      db.prepare(`UPDATE students SET ${STUDENT_COLUMNS.map((column) => `${column} = ?`).join(', ')}, is_active = 1 WHERE id = ?`).run(
+        ...getStudentValues(payload),
+        existing.id
+      )
+
+      return {
+        ...payload,
+        id: existing.id,
+        is_active: 1,
+      }
+    }
+
+    const result = db
+      .prepare(`
+        INSERT INTO students (${STUDENT_COLUMNS.join(', ')}, is_active)
+        VALUES (${STUDENT_COLUMNS.map(() => '?').join(', ')}, 1)
+      `)
+      .run(...getStudentValues(payload))
+
+    return {
+      ...payload,
+      id: Number(result.lastInsertRowid),
+      is_active: 1,
+    }
   })
 
   ipcMain.handle('update-student', (event, { id, ...data }) => {
-    const fields = Object.keys(data).map(k => `${k} = ?`).join(', ')
-    const values = Object.values(data)
-    db.prepare(`UPDATE students SET ${fields} WHERE id = ?`).run(...values, id)
+    if (!id) {
+      throw new Error('Missing student id')
+    }
+
+    const classroomName = getClassroomNameById(Number(data.classroom_id))
+    const payload = normalizeStudentPayload(data, classroomName)
+
+    db.prepare(`UPDATE students SET ${STUDENT_COLUMNS.map((column) => `${column} = ?`).join(', ')} WHERE id = ?`).run(
+      ...getStudentValues(payload),
+      id
+    )
+
     return { success: true }
   })
 
@@ -220,161 +510,244 @@ function setupIpcHandlers() {
     return { success: true }
   })
 
-  // Attendance
   ipcMain.handle('get-attendance', (event, { date, classroom }) => {
-    return db.prepare(`
-      SELECT s.id, s.student_id, s.first_name, s.last_name, a.status, a.note, h.brushed_teeth, h.drank_milk
-      FROM students s
-      LEFT JOIN attendance a ON a.student_id = s.id AND a.date = ?
-      LEFT JOIN health_check h ON h.student_id = s.id AND h.date = ?
-      WHERE s.classroom_id = ? AND s.is_active = 1
-      ORDER BY s.student_id
-    `).all(date, date, classroom)
+    return db
+      .prepare(`
+        SELECT s.id, s.student_id, s.student_number, s.title, s.first_name, s.last_name, a.status, a.note
+        FROM students s
+        LEFT JOIN attendance a ON a.student_id = s.id AND a.date = ?
+        WHERE s.classroom_id = ? AND s.is_active = 1
+        ORDER BY COALESCE(NULLIF(s.student_number, ''), s.student_id)
+      `)
+      .all(date, classroom)
+      .map((row) => ({
+        ...row,
+        status: row.status || 'มา',
+        note: row.note || '',
+      }))
   })
 
-  ipcMain.handle('save-attendance', (event, { date, classroom, attendance, health }) => {
-    const saveAtt = db.prepare(`
-      INSERT OR REPLACE INTO attendance (student_id, date, status, note)
-      VALUES (?, ?, ?, ?)
-    `)
-    const saveHealth = db.prepare(`
-      INSERT OR REPLACE INTO health_check (student_id, date, brushed_teeth, drank_milk, note)
-      VALUES (?, ?, ?, ?, ?)
-    `)
-    
-    Object.entries(attendance).forEach(([studentId, data]) => {
-      saveAtt.run(studentId, date, data.status, data.note || '')
+  ipcMain.handle('save-attendance', (event, { date, classroom, attendance = {}, health = {} }) => {
+    db.prepare(
+      'DELETE FROM attendance WHERE date = ? AND student_id IN (SELECT id FROM students WHERE classroom_id = ?)'
+    ).run(date, classroom)
+    db.prepare(
+      'DELETE FROM health_check WHERE date = ? AND student_id IN (SELECT id FROM students WHERE classroom_id = ?)'
+    ).run(date, classroom)
+
+    const insertAttendance = db.prepare(
+      'INSERT INTO attendance (student_id, date, status, note) VALUES (?, ?, ?, ?)'
+    )
+    const insertHealth = db.prepare(
+      'INSERT INTO health_check (student_id, date, brushed_teeth, drank_milk, note) VALUES (?, ?, ?, ?, ?)'
+    )
+
+    Object.entries(attendance).forEach(([studentId, entry]) => {
+      insertAttendance.run(Number(studentId), date, entry.status || 'มา', entry.note || '')
     })
-    
-    Object.entries(health).forEach(([studentId, data]) => {
-      saveHealth.run(studentId, date, data.brushed_teeth ? 1 : 0, data.drank_milk ? 1 : 0, '')
+
+    Object.entries(health).forEach(([studentId, entry]) => {
+      insertHealth.run(
+        Number(studentId),
+        date,
+        entry.brushed_teeth ? 1 : 0,
+        entry.drank_milk ? 1 : 0,
+        entry.note || ''
+      )
     })
-    
+
     return { success: true }
   })
 
-  // Grades
   ipcMain.handle('get-grades', (event, { classroom, semester, year }) => {
-    return db.prepare(`
-      SELECT s.id, s.student_id, s.first_name, s.last_name, g.subject, g.score
-      FROM students s
-      LEFT JOIN grades g ON g.student_id = s.id AND g.semester = ? AND g.academic_year = ?
-      WHERE s.classroom_id = ? AND s.is_active = 1
-      ORDER BY s.student_id
-    `).all(semester, year, classroom)
+    return db
+      .prepare(`
+        SELECT s.id, s.student_id, s.first_name, s.last_name, g.subject, g.score
+        FROM students s
+        LEFT JOIN grades g ON g.student_id = s.id AND g.semester = ? AND g.academic_year = ?
+        WHERE s.classroom_id = ? AND s.is_active = 1
+        ORDER BY COALESCE(NULLIF(s.student_number, ''), s.student_id)
+      `)
+      .all(semester, year, classroom)
   })
 
   ipcMain.handle('save-grades', (event, { semester, year, grades }) => {
-    const saveGrade = db.prepare(`
-      INSERT OR REPLACE INTO grades (student_id, subject, semester, academic_year, score)
-      VALUES (?, ?, ?, ?, ?)
-    `)
-    
-    Object.entries(grades).forEach(([studentId, studentGrades]) => {
-      Object.entries(studentGrades).forEach(([subject, score]) => {
-        if (score !== null && score !== undefined) {
-          saveGrade.run(studentId, subject, semester, year, score)
+    const deleteByStudent = db.prepare('DELETE FROM grades WHERE student_id = ? AND semester = ? AND academic_year = ?')
+    const insertGrade = db.prepare(
+      'INSERT INTO grades (student_id, subject, semester, academic_year, score) VALUES (?, ?, ?, ?, ?)'
+    )
+
+    Object.entries(grades).forEach(([studentId, subjectMap]) => {
+      deleteByStudent.run(Number(studentId), semester, year)
+      Object.entries(subjectMap).forEach(([subject, score]) => {
+        if (score !== null && score !== undefined && score !== '') {
+          insertGrade.run(Number(studentId), subject, semester, year, score)
         }
       })
     })
-    
+
     return { success: true }
   })
 
-  // Schedule
   ipcMain.handle('get-schedule', (event, classroom) => {
-    return db.prepare(`
-      SELECT s.*, sub.name as subject_name, sub.color as subject_color
-      FROM schedule s
-      LEFT JOIN subjects sub ON sub.id = s.subject_id
-      WHERE s.classroom_id = ?
-      ORDER BY s.day_of_week, s.period
-    `).all(classroom)
+    return db
+      .prepare(`
+        SELECT s.*, sub.name AS subject_name, sub.color AS subject_color
+        FROM schedule s
+        LEFT JOIN subjects sub ON sub.id = s.subject_id
+        WHERE s.classroom_id = ?
+        ORDER BY s.day_of_week, s.period
+      `)
+      .all(classroom)
   })
 
   ipcMain.handle('save-schedule', (event, { classroom, schedule }) => {
-    const saveSchedule = db.prepare(`
-      INSERT OR REPLACE INTO schedule (classroom_id, day_of_week, period, subject_id, teacher_name)
-      VALUES (?, ?, ?, ?, ?)
-    `)
-    
-    Object.entries(schedule).forEach(([key, data]) => {
+    db.prepare('DELETE FROM schedule WHERE classroom_id = ?').run(classroom)
+    const insertSchedule = db.prepare(
+      'INSERT INTO schedule (classroom_id, day_of_week, period, subject_id, teacher_name) VALUES (?, ?, ?, ?, ?)'
+    )
+
+    Object.entries(schedule).forEach(([key, entry]) => {
       const [day, period] = key.split('-').map(Number)
-      saveSchedule.run(classroom, day, period, data.subject_id || null, data.teacher_name || '')
+      insertSchedule.run(classroom, day, period, entry.subject_id || null, entry.teacher_name || '')
     })
-    
+
     return { success: true }
   })
 
-  // Backup/Export
   ipcMain.handle('export-data', () => {
     return {
       classrooms: db.prepare('SELECT * FROM classrooms').all(),
-      students: db.prepare('SELECT * FROM students WHERE is_active = 1').all(),
+      students: db.prepare('SELECT * FROM students').all(),
       subjects: db.prepare('SELECT * FROM subjects').all(),
       grades: db.prepare('SELECT * FROM grades').all(),
       schedule: db.prepare('SELECT * FROM schedule').all(),
       attendance: db.prepare('SELECT * FROM attendance').all(),
       health_check: db.prepare('SELECT * FROM health_check').all(),
       exported_at: new Date().toISOString(),
-      version: '1.0'
+      version: '1.1',
     }
   })
 
-  // Import
   ipcMain.handle('import-data', (event, data) => {
     try {
       const { classrooms, students, subjects, grades, schedule, attendance, health_check } = data
-      
-      // Import classrooms
+
+      db.prepare('DELETE FROM attendance').run()
+      db.prepare('DELETE FROM health_check').run()
+      db.prepare('DELETE FROM grades').run()
+      db.prepare('DELETE FROM schedule').run()
+      db.prepare('DELETE FROM students').run()
+      db.prepare('DELETE FROM subjects').run()
+      db.prepare('DELETE FROM classrooms').run()
+
       if (classrooms) {
-        db.prepare('DELETE FROM classrooms').run()
-        const insertClassroom = db.prepare('INSERT INTO classrooms (name, level, academic_year) VALUES (?, ?, ?)')
-        classrooms.forEach(c => insertClassroom.run(c.name, c.level, c.academic_year))
+        const insertClassroom = db.prepare(
+          'INSERT INTO classrooms (id, name, level, academic_year, created_at) VALUES (?, ?, ?, ?, ?)'
+        )
+        classrooms.forEach((classroom) =>
+          insertClassroom.run(
+            classroom.id,
+            classroom.name,
+            classroom.level,
+            classroom.academic_year,
+            classroom.created_at || new Date().toISOString()
+          )
+        )
       }
-      
-      // Import subjects
+
       if (subjects) {
-        db.prepare('DELETE FROM subjects').run()
-        const insertSubject = db.prepare('INSERT INTO subjects (name, code, color) VALUES (?, ?, ?)')
-        subjects.forEach(s => insertSubject.run(s.name, s.code, s.color))
+        const insertSubject = db.prepare(
+          'INSERT INTO subjects (id, name, code, color) VALUES (?, ?, ?, ?)'
+        )
+        subjects.forEach((subject) => insertSubject.run(subject.id, subject.name, subject.code, subject.color))
       }
-      
-      // Import students
+
       if (students) {
-        db.prepare('DELETE FROM students').run()
-        const insertStudent = db.prepare('INSERT INTO students (student_id, first_name, last_name, classroom_id, gender, birth_date, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)')
-        students.forEach(s => insertStudent.run(s.student_id, s.first_name, s.last_name, s.classroom_id, s.gender, s.birth_date, s.is_active))
+        const insertStudent = db.prepare(`
+          INSERT INTO students (id, ${STUDENT_COLUMNS.join(', ')}, is_active, created_at)
+          VALUES (?, ${STUDENT_COLUMNS.map(() => '?').join(', ')}, ?, ?)
+        `)
+
+        students.forEach((student) => {
+          const payload = normalizeStudentPayload(student, student.classroom_label || '')
+          insertStudent.run(
+            student.id,
+            ...getStudentValues({
+              ...payload,
+              classroom_id: Number(student.classroom_id),
+            }),
+            student.is_active ?? 1,
+            student.created_at || new Date().toISOString()
+          )
+        })
       }
-      
-      // Import grades
+
       if (grades) {
-        db.prepare('DELETE FROM grades').run()
-        const insertGrade = db.prepare('INSERT INTO grades (student_id, subject, semester, academic_year, score) VALUES (?, ?, ?, ?, ?)')
-        grades.forEach(g => insertGrade.run(g.student_id, g.subject, g.semester, g.academic_year, g.score))
+        const insertGrade = db.prepare(
+          'INSERT INTO grades (id, student_id, subject, semester, academic_year, score, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        )
+        grades.forEach((grade) =>
+          insertGrade.run(
+            grade.id,
+            grade.student_id,
+            grade.subject,
+            grade.semester,
+            grade.academic_year,
+            grade.score,
+            grade.created_at || new Date().toISOString()
+          )
+        )
       }
-      
-      // Import schedule
+
       if (schedule) {
-        db.prepare('DELETE FROM schedule').run()
-        const insertSchedule = db.prepare('INSERT INTO schedule (classroom_id, day_of_week, period, subject_id, teacher_name) VALUES (?, ?, ?, ?, ?)')
-        schedule.forEach(s => insertSchedule.run(s.classroom_id, s.day_of_week, s.period, s.subject_id, s.teacher_name))
+        const insertSchedule = db.prepare(
+          'INSERT INTO schedule (id, classroom_id, day_of_week, period, subject_id, teacher_name) VALUES (?, ?, ?, ?, ?, ?)'
+        )
+        schedule.forEach((entry) =>
+          insertSchedule.run(
+            entry.id,
+            entry.classroom_id,
+            entry.day_of_week,
+            entry.period,
+            entry.subject_id,
+            entry.teacher_name
+          )
+        )
       }
-      
-      // Import attendance
+
       if (attendance) {
-        db.prepare('DELETE FROM attendance').run()
-        const insertAttendance = db.prepare('INSERT INTO attendance (student_id, date, status, note) VALUES (?, ?, ?, ?)')
-        attendance.forEach(a => insertAttendance.run(a.student_id, a.date, a.status, a.note))
+        const insertAttendance = db.prepare(
+          'INSERT INTO attendance (id, student_id, date, status, note, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+        )
+        attendance.forEach((entry) =>
+          insertAttendance.run(
+            entry.id,
+            entry.student_id,
+            entry.date,
+            entry.status,
+            entry.note,
+            entry.created_at || new Date().toISOString()
+          )
+        )
       }
-      
-      // Import health_check
+
       if (health_check) {
-        db.prepare('DELETE FROM health_check').run()
-        const insertHealth = db.prepare('INSERT INTO health_check (student_id, date, brushed_teeth, drank_milk, note) VALUES (?, ?, ?, ?, ?)')
-        health_check.forEach(h => insertHealth.run(h.student_id, h.date, h.brushed_teeth, h.drank_milk, h.note))
+        const insertHealth = db.prepare(
+          'INSERT INTO health_check (id, student_id, date, brushed_teeth, drank_milk, note) VALUES (?, ?, ?, ?, ?, ?)'
+        )
+        health_check.forEach((entry) =>
+          insertHealth.run(
+            entry.id,
+            entry.student_id,
+            entry.date,
+            entry.brushed_teeth,
+            entry.drank_milk,
+            entry.note
+          )
+        )
       }
-      
+
       return { success: true }
     } catch (error) {
       log.error('[Import] Error:', error)
@@ -382,66 +755,101 @@ function setupIpcHandlers() {
     }
   })
 
-  // Import Students from Excel
   ipcMain.handle('import-students-excel', (event, students) => {
     try {
       let importedCount = 0
+      let updatedCount = 0
       let skippedCount = 0
-      
+      let classroomsCreated = 0
+
+      const findStudent = db.prepare('SELECT id FROM students WHERE student_id = ?')
+      const findClassroom = db.prepare('SELECT id, name FROM classrooms WHERE name = ?')
+      const createClassroom = db.prepare(
+        'INSERT INTO classrooms (name, level, academic_year) VALUES (?, ?, ?)'
+      )
       const insertStudent = db.prepare(`
-        INSERT OR IGNORE INTO students (student_id, first_name, last_name, classroom_id, gender, birth_date, is_active)
-        VALUES (?, ?, ?, ?, ?, ?, 1)
+        INSERT INTO students (${STUDENT_COLUMNS.join(', ')}, is_active)
+        VALUES (${STUDENT_COLUMNS.map(() => '?').join(', ')}, 1)
       `)
-      
-      const getClassroomId = db.prepare('SELECT id FROM classrooms WHERE name = ?')
-      
-      for (const student of students) {
-        // Find classroom by name
-        let classroomId = null
-        if (student.classroom) {
-          const classroom = getClassroomId.get(student.classroom)
-          classroomId = classroom ? classroom.id : null
+      const updateStudent = db.prepare(`
+        UPDATE students
+        SET ${STUDENT_COLUMNS.map((column) => `${column} = ?`).join(', ')}, is_active = 1
+        WHERE id = ?
+      `)
+
+      students.forEach((student) => {
+        const classroomLabel = textOrNull(student.classroom_label || student.classroom || student['ชั้น'])
+        const studentId = textOrNull(student.student_id || student.studentId)
+        const firstName = textOrNull(student.first_name || student.firstName)
+        const lastName = textOrNull(student.last_name || student.lastName)
+
+        if (!classroomLabel || !studentId || !firstName || !lastName) {
+          skippedCount += 1
+          return
         }
-        
-        if (classroomId) {
-          const result = insertStudent.run(
-            student.student_id || student.studentId || '',
-            student.first_name || student.firstName || student['ชื่อ'] || '',
-            student.last_name || student.lastName || student['นามสกุล'] || '',
-            classroomId,
-            student.gender || student['เพศ'] || '',
-            student.birth_date || student.birthDate || student['วันเกิด'] || null
+
+        let classroom = findClassroom.get(classroomLabel)
+        if (!classroom) {
+          const created = createClassroom.run(
+            classroomLabel,
+            inferLevelFromClassroom(classroomLabel),
+            currentAcademicYear()
           )
-          if (result.changes > 0) {
-            importedCount++
-          } else {
-            skippedCount++
+          classroom = {
+            id: Number(created.lastInsertRowid),
+            name: classroomLabel,
           }
-        } else {
-          skippedCount++
+          classroomsCreated += 1
         }
+
+        const payload = normalizeStudentPayload(
+          {
+            ...student,
+            student_id: studentId,
+            first_name: firstName,
+            last_name: lastName,
+            classroom_id: classroom.id,
+            classroom_label: classroom.name,
+          },
+          classroom.name
+        )
+
+        const existing = findStudent.get(payload.student_id)
+        if (existing) {
+          updateStudent.run(...getStudentValues(payload), existing.id)
+          updatedCount += 1
+          return
+        }
+
+        insertStudent.run(...getStudentValues(payload))
+        importedCount += 1
+      })
+
+      return {
+        success: true,
+        imported: importedCount,
+        updated: updatedCount,
+        skipped: skippedCount,
+        classroomsCreated,
       }
-      
-      return { success: true, imported: importedCount, skipped: skippedCount }
     } catch (error) {
       log.error('[Import Students Excel] Error:', error)
-      return { success: false, error: error.message }
+      return { success: false, error: error.message, imported: 0, updated: 0, skipped: 0, classroomsCreated: 0 }
     }
   })
 
   log.info('[IPC] Handlers registered')
 }
 
-// App lifecycle
 app.whenReady().then(() => {
   log.info('[App] Ready')
-  
+
   if (!initDatabase()) {
     log.error('[App] Database init failed')
     app.quit()
     return
   }
-  
+
   setupIpcHandlers()
   createWindow()
 
@@ -463,11 +871,10 @@ app.on('window-all-closed', () => {
   }
 })
 
-// Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
   log.error('[Error] Uncaught exception:', error)
 })
 
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', (reason) => {
   log.error('[Error] Unhandled rejection:', reason)
 })

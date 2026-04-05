@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Save, Trash2, Plus, Pencil, ChevronRight, ChevronLeft, FileText, GraduationCap, CalendarDays, ChevronDown, BookOpen, Check } from 'lucide-react'
 import type { Classroom } from '@/types/index'
-import { NotoSansThai } from '@/lib/thai-font'
+const loadThaiFont = () => import('@/lib/thai-font').then((m) => m.NotoSansThai)
 
 const DAYS = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์']
 const PERIODS = [1, 2, 3, 4, 5, 6]
@@ -37,7 +37,7 @@ interface ScheduleSlot {
   room: string
 }
 
-export default function SchedulePage() {
+function SchedulePageContent() {
   const searchParams = useSearchParams()
   const classroomId = searchParams.get('classroom') || (typeof window !== 'undefined' ? localStorage.getItem('selectedClassroom') : null)
   const selectedClassroom = classroomId ? Number(classroomId) : null
@@ -216,7 +216,8 @@ export default function SchedulePage() {
 
       const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
 
-      // Thai font
+      // Thai font (lazy loaded)
+      const NotoSansThai = await loadThaiFont()
       doc.addFileToVFS('NotoSansThai.ttf', NotoSansThai)
       doc.addFont('NotoSansThai.ttf', 'NotoSansThai', 'normal')
       doc.addFont('NotoSansThai.ttf', 'NotoSansThai', 'bold')
@@ -756,5 +757,13 @@ export default function SchedulePage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function SchedulePage() {
+  return (
+    <Suspense fallback={<div className="mx-auto max-w-7xl"><div className="skeleton h-64 w-full rounded-[var(--radius-lg)]" /></div>}>
+      <SchedulePageContent />
+    </Suspense>
   )
 }

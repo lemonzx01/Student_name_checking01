@@ -1,285 +1,271 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useSearchParams } from 'next/navigation'
-import { Save, Check, X, Search, Filter, Users } from 'lucide-react'
-import { Student } from '@/types'
+import { Suspense, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { CheckCircle2, ChevronLeft, ClipboardCheck, Save, Search, X } from 'lucide-react'
 import CalendarPicker from '@/components/CalendarPicker'
+import CustomSelect from '@/components/CustomSelect'
+import { AttendanceStatus, Classroom } from '@/types'
+import { getAttendance, getClassrooms, saveAttendanceRecord } from '@/lib/client-data'
 
-const STATUS_COLORS = {
-  'มา': { bg: 'bg-green-100', text: 'text-green-700' },
-  'ขาด': { bg: 'bg-red-100', text: 'text-red-700' },
-  'ลา': { bg: 'bg-yellow-100', text: 'text-yellow-700' },
+const STATUS_OPTIONS: AttendanceStatus[] = ['มา', 'ขาด', 'ลา', 'สาย']
+
+const STATUS_STYLES: Record<AttendanceStatus, { active: string; icon: string }> = {
+  มา: { active: 'bg-emerald-500 text-white shadow-emerald-500/25', icon: 'bg-emerald-50 text-emerald-600' },
+  ขาด: { active: 'bg-red-500 text-white shadow-red-500/25', icon: 'bg-red-50 text-red-600' },
+  ลา: { active: 'bg-amber-500 text-white shadow-amber-500/25', icon: 'bg-amber-50 text-amber-600' },
+  สาย: { active: 'bg-sky-500 text-white shadow-sky-500/25', icon: 'bg-sky-50 text-sky-600' },
 }
 
-const STATUS_OPTIONS = ['มา', 'ขาด', 'ลา']
-
-export default function AttendancePage() {
+function AttendancePageContent() {
+  const router = useRouter()
   const searchParams = useSearchParams()
-  const classroomId = searchParams.get('classroom') || (typeof window !== 'undefined' ? localStorage.getItem('selectedClassroom') : null)
-  const selectedClassroom = classroomId ? Number(classroomId) : null
-  
-  const [students, setStudents] = useState<Student[]>([])
+  const classroomFromUrl = searchParams.get('classroom')
+  const [classrooms, setClassrooms] = useState<Classroom[]>([])
+  const [rows, setRows] = useState<any[]>([])
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
-  const [attendance, setAttendance] = useState<Record<number, { status: string; note?: string }>>({})
-  const [health, setHealth] = useState<Record<number, { brushed_teeth: boolean; drank_milk: boolean }>>({})
+  const [search, setSearch] = useState('')
   const [saving, setSaving] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [toast, setToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
-  // Filter students based on search and status
-  const filteredStudents = students.filter(student => {
-    const matchesSearch = searchQuery === '' || 
-      student.first_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      student.last_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      student.student_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      `${student.first_name} ${student.last_name}`.toLowerCase().includes(searchQuery.toLowerCase())
-    
-    const att = attendance[student.id]
-    const studentStatus = att?.status || 'มา'
-    const matchesStatus = statusFilter === 'all' || studentStatus === statusFilter
-    
-    return matchesSearch && matchesStatus
-  })
+  const activeClassroomId = classroomFromUrl ? Number(classroomFromUrl) : null
+  const activeClassroom = classrooms.find((item) => item.id === activeClassroomId) ?? null
 
-  // Summary counts
-  const statusCounts = students.reduce((acc, s) => {
-    const st = attendance[s.id]?.status || 'มา'
-    acc[st] = (acc[st] || 0) + 1
-    return acc
-  }, {} as Record<string, number>)
+  async function refreshData() {
+    const classroomRows = await getClassrooms()
+    setClassrooms(classroomRows)
+
+    if (!activeClassroomId) {
+      setRows([])
+      return
+    }
+
+    const attendanceRows = await getAttendance(date, activeClassroomId)
+    setRows(attendanceRows)
+  }
 
   useEffect(() => {
-    if (selectedClassroom) {
-      loadStudents()
-      loadAttendance()
-    }
-  }, [selectedClassroom, date])
+    refreshData()
+  }, [classroomFromUrl, date])
 
-  const loadStudents = async () => {
-    try {
-      const res = await fetch(`/api/students?classroom=${selectedClassroom}`)
-      const data = await res.json()
-      setStudents(data)
-    } catch (error) {
-      console.error('Failed to load students:', error)
+  useEffect(() => {
+    if (!toast) return
+    const timer = setTimeout(() => setToast(null), 3000)
+    return () => clearTimeout(timer)
+  }, [toast])
+
+  const filteredRows = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    if (!query) {
+      return rows
     }
+
+    return rows.filter((row) => {
+      const fullName = [row.title, row.first_name, row.last_name].filter(Boolean).join(' ').toLowerCase()
+      return (
+        fullName.includes(query) ||
+        row.student_id.toLowerCase().includes(query) ||
+        String(row.student_number || '').toLowerCase().includes(query)
+      )
+    })
+  }, [rows, search])
+
+  const counts = rows.reduce<Record<string, number>>((acc, row) => {
+    acc[row.status] = (acc[row.status] || 0) + 1
+    return acc
+  }, {})
+
+  function setAllStatus(status: AttendanceStatus) {
+    setRows((current) => current.map((item) => ({ ...item, status })))
   }
 
-  const loadAttendance = async () => {
-    try {
-      const res = await fetch(`/api/attendance?date=${date}&classroom=${selectedClassroom}`)
-      const data = await res.json()
-      
-      const attendanceMap: Record<number, { status: string; note?: string }> = {}
-      const healthMap: Record<number, { brushed_teeth: boolean; drank_milk: boolean }> = {}
-      
-      data.forEach((item: any) => {
-        if (item.status) {
-          attendanceMap[item.id] = { status: item.status, note: item.note || '' }
-        }
-        if (item.brushed_teeth !== undefined) {
-          healthMap[item.id] = { 
-            brushed_teeth: Boolean(item.brushed_teeth), 
-            drank_milk: Boolean(item.drank_milk) 
-          }
-        }
-      })
-      
-      setAttendance(attendanceMap)
-      setHealth(healthMap)
-    } catch (error) {
-      console.error('Failed to load attendance:', error)
+  async function handleSave() {
+    if (!activeClassroomId) {
+      return
     }
-  }
 
-  const saveAttendance = async () => {
     setSaving(true)
+
     try {
-      await fetch('/api/attendance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date, classroom: selectedClassroom, attendance, health })
-      })
-      alert('บันทึกสำเร็จ!')
-    } catch (error) {
-      console.error('Failed to save:', error)
-      alert('เกิดข้อผิดพลาด')
+      const attendance = rows.reduce<Record<number, { status: AttendanceStatus; note?: string }>>((acc, row) => {
+        acc[row.id] = {
+          status: row.status,
+          note: row.note || '',
+        }
+        return acc
+      }, {})
+
+      await saveAttendanceRecord(date, activeClassroomId, attendance)
+      setToast({ type: 'success', text: 'บันทึกข้อมูลเช็คชื่อเรียบร้อยแล้ว' })
+    } catch {
+      setToast({ type: 'error', text: 'เกิดข้อผิดพลาดในการบันทึก' })
     } finally {
       setSaving(false)
     }
   }
 
-  const updateStatus = (studentId: number, status: string) => {
-    setAttendance(prev => ({
-      ...prev,
-      [studentId]: { ...prev[studentId], status }
-    }))
-  }
-
-  const updateNote = (studentId: number, note: string) => {
-    setAttendance(prev => ({
-      ...prev,
-      [studentId]: { ...prev[studentId], note }
-    }))
-  }
-
-  const updateHealth = (studentId: number, field: 'brushed_teeth' | 'drank_milk', value: boolean) => {
-    setHealth(prev => ({
-      ...prev,
-      [studentId]: { ...prev[studentId], [field]: value }
-    }))
-  }
-
-  const changeDate = (days: number) => {
-    const d = new Date(date)
-    d.setDate(d.getDate() + days)
-    setDate(d.toISOString().split('T')[0])
-  }
-
   return (
-    <div>
-      {/* Header */}
+    <div className="mx-auto max-w-7xl animate-fade-in">
+      {/* Breadcrumb */}
       <div className="mb-4">
-        <h1 className="text-2xl font-bold text-text-primary">เช็คชื่อ</h1>
+        <Link href="/" className="btn-press inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-medium text-[var(--primary)] transition hover:bg-blue-50">
+          <ChevronLeft size={16} />
+          กลับไปหน้าห้องเรียน
+        </Link>
       </div>
 
-      {/* Controls */}
-      <div className="bg-surface rounded-xl border border-border mb-6">
-        {/* Top Row - Classroom, Date, Save */}
-        <div className="flex items-center justify-between p-4 border-b border-border">
-          <div className="flex items-center gap-4">
-            <CalendarPicker value={date} onChange={(newDate) => { setDate(newDate) }} />
+      {/* Header */}
+      <section className="animate-slide-up mb-6 rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-6 shadow-[var(--shadow-sm)]">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-600">
+              <ClipboardCheck size={13} />
+              Attendance Sheet
+            </div>
+            <h1 className="text-2xl font-bold text-slate-900 md:text-3xl">
+              {activeClassroom ? `เช็คชื่อห้อง ${activeClassroom.name}` : 'เช็คชื่อรายวัน'}
+            </h1>
+            <p className="mt-1 text-sm text-[var(--muted)]">เลือกห้องและวันที่ แล้วบันทึกสถานะนักเรียน</p>
           </div>
 
-          <button
-            onClick={saveAttendance}
-            disabled={saving || !selectedClassroom}
-            className="flex items-center gap-2 bg-success hover:bg-green-600 text-white px-4 py-2.5 rounded-xl font-medium transition-colors disabled:opacity-50"
-          >
-            <Save size={18} />
-            {saving ? 'กำลังบันทึก...' : 'บันทึก'}
-          </button>
+          <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:justify-end">
+            <CustomSelect
+              value={activeClassroomId ?? ''}
+              onChange={(value) => {
+                if (!value) {
+                  router.replace('/attendance')
+                  return
+                }
+                localStorage.setItem('selectedClassroom', String(value))
+                router.replace(`/attendance?classroom=${value}`)
+              }}
+              options={[
+                { value: '', label: 'เลือกห้องเรียน' },
+                ...classrooms.map((classroom) => ({ value: classroom.id, label: classroom.name })),
+              ]}
+              placeholder="เลือกห้องเรียน"
+              className="min-w-[180px]"
+            />
+
+            <CalendarPicker value={date} onChange={setDate} compact />
+
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving || !activeClassroomId}
+              className="btn-press inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--success)] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-50"
+            >
+              <Save size={16} />
+              {saving ? 'กำลังบันทึก...' : 'บันทึก'}
+            </button>
+          </div>
         </div>
 
-        {/* Bottom Row - Search & Filters */}
-        {selectedClassroom && students.length > 0 && (
-          <div className="p-4 flex flex-col md:flex-row items-start md:items-center gap-3">
-            {/* Search Input */}
-            <div className="relative flex-1 max-w-md">
-              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="ค้นหานักเรียน... (ชื่อ, นามสกุล, รหัส)"
-                className="w-full pl-9 pr-4 py-2 border border-border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-white"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary hover:text-text-primary"
-                >
-                  <X size={14} />
-                </button>
-              )}
+        {/* Stats */}
+        <div className="mt-5 grid gap-3 stagger-children sm:grid-cols-2 md:grid-cols-5">
+          <div className="animate-slide-up flex items-center gap-3 rounded-2xl bg-slate-50 p-3.5 stat-blue">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-100 text-blue-600 text-sm font-bold">
+              {rows.length}
             </div>
-
-            {/* Status Filter Buttons */}
-            <div className="flex items-center gap-1.5">
-              <Filter size={14} className="text-text-secondary mr-1" />
-              <button
-                onClick={() => setStatusFilter('all')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                  statusFilter === 'all'
-                    ? 'bg-primary text-white shadow-sm'
-                    : 'bg-gray-100 text-text-secondary hover:bg-gray-200'
-                }`}
-              >
-                ทั้งหมด ({students.length})
-              </button>
-              {STATUS_OPTIONS.map(status => (
-                <button
-                  key={status}
-                  onClick={() => setStatusFilter(statusFilter === status ? 'all' : status)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                    statusFilter === status
-                      ? STATUS_COLORS[status as keyof typeof STATUS_COLORS].bg + ' ' + STATUS_COLORS[status as keyof typeof STATUS_COLORS].text + ' ring-1 ring-current'
-                      : 'bg-gray-100 text-text-secondary hover:bg-gray-200'
-                  }`}
-                >
-                  {status} ({statusCounts[status] || 0})
-                </button>
-              ))}
-            </div>
-
-            {/* Result count */}
-            {(searchQuery || statusFilter !== 'all') && (
-              <div className="flex items-center gap-1.5 text-xs text-text-secondary ml-auto">
-                <Users size={13} />
-                <span>แสดง {filteredStudents.length} / {students.length} คน</span>
+            <p className="text-xs font-medium text-[var(--muted)]">ทั้งหมด</p>
+          </div>
+          {STATUS_OPTIONS.map((status) => (
+            <div key={status} className="animate-slide-up flex items-center gap-3 rounded-2xl bg-slate-50 p-3.5">
+              <div className={`flex h-9 w-9 items-center justify-center rounded-lg text-sm font-bold ${STATUS_STYLES[status].icon}`}>
+                {counts[status] || 0}
               </div>
-            )}
+              <p className="text-xs font-medium text-[var(--muted)]">{status}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Quick Actions + Search */}
+      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="flex flex-1 items-center gap-3 rounded-2xl border border-[var(--line)] bg-white px-4 py-2.5 shadow-[var(--shadow-sm)] transition-all focus-within:border-[var(--primary)]">
+          <Search size={16} className="flex-shrink-0 text-[var(--muted)]" />
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="ค้นหาจากชื่อ, รหัส หรือเลขที่..."
+            className="w-full border-0 bg-transparent text-sm outline-none"
+          />
+          {search && (
+            <button type="button" onClick={() => setSearch('')} className="flex-shrink-0 text-slate-400 hover:text-slate-600">
+              <X size={14} />
+            </button>
+          )}
+        </div>
+
+        {/* Bulk set all status */}
+        {activeClassroomId && rows.length > 0 && (
+          <div className="flex items-center gap-1.5">
+            <span className="mr-1 text-xs text-[var(--muted)]">ตั้งทั้งหมด:</span>
+            {STATUS_OPTIONS.map((status) => (
+              <button
+                key={status}
+                type="button"
+                onClick={() => setAllStatus(status)}
+                className={`btn-press status-pill rounded-lg px-2.5 py-1.5 text-xs font-medium ${STATUS_STYLES[status].icon}`}
+              >
+                {status}
+              </button>
+            ))}
           </div>
         )}
       </div>
 
       {/* Table */}
-      {!selectedClassroom ? (
-        <div className="text-center py-12 text-text-secondary">
-          กรุณาเลือกห้องเรียน
-        </div>
-      ) : students.length === 0 ? (
-        <div className="text-center py-12 text-text-secondary">
-          ไม่มีนักเรียนในห้องนี้
-        </div>
-      ) : (
-        <div className="bg-surface rounded-xl border border-border overflow-hidden">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-3 py-3 text-center text-sm font-medium text-text-secondary w-12">#</th>
-                <th className="px-3 py-3 text-left text-sm font-medium text-text-secondary w-20">รหัส</th>
-                <th className="px-3 py-3 text-left text-sm font-medium text-text-secondary">ชื่อ-นามสกุล</th>
-                <th className="px-3 py-3 text-center text-sm font-medium text-text-secondary w-48">สถานะ</th>
-                <th className="px-3 py-3 text-left text-sm font-medium text-text-secondary">หมายเหตุ</th>
-                <th className="px-2 py-3 text-center text-sm font-medium text-text-secondary w-20">แปรงฟัน</th>
-                <th className="px-2 py-3 text-center text-sm font-medium text-text-secondary w-20">ดื่มนม</th>
+      <section className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--line)] bg-white shadow-[var(--shadow-sm)]">
+        <div className="overflow-x-auto">
+          <table className="min-w-full border-separate border-spacing-0">
+            <thead>
+              <tr className="bg-slate-50/80 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+                <th className="px-4 py-3.5">เลขที่</th>
+                <th className="px-4 py-3.5">ชื่อ-นามสกุล</th>
+                <th className="px-4 py-3.5">สถานะ</th>
+                <th className="px-4 py-3.5">หมายเหตุ</th>
               </tr>
             </thead>
             <tbody>
-              {filteredStudents.length === 0 ? (
+              {!activeClassroomId ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-8 text-center text-text-secondary">
-                    <Search size={24} className="mx-auto mb-2 opacity-40" />
-                    <p className="text-sm">ไม่พบนักเรียนที่ตรงกับการค้นหา</p>
-                    <button onClick={() => { setSearchQuery(''); setStatusFilter('all') }} className="text-xs text-primary hover:underline mt-1">ล้างตัวกรอง</button>
+                  <td colSpan={4} className="px-4 py-16 text-center">
+                    <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
+                      <ClipboardCheck size={20} />
+                    </div>
+                    <p className="font-medium text-slate-500">กรุณาเลือกห้องเรียนก่อนเริ่มเช็คชื่อ</p>
                   </td>
                 </tr>
-              ) : filteredStudents.map((student, index) => {
-                const att = attendance[student.id] || { status: 'มา', note: undefined }
-                const hl = health[student.id] || { brushed_teeth: false, drank_milk: false }
-
-                return (
-                  <tr 
-                    key={student.id} 
-                    className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}
-                  >
-                    <td className="px-3 py-3 text-center text-sm text-text-secondary">{index + 1}</td>
-                    <td className="px-3 py-3 text-sm">{student.student_id}</td>
-                    <td className="px-3 py-3 text-sm font-medium">
-                      {student.first_name} {student.last_name}
+              ) : filteredRows.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="px-4 py-16 text-center">
+                    <p className="font-medium text-slate-500">ไม่พบข้อมูลนักเรียนในห้องนี้</p>
+                  </td>
+                </tr>
+              ) : (
+                filteredRows.map((row) => (
+                  <tr key={row.id} className="table-row-hover border-b border-slate-50">
+                    <td className="px-4 py-3.5 text-sm text-slate-600">{row.student_number || row.student_id}</td>
+                    <td className="px-4 py-3.5 text-sm font-medium text-slate-900">
+                      {[row.title, row.first_name, row.last_name].filter(Boolean).join(' ')}
                     </td>
-                    <td className="px-3 py-3 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        {STATUS_OPTIONS.map(status => (
+                    <td className="px-4 py-3.5">
+                      <div className="flex flex-wrap gap-1.5">
+                        {STATUS_OPTIONS.map((status) => (
                           <button
                             key={status}
-                            onClick={() => updateStatus(student.id, status)}
-                            className={`px-3 py-1 rounded-lg text-sm font-medium transition-all ${
-                              att.status === status
-                                ? STATUS_COLORS[status as keyof typeof STATUS_COLORS].bg + ' ' + STATUS_COLORS[status as keyof typeof STATUS_COLORS].text
-                                : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
+                            type="button"
+                            onClick={() =>
+                              setRows((current) =>
+                                current.map((item) => (item.id === row.id ? { ...item, status } : item))
+                              )
+                            }
+                            className={`status-pill rounded-lg px-3 py-1.5 text-xs font-semibold shadow-sm ${
+                              row.status === status
+                                ? STATUS_STYLES[status].active
+                                : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                             }`}
                           >
                             {status}
@@ -287,42 +273,54 @@ export default function AttendancePage() {
                         ))}
                       </div>
                     </td>
-                    <td className="px-3 py-3">
+                    <td className="px-4 py-3.5">
                       <input
-                        type="text"
-                        value={att.note || ''}
-                        onChange={(e) => updateNote(student.id, e.target.value)}
+                        value={row.note || ''}
+                        onChange={(event) =>
+                          setRows((current) =>
+                            current.map((item) => (item.id === row.id ? { ...item, note: event.target.value } : item))
+                          )
+                        }
                         placeholder="หมายเหตุ..."
-                        className="w-full px-2 py-1 border border-border rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-primary/50"
+                        className="w-full rounded-xl border border-[var(--line)] px-3 py-2 text-sm outline-none transition focus:border-[var(--primary)] focus:ring-0"
                       />
                     </td>
-                    <td className="px-2 py-3 text-center">
-                      <button
-                        onClick={() => updateHealth(student.id, 'brushed_teeth', !hl.brushed_teeth)}
-                        className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
-                          hl.brushed_teeth ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
-                        }`}
-                      >
-                        {hl.brushed_teeth ? <Check size={14} /> : <X size={14} />}
-                      </button>
-                    </td>
-                    <td className="px-2 py-3 text-center">
-                      <button
-                        onClick={() => updateHealth(student.id, 'drank_milk', !hl.drank_milk)}
-                        className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
-                          hl.drank_milk ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
-                        }`}
-                      >
-                        {hl.drank_milk ? <Check size={14} /> : <X size={14} />}
-                      </button>
-                    </td>
                   </tr>
-                )
-              })}
+                ))
+              )}
             </tbody>
           </table>
         </div>
+      </section>
+
+      {/* Toast Notification */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2">
+          <div className={`toast-enter flex items-center gap-2.5 rounded-2xl px-5 py-3.5 text-sm font-medium shadow-lg ${
+            toast.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'
+          }`}>
+            <CheckCircle2 size={18} />
+            <span>{toast.text}</span>
+            <button type="button" onClick={() => setToast(null)} className="ml-2 rounded-lg p-0.5 transition hover:bg-white/20">
+              <X size={14} />
+            </button>
+          </div>
+        </div>
       )}
     </div>
+  )
+}
+
+export default function AttendancePage() {
+  return (
+    <Suspense fallback={
+      <div className="mx-auto max-w-7xl">
+        <div className="skeleton mb-4 h-6 w-40" />
+        <div className="skeleton mb-6 h-48 w-full rounded-[var(--radius-lg)]" />
+        <div className="skeleton h-64 w-full rounded-[var(--radius-lg)]" />
+      </div>
+    }>
+      <AttendancePageContent />
+    </Suspense>
   )
 }

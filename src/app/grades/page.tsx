@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Save, Calendar, FileSpreadsheet } from 'lucide-react'
+import CustomSelect from '@/components/CustomSelect'
 import { Student, calculateGrade, DEFAULT_SUBJECTS } from '@/types/index'
 
 // Lazy load xlsx
@@ -16,7 +17,7 @@ const loadXLSX = async () => {
   }
 }
 
-export default function GradesPage() {
+function GradesPageContent() {
   const searchParams = useSearchParams()
   const classroomId = searchParams.get('classroom') || (typeof window !== 'undefined' ? localStorage.getItem('selectedClassroom') : null)
   const selectedClassroom = classroomId ? Number(classroomId) : null
@@ -243,17 +244,14 @@ export default function GradesPage() {
         {/* Semester Selector */}
         <div className="flex-1 max-w-xs">
           <label className="block text-sm font-medium text-text-secondary mb-2">ภาคเรียน</label>
-          <div className="relative">
-            <select
-              value={semester}
-              onChange={(e) => setSemester(Number(e.target.value))}
-              className="w-full px-4 py-2.5 border border-border rounded-xl bg-white appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-            >
-              <option value={1}>ภาคเรียนที่ 1</option>
-              <option value={2}>ภาคเรียนที่ 2</option>
-            </select>
-            <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary pointer-events-none" size={18} />
-          </div>
+          <CustomSelect
+            value={semester}
+            onChange={(v) => setSemester(Number(v))}
+            options={[
+              { value: 1, label: 'ภาคเรียนที่ 1' },
+              { value: 2, label: 'ภาคเรียนที่ 2' },
+            ]}
+          />
         </div>
         
         {/* Academic Year */}
@@ -350,8 +348,8 @@ export default function GradesPage() {
                     <td className="px-3 py-2 text-center font-medium bg-blue-50/50">
                       {avg !== null ? avg.toFixed(1) : '-'}
                     </td>
-                    <td className="px-3 py-2 text-center font-bold bg-blue-50/50" style={{ color: gpa !== null && gpa >= 2 ? '#10B981' : '#EF4444' }}>
-                      {gpa !== null ? gpa.toFixed(1) : '-'}
+                    <td className="px-3 py-2 text-center font-bold bg-blue-50/50" style={{ color: gpa !== null && Number(gpa) >= 2 ? '#10B981' : '#EF4444' }}>
+                      {gpa !== null ? gpa : '-'}
                     </td>
                   </tr>
                 )
@@ -376,5 +374,13 @@ export default function GradesPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function GradesPage() {
+  return (
+    <Suspense fallback={<div className="mx-auto max-w-7xl"><div className="skeleton h-64 w-full rounded-[var(--radius-lg)]" /></div>}>
+      <GradesPageContent />
+    </Suspense>
   )
 }

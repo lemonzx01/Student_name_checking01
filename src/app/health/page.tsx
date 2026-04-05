@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Save, Activity, TrendingUp, TrendingDown, Minus, FileSpreadsheet } from 'lucide-react'
 import { Classroom, Student } from '@/types'
@@ -26,7 +26,7 @@ interface HealthRecord {
   date: string
 }
 
-export default function HealthPage() {
+function HealthPageContent() {
   const searchParams = useSearchParams()
   const classroomId = searchParams.get('classroom') || (typeof window !== 'undefined' ? localStorage.getItem('selectedClassroom') : null)
   const selectedClassroom = classroomId ? Number(classroomId) : null
@@ -332,5 +332,13 @@ export default function HealthPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function HealthPage() {
+  return (
+    <Suspense fallback={<div className="mx-auto max-w-7xl"><div className="skeleton h-64 w-full rounded-[var(--radius-lg)]" /></div>}>
+      <HealthPageContent />
+    </Suspense>
   )
 }
