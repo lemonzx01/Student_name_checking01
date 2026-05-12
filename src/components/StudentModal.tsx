@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Camera, MessageSquare, Trash2, Upload, User, UserPlus, X } from 'lucide-react'
+import { Camera, Trash2, Upload, User, UserPlus, X } from 'lucide-react'
 import { Classroom, Student, StudentFormInput } from '@/types'
 import {
   createStudentRecord,
@@ -12,7 +12,6 @@ import {
 } from '@/lib/client-data'
 import CalendarPicker from '@/components/CalendarPicker'
 import CustomSelect from '@/components/CustomSelect'
-import ParentContactModal from '@/components/ParentContactModal'
 import StudentAvatar from '@/components/StudentAvatar'
 import { invalidatePhotoCache } from '@/lib/hooks/usePhotoUrl'
 import { useDialog } from '@/lib/hooks/useConfirm'
@@ -126,7 +125,6 @@ export default function StudentModal({
   const [formData, setFormData] = useState<StudentFormInput>(getInitialFormData(classroomId))
   const [saving, setSaving] = useState(false)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
-  const [contactOpen, setContactOpen] = useState(false)
   const { alert } = useDialog()
 
   const activeClassroomName = useMemo(
@@ -590,26 +588,14 @@ export default function StudentModal({
                 />
               </FormField>
               <FormField label="เบอร์โทรผู้ปกครอง">
-                <div className="flex gap-2">
-                  <input
-                    type="tel"
-                    inputMode="tel"
-                    value={formData.guardian_phone ?? ''}
-                    onChange={(e) => updateField('guardian_phone', e.target.value)}
-                    placeholder="08x-xxx-xxxx"
-                    className={inputClass}
-                  />
-                  {student && (
-                    <button
-                      type="button"
-                      onClick={() => setContactOpen(true)}
-                      title="ส่งข้อความให้ผู้ปกครอง (คัดลอก/LINE)"
-                      className="btn-press flex-shrink-0 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700"
-                    >
-                      <MessageSquare size={14} />
-                    </button>
-                  )}
-                </div>
+                <input
+                  type="tel"
+                  inputMode="tel"
+                  value={formData.guardian_phone ?? ''}
+                  onChange={(e) => updateField('guardian_phone', e.target.value)}
+                  placeholder="08x-xxx-xxxx"
+                  className={inputClass}
+                />
               </FormField>
             </div>
           </div>
@@ -717,23 +703,6 @@ export default function StudentModal({
           </div>
         </form>
       </div>
-
-      {student && (
-        <ParentContactModal
-          isOpen={contactOpen}
-          onClose={() => setContactOpen(false)}
-          student={{
-            id: student.id,
-            title: formData.title ?? student.title,
-            first_name: formData.first_name || student.first_name,
-            last_name: formData.last_name || student.last_name,
-            classroom_name: student.classroom_name,
-            classroom_label: formData.classroom_label ?? student.classroom_label,
-            guardian_phone: formData.guardian_phone ?? student.guardian_phone,
-          }}
-          defaultTemplate="general"
-        />
-      )}
     </div>
   )
 }

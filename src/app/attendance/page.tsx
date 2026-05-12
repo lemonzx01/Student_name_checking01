@@ -3,11 +3,10 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ChevronLeft, ClipboardCheck, MessageSquare, Search, X } from 'lucide-react'
+import { ChevronLeft, ClipboardCheck, Search, X } from 'lucide-react'
 import CalendarPicker from '@/components/CalendarPicker'
 import CustomSelect from '@/components/CustomSelect'
 import AutoSaveIndicator from '@/components/AutoSaveIndicator'
-import ParentContactModal from '@/components/ParentContactModal'
 import StudentAvatar from '@/components/StudentAvatar'
 import { AttendanceStatus, Classroom } from '@/types'
 import { getAttendance, getAttendanceDates, getClassrooms, saveAttendanceRecord } from '@/lib/client-data'
@@ -34,7 +33,6 @@ function AttendancePageContent() {
   const [markedDates, setMarkedDates] = useState<Set<string>>(new Set())
   // flag กัน auto-save ยิงตอนที่เรากำลังโหลดข้อมูลใหม่จาก DB (เปลี่ยนห้อง/วันที่)
   const [isLoading, setIsLoading] = useState(true)
-  const [contactStudent, setContactStudent] = useState<any | null>(null)
 
   const activeClassroomId = classroomFromUrl ? Number(classroomFromUrl) : null
   const activeClassroom = classrooms.find((item) => item.id === activeClassroomId) ?? null
@@ -266,7 +264,6 @@ function AttendancePageContent() {
                 </tr>
               ) : (
                 filteredRows.map((row) => {
-                  const isAbsent = row.status === 'ขาด' || row.status === 'ลาป่วย' || row.status === 'ลากิจ'
                   return (
                   <tr key={row.id} className="table-row-hover border-b border-slate-50">
                     <td className="px-4 py-3.5 text-sm text-slate-600">{row.student_number || row.student_id}</td>
@@ -278,28 +275,6 @@ function AttendancePageContent() {
                           size={32}
                         />
                         <span>{[row.title, row.first_name, row.last_name].filter(Boolean).join(' ')}</span>
-                        {isAbsent && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setContactStudent({
-                                id: row.id,
-                                title: row.title,
-                                first_name: row.first_name,
-                                last_name: row.last_name,
-                                classroom_name: activeClassroom?.name || '',
-                                guardian_phone: row.guardian_phone,
-                                _date: date,
-                                _status: row.status,
-                              })
-                            }
-                            title="แจ้งผู้ปกครอง"
-                            className="btn-press inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 transition hover:bg-emerald-100"
-                          >
-                            <MessageSquare size={11} />
-                            แจ้งผู้ปกครอง
-                          </button>
-                        )}
                       </div>
                     </td>
                     <td className="px-4 py-3.5">
@@ -361,17 +336,6 @@ function AttendancePageContent() {
         lastSavedAt={lastSavedAt}
         hidden={!activeClassroomId}
       />
-
-      {/* Parent contact modal (เมื่อกด "แจ้งผู้ปกครอง" ในแถวนักเรียนที่ขาด) */}
-      {contactStudent && (
-        <ParentContactModal
-          isOpen={!!contactStudent}
-          onClose={() => setContactStudent(null)}
-          student={contactStudent}
-          defaultTemplate="absent"
-          defaultContext={{ date: contactStudent._date }}
-        />
-      )}
     </div>
   )
 }
