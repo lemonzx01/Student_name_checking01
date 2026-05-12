@@ -1,14 +1,41 @@
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow, ipcMain, shell } = require('electron')
 const path = require('path')
+const fs = require('fs')
 const log = require('electron-log')
 
 log.transports.file.level = 'info'
 log.transports.file.maxSize = 10 * 1024 * 1024
 log.info('[Main] Starting application...')
 
+// ─── Single-instance lock ────────────────────────────────────────────
+// ป้องกันครูเปิดแอปซ้ำหลายตัว แล้วเปิด DB คนละ instance จนข้อมูลซ้อนทับ
+// ถ้าได้ lock ไม่สำเร็จ (มี instance อื่นเปิดอยู่) → quit ทันที + ส่ง signal ให้
+// instance เดิม focus หน้าต่าง
+const gotTheLock = app.requestSingleInstanceLock()
+if (!gotTheLock) {
+  log.info('[Main] Another instance is already running, quitting...')
+  app.quit()
+  // หยุดการ execute ส่วนที่เหลือของไฟล์นี้ — กัน initDatabase / createWindow รันโดย instance ที่ 2
+  process.exit(0)
+}
+
 let mainWindow = null
 const isDev = !app.isPackaged
 let db = null
+let dbPath = null
+
+// เมื่อมีคนพยายามเปิด instance ที่ 2 — focus หน้าต่างเดิม + restore ถ้า minimize
+app.on('second-instance', () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore()
+    }
+    if (!mainWindow.isVisible()) {
+      mainWindow.show()
+    }
+    mainWindow.focus()
+  }
+})
 
 const STUDENT_EXTRA_COLUMNS = [
   { name: 'national_id', definition: 'TEXT' },
@@ -25,6 +52,7 @@ const STUDENT_EXTRA_COLUMNS = [
   { name: 'guardian_last_name', definition: 'TEXT' },
   { name: 'guardian_occupation', definition: 'TEXT' },
   { name: 'guardian_relation', definition: 'TEXT' },
+  { name: 'guardian_phone', definition: 'TEXT' },
   { name: 'father_title', definition: 'TEXT' },
   { name: 'father_first_name', definition: 'TEXT' },
   { name: 'father_last_name', definition: 'TEXT' },
@@ -35,6 +63,8 @@ const STUDENT_EXTRA_COLUMNS = [
   { name: 'mother_occupation', definition: 'TEXT' },
   { name: 'disadvantage', definition: 'TEXT' },
   { name: 'source_payload', definition: 'TEXT' },
+  { name: 'photo_path', definition: 'TEXT' },
+  { name: 'deleted_at', definition: 'DATETIME' },
 ]
 
 const STUDENT_COLUMNS = [
@@ -58,6 +88,7 @@ const STUDENT_COLUMNS = [
   'guardian_last_name',
   'guardian_occupation',
   'guardian_relation',
+  'guardian_phone',
   'father_title',
   'father_first_name',
   'father_last_name',
@@ -68,6 +99,7 @@ const STUDENT_COLUMNS = [
   'mother_occupation',
   'disadvantage',
   'source_payload',
+  'photo_path',
 ]
 
 function textOrNull(value) {
@@ -172,6 +204,7 @@ function normalizeStudentPayload(data, classroomName = '') {
     guardian_last_name: textOrNull(data.guardian_last_name),
     guardian_occupation: textOrNull(data.guardian_occupation),
     guardian_relation: textOrNull(data.guardian_relation),
+    guardian_phone: textOrNull(data.guardian_phone),
     father_title: textOrNull(data.father_title),
     father_first_name: textOrNull(data.father_first_name),
     father_last_name: textOrNull(data.father_last_name),
@@ -182,6 +215,7 @@ function normalizeStudentPayload(data, classroomName = '') {
     mother_occupation: textOrNull(data.mother_occupation),
     disadvantage: textOrNull(data.disadvantage),
     source_payload: serializeSourcePayload(data.source_payload),
+    photo_path: textOrNull(data.photo_path),
   }
 }
 
@@ -218,33 +252,204 @@ function findOrCreateClassroomByName(name) {
   }
 }
 
+function tableExists(name) {
+  const row = db
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = ?")
+    .get(name)
+  return !!row
+}
+
+function tableColumns(name) {
+  return new Set(db.prepare(`PRAGMA table_info(${name})`).all().map((c) => c.name))
+}
+
+// ─── Schema Migrations ───────────────────────────────────────
+// อัปเดต DB เก่าให้ตรง schema ใหม่ (unify กับ src/lib/db.ts)
+// ทำใน try/catch — ถ้า DB ใหม่ไม่มี table เก่า migration จะ skip
+function migrateLegacySchema() {
+  // attendance: เพิ่ม classroom_id ถ้ายังไม่มี + backfill จาก students
+  try {
+    if (tableExists('attendance')) {
+      const cols = tableColumns('attendance')
+      if (!cols.has('classroom_id')) {
+        db.exec('ALTER TABLE attendance ADD COLUMN classroom_id INTEGER')
+        db.exec(
+          `UPDATE attendance
+           SET classroom_id = (SELECT classroom_id FROM students WHERE students.id = attendance.student_id)
+           WHERE classroom_id IS NULL`
+        )
+        log.info('[Migration] attendance.classroom_id added + backfilled')
+      }
+    }
+  } catch (error) {
+    log.warn('[Migration] attendance migration failed:', error)
+  }
+
+  // health_check: เพิ่ม classroom_id, weight_kg, height_cm ถ้ายังไม่มี + backfill
+  try {
+    if (tableExists('health_check')) {
+      const cols = tableColumns('health_check')
+      if (!cols.has('classroom_id')) {
+        db.exec('ALTER TABLE health_check ADD COLUMN classroom_id INTEGER')
+        db.exec(
+          `UPDATE health_check
+           SET classroom_id = (SELECT classroom_id FROM students WHERE students.id = health_check.student_id)
+           WHERE classroom_id IS NULL`
+        )
+        log.info('[Migration] health_check.classroom_id added + backfilled')
+      }
+      if (!cols.has('weight_kg')) {
+        db.exec('ALTER TABLE health_check ADD COLUMN weight_kg REAL')
+        log.info('[Migration] health_check.weight_kg added')
+      }
+      if (!cols.has('height_cm')) {
+        db.exec('ALTER TABLE health_check ADD COLUMN height_cm REAL')
+        log.info('[Migration] health_check.height_cm added')
+      }
+    }
+  } catch (error) {
+    log.warn('[Migration] health_check migration failed:', error)
+  }
+
+  // grades: เพิ่ม classroom_id + subject_code (จาก subject) + midterm/final
+  try {
+    if (tableExists('grades')) {
+      const cols = tableColumns('grades')
+      if (!cols.has('classroom_id')) {
+        db.exec('ALTER TABLE grades ADD COLUMN classroom_id INTEGER')
+        db.exec(
+          `UPDATE grades
+           SET classroom_id = (SELECT classroom_id FROM students WHERE students.id = grades.student_id)
+           WHERE classroom_id IS NULL`
+        )
+        log.info('[Migration] grades.classroom_id added + backfilled')
+      }
+      if (!cols.has('subject_code')) {
+        db.exec('ALTER TABLE grades ADD COLUMN subject_code TEXT')
+        if (cols.has('subject')) {
+          db.exec('UPDATE grades SET subject_code = subject WHERE subject_code IS NULL')
+        }
+        log.info('[Migration] grades.subject_code added + backfilled')
+      }
+      if (!cols.has('midterm_score')) {
+        db.exec('ALTER TABLE grades ADD COLUMN midterm_score REAL DEFAULT 0')
+      }
+      if (!cols.has('final_score')) {
+        db.exec('ALTER TABLE grades ADD COLUMN final_score REAL DEFAULT 0')
+      }
+    }
+  } catch (error) {
+    log.warn('[Migration] grades migration failed:', error)
+  }
+
+  // schedule (เก่า) → schedules (ใหม่)
+  try {
+    if (tableExists('schedule') && !tableExists('schedules')) {
+      log.info('[Migration] Migrating schedule → schedules ...')
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS schedules (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          classroom_id INTEGER NOT NULL,
+          day_of_week INTEGER NOT NULL,
+          period INTEGER NOT NULL,
+          subject_code TEXT NOT NULL DEFAULT '',
+          subject_name TEXT NOT NULL DEFAULT '',
+          class_level TEXT NOT NULL DEFAULT '',
+          room TEXT NOT NULL DEFAULT '',
+          FOREIGN KEY (classroom_id) REFERENCES classrooms(id)
+        )
+      `)
+      const oldRows = db
+        .prepare(
+          `SELECT s.classroom_id, s.day_of_week, s.period,
+                  COALESCE(sub.code, '') AS subject_code,
+                  COALESCE(sub.name, '') AS subject_name,
+                  '' AS class_level,
+                  COALESCE(s.teacher_name, '') AS room
+           FROM schedule s
+           LEFT JOIN subjects sub ON sub.id = s.subject_id`
+        )
+        .all()
+      const insert = db.prepare(
+        'INSERT INTO schedules (classroom_id, day_of_week, period, subject_code, subject_name, class_level, room) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      )
+      const tx = db.transaction(() => {
+        oldRows.forEach((r) =>
+          insert.run(
+            r.classroom_id,
+            r.day_of_week,
+            r.period,
+            r.subject_code,
+            r.subject_name,
+            r.class_level,
+            r.room
+          )
+        )
+      })
+      tx()
+      db.exec('DROP TABLE schedule')
+      log.info(`[Migration] Migrated ${oldRows.length} schedule rows → schedules`)
+    }
+  } catch (error) {
+    log.warn('[Migration] schedule → schedules failed:', error)
+  }
+}
+
 function initDatabase() {
   try {
     const Database = require('better-sqlite3')
-    const dbPath = isDev
+    dbPath = isDev
       ? path.join(process.cwd(), 'school.db')
       : path.join(app.getPath('userData'), 'school.db')
 
     log.info('[DB] Opening:', dbPath)
     db = new Database(dbPath)
+    db.pragma('journal_mode = WAL')
+    db.pragma('foreign_keys = ON')
 
+    // CREATE TABLE schema — ตรงกับ src/lib/db.ts (unified schema)
     db.exec(`
       CREATE TABLE IF NOT EXISTS classrooms (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         level TEXT NOT NULL,
         academic_year TEXT NOT NULL,
+        color TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
 
       CREATE TABLE IF NOT EXISTS students (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         student_id TEXT UNIQUE NOT NULL,
+        national_id TEXT,
+        student_number TEXT,
+        title TEXT,
         first_name TEXT NOT NULL,
         last_name TEXT NOT NULL,
         classroom_id INTEGER NOT NULL,
-        gender TEXT NOT NULL,
+        classroom_label TEXT,
+        gender TEXT NOT NULL DEFAULT '',
         birth_date TEXT,
+        age_years TEXT,
+        weight_kg REAL,
+        height_cm REAL,
+        house_no TEXT,
+        village_no TEXT,
+        guardian_title TEXT,
+        guardian_first_name TEXT,
+        guardian_last_name TEXT,
+        guardian_occupation TEXT,
+        guardian_relation TEXT,
+        father_title TEXT,
+        father_first_name TEXT,
+        father_last_name TEXT,
+        father_occupation TEXT,
+        mother_title TEXT,
+        mother_first_name TEXT,
+        mother_last_name TEXT,
+        mother_occupation TEXT,
+        disadvantage TEXT,
+        source_payload TEXT,
         is_active INTEGER DEFAULT 1,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (classroom_id) REFERENCES classrooms(id)
@@ -253,31 +458,35 @@ function initDatabase() {
       CREATE TABLE IF NOT EXISTS attendance (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         student_id INTEGER NOT NULL,
+        classroom_id INTEGER NOT NULL,
         date TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'มา',
-        note TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        note TEXT DEFAULT '',
         FOREIGN KEY (student_id) REFERENCES students(id)
       );
 
       CREATE TABLE IF NOT EXISTS health_check (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         student_id INTEGER NOT NULL,
+        classroom_id INTEGER NOT NULL,
         date TEXT NOT NULL,
         brushed_teeth INTEGER DEFAULT 0,
         drank_milk INTEGER DEFAULT 0,
-        note TEXT,
+        weight_kg REAL,
+        height_cm REAL,
         FOREIGN KEY (student_id) REFERENCES students(id)
       );
 
       CREATE TABLE IF NOT EXISTS grades (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         student_id INTEGER NOT NULL,
-        subject TEXT NOT NULL,
+        classroom_id INTEGER NOT NULL,
+        subject_code TEXT NOT NULL,
+        score REAL NOT NULL DEFAULT 0,
+        midterm_score REAL DEFAULT 0,
+        final_score REAL DEFAULT 0,
         semester INTEGER NOT NULL,
         academic_year TEXT NOT NULL,
-        score REAL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (student_id) REFERENCES students(id)
       );
 
@@ -288,27 +497,96 @@ function initDatabase() {
         color TEXT NOT NULL
       );
 
-      CREATE TABLE IF NOT EXISTS schedule (
+      CREATE TABLE IF NOT EXISTS schedules (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         classroom_id INTEGER NOT NULL,
         day_of_week INTEGER NOT NULL,
         period INTEGER NOT NULL,
-        subject_id INTEGER,
-        teacher_name TEXT,
-        FOREIGN KEY (classroom_id) REFERENCES classrooms(id),
-        FOREIGN KEY (subject_id) REFERENCES subjects(id)
+        subject_code TEXT NOT NULL DEFAULT '',
+        subject_name TEXT NOT NULL DEFAULT '',
+        class_level TEXT NOT NULL DEFAULT '',
+        room TEXT NOT NULL DEFAULT '',
+        FOREIGN KEY (classroom_id) REFERENCES classrooms(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS student_notes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_id INTEGER NOT NULL,
+        date TEXT NOT NULL,
+        note TEXT NOT NULL DEFAULT '',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (student_id) REFERENCES students(id)
       );
 
       CREATE INDEX IF NOT EXISTS idx_students_classroom_id ON students(classroom_id);
       CREATE INDEX IF NOT EXISTS idx_students_is_active ON students(is_active);
       CREATE INDEX IF NOT EXISTS idx_attendance_student_date ON attendance(student_id, date);
-      CREATE INDEX IF NOT EXISTS idx_health_student_date ON health_check(student_id, date);
-      CREATE INDEX IF NOT EXISTS idx_grades_student_semester_year ON grades(student_id, semester, academic_year);
-      CREATE INDEX IF NOT EXISTS idx_schedule_classroom_dow_period ON schedule(classroom_id, day_of_week, period);
+      CREATE INDEX IF NOT EXISTS idx_attendance_classroom_date ON attendance(classroom_id, date);
+      CREATE INDEX IF NOT EXISTS idx_health_classroom_date ON health_check(classroom_id, date);
+      CREATE INDEX IF NOT EXISTS idx_grades_classroom ON grades(classroom_id, semester, academic_year);
+      CREATE INDEX IF NOT EXISTS idx_schedules_classroom ON schedules(classroom_id);
+      CREATE INDEX IF NOT EXISTS idx_student_notes_student ON student_notes(student_id, date DESC);
+
+      -- Sprint 3: คะแนนเก็บระหว่างภาค
+      CREATE TABLE IF NOT EXISTS grade_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        classroom_id INTEGER NOT NULL,
+        subject_code TEXT NOT NULL,
+        semester INTEGER NOT NULL,
+        academic_year TEXT NOT NULL,
+        item_name TEXT NOT NULL,
+        full_score REAL NOT NULL DEFAULT 10,
+        weight REAL NOT NULL DEFAULT 1,
+        category TEXT NOT NULL DEFAULT 'formative',
+        display_order INTEGER NOT NULL DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (classroom_id) REFERENCES classrooms(id)
+      );
+
+      CREATE TABLE IF NOT EXISTS grade_item_scores (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        grade_item_id INTEGER NOT NULL,
+        student_id INTEGER NOT NULL,
+        score REAL,
+        note TEXT DEFAULT '',
+        UNIQUE(grade_item_id, student_id),
+        FOREIGN KEY (grade_item_id) REFERENCES grade_items(id) ON DELETE CASCADE,
+        FOREIGN KEY (student_id) REFERENCES students(id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_grade_items_classroom ON grade_items(classroom_id, subject_code, semester, academic_year);
+      CREATE INDEX IF NOT EXISTS idx_grade_item_scores_item ON grade_item_scores(grade_item_id);
+
+      -- Sprint 3: คุณลักษณะอันพึงประสงค์ + อ่าน/คิด/เขียน
+      CREATE TABLE IF NOT EXISTS student_evaluations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        student_id INTEGER NOT NULL,
+        classroom_id INTEGER NOT NULL,
+        semester INTEGER NOT NULL,
+        academic_year TEXT NOT NULL,
+        category TEXT NOT NULL,
+        item_code TEXT NOT NULL,
+        level INTEGER NOT NULL,
+        note TEXT DEFAULT '',
+        UNIQUE(student_id, semester, academic_year, item_code),
+        FOREIGN KEY (student_id) REFERENCES students(id),
+        FOREIGN KEY (classroom_id) REFERENCES classrooms(id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_evaluations_classroom ON student_evaluations(classroom_id, semester, academic_year);
+      CREATE INDEX IF NOT EXISTS idx_evaluations_student ON student_evaluations(student_id, semester, academic_year);
     `)
 
+    // legacy column migrations (สำหรับ schema เดิมของ Electron) — ทำหลัง CREATE TABLE IF NOT EXISTS
     ensureColumns('students', STUDENT_EXTRA_COLUMNS)
+    ensureColumns('classrooms', [
+      { name: 'color', definition: 'TEXT' },
+      { name: 'archived_at', definition: 'DATETIME' },
+    ])
     db.exec('CREATE INDEX IF NOT EXISTS idx_students_student_number ON students(student_number)')
+
+    // Migration ของ schema เก่า (DB ที่ user เคยใช้ Electron version เก่า)
+    migrateLegacySchema()
 
     const subjectCount = db.prepare('SELECT COUNT(*) AS count FROM subjects').get()
     if (subjectCount.count === 0) {
@@ -332,6 +610,147 @@ function initDatabase() {
   } catch (error) {
     log.error('[DB] Init error:', error)
     return false
+  }
+}
+
+// ─── Auto-backup System ──────────────────────────────────────────────
+// ก๊อปปี้ไฟล์ school.db ไปเก็บเป็น backups/school_YYYY-MM-DD.db ทุกครั้งที่เปิดแอป
+// เก็บย้อนหลัง 30 วันล่าสุด (ลบอันเก่ากว่านั้นอัตโนมัติ)
+
+const BACKUP_RETENTION_DAYS = 30
+// ไฟล์ daily backup รูปแบบ school_YYYY-MM-DD.db
+const BACKUP_FILE_PATTERN = /^school_\d{4}-\d{2}-\d{2}\.db$/
+// ไฟล์ snapshot ก่อน destructive op รูปแบบ school_before_<reason>_YYYYMMDD_HHMMSS.db
+const SNAPSHOT_FILE_PATTERN = /^school_before_[a-z_]+_\d{8}_\d{6}\.db$/
+// รวมทุก backup file ที่จะให้ผู้ใช้กู้คืนได้
+const ALL_BACKUP_PATTERN = new RegExp(
+  `${BACKUP_FILE_PATTERN.source.slice(1, -1)}|${SNAPSHOT_FILE_PATTERN.source.slice(1, -1)}`
+)
+
+function getBackupDir() {
+  if (!dbPath) return null
+  return path.join(path.dirname(dbPath), 'backups')
+}
+
+function getBackupFiles() {
+  const dir = getBackupDir()
+  if (!dir || !fs.existsSync(dir)) return []
+  try {
+    return fs
+      .readdirSync(dir)
+      .filter((f) => BACKUP_FILE_PATTERN.test(f))
+      .sort() // YYYY-MM-DD ทำให้เรียงจากเก่าไปใหม่ตาม string sort ได้เลย
+      .reverse() // ใหม่สุดไว้หัว
+  } catch (error) {
+    log.error('[Backup] Failed to read backup dir:', error)
+    return []
+  }
+}
+
+function localDateString() {
+  // ใช้เวลาท้องถิ่น (ไม่ใช่ UTC) เพื่อให้ "วันนี้" ของครูตรงกับเวลาไทย
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = String(now.getMonth() + 1).padStart(2, '0')
+  const d = String(now.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+// สร้าง snapshot ของ DB ปัจจุบัน เก็บลง backups/<prefix>_<timestamp>.db
+// ใช้ก่อนทำ destructive operation (restore / clear-all / delete-classroom)
+// คืน path ของไฟล์ที่สร้าง หรือ null ถ้าสร้างไม่ได้
+function createSnapshot(prefix) {
+  try {
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      log.warn('[Backup] DB file not found, cannot snapshot')
+      return null
+    }
+    const backupDir = getBackupDir()
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true })
+    }
+    // timestamp format: YYYYMMDD_HHMMSS (เรียง sort ได้)
+    const now = new Date()
+    const ts =
+      `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}` +
+      `_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`
+    const fileName = `${prefix}_${ts}.db`
+    const fullPath = path.join(backupDir, fileName)
+    fs.copyFileSync(dbPath, fullPath)
+    log.info('[Backup] Snapshot created:', fileName)
+    return fullPath
+  } catch (error) {
+    log.error('[Backup] createSnapshot failed:', error)
+    return null
+  }
+}
+
+// Auto-purge: ลบนักเรียนใน trash ที่เก่ากว่า 30 วันถาวร
+function autoPurgeOldTrash() {
+  try {
+    if (!db) return
+    const cutoff = new Date()
+    cutoff.setDate(cutoff.getDate() - 30)
+    const cutoffStr = cutoff.toISOString().slice(0, 19).replace('T', ' ')
+    const ids = db
+      .prepare(
+        "SELECT id FROM students WHERE is_active = 0 AND deleted_at IS NOT NULL AND deleted_at < ?"
+      )
+      .all(cutoffStr)
+      .map((r) => r.id)
+    if (ids.length === 0) return
+    const placeholders = ids.map(() => '?').join(',')
+    const tx = db.transaction(() => {
+      db.prepare(`DELETE FROM student_notes WHERE student_id IN (${placeholders})`).run(...ids)
+      db.prepare(`DELETE FROM attendance WHERE student_id IN (${placeholders})`).run(...ids)
+      db.prepare(`DELETE FROM grades WHERE student_id IN (${placeholders})`).run(...ids)
+      db.prepare(`DELETE FROM health_check WHERE student_id IN (${placeholders})`).run(...ids)
+      db.prepare(`DELETE FROM students WHERE id IN (${placeholders})`).run(...ids)
+    })
+    tx()
+    log.info(`[Trash] Auto-purged ${ids.length} old students (>30 days)`)
+  } catch (error) {
+    log.error('[Trash] autoPurgeOldTrash failed:', error)
+  }
+}
+
+function runDailyBackup() {
+  try {
+    if (!dbPath || !fs.existsSync(dbPath)) {
+      log.warn('[Backup] DB file not found, skipping backup')
+      return
+    }
+
+    const backupDir = getBackupDir()
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true })
+      log.info('[Backup] Created backup directory:', backupDir)
+    }
+
+    const today = localDateString()
+    const todayFile = path.join(backupDir, `school_${today}.db`)
+
+    // ถ้ามีไฟล์ของวันนี้แล้ว แปลว่า backup ไปแล้ว (เปิดแอปรอบที่ 2 ในวันเดียวกัน) ข้าม
+    if (!fs.existsSync(todayFile)) {
+      fs.copyFileSync(dbPath, todayFile)
+      log.info('[Backup] Created daily backup:', todayFile)
+    } else {
+      log.info('[Backup] Today backup already exists, skipping')
+    }
+
+    // ลบไฟล์เก่ากว่า 30 วัน
+    const files = getBackupFiles()
+    const toDelete = files.slice(BACKUP_RETENTION_DAYS)
+    toDelete.forEach((fileName) => {
+      try {
+        fs.unlinkSync(path.join(backupDir, fileName))
+        log.info('[Backup] Deleted old backup:', fileName)
+      } catch (error) {
+        log.warn('[Backup] Failed to delete old backup:', fileName, error)
+      }
+    })
+  } catch (error) {
+    log.error('[Backup] runDailyBackup failed:', error)
   }
 }
 
@@ -361,7 +780,10 @@ function createWindow() {
     mainWindow.loadURL('http://localhost:3000')
     mainWindow.webContents.openDevTools()
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../.next/server/pages/index.html'))
+    // Packaging: ต้อง build ด้วย Next.js static export (`output: 'export'` ใน next.config.js)
+    // ทำให้ Next.js สร้างไฟล์ลง /out/ — Electron โหลด index.html ตรงๆ
+    // หลัง build แล้ว /api/* จะใช้งานไม่ได้ — ทุก data flow ต้องผ่าน IPC (electronAPI)
+    mainWindow.loadFile(path.join(__dirname, '../out/index.html'))
   }
 
   mainWindow.on('closed', () => {
@@ -376,13 +798,226 @@ function setupIpcHandlers() {
         SELECT c.*, COUNT(s.id) AS student_count
         FROM classrooms c
         LEFT JOIN students s ON s.classroom_id = c.id AND s.is_active = 1
+        WHERE c.archived_at IS NULL
         GROUP BY c.id
         ORDER BY c.name
       `)
       .all()
   })
 
-  ipcMain.handle('create-classroom', (event, { name, level, academic_year }) => {
+  ipcMain.handle('get-archived-classrooms', () => {
+    return db
+      .prepare(`
+        SELECT c.*, COUNT(s.id) AS student_count
+        FROM classrooms c
+        LEFT JOIN students s ON s.classroom_id = c.id AND s.is_active = 1
+        WHERE c.archived_at IS NOT NULL
+        GROUP BY c.id
+        ORDER BY c.archived_at DESC
+      `)
+      .all()
+  })
+
+  ipcMain.handle('archive-classroom', (event, id) => {
+    try {
+      db.prepare('UPDATE classrooms SET archived_at = CURRENT_TIMESTAMP WHERE id = ?').run(Number(id))
+      return { success: true }
+    } catch (error) {
+      log.error('[archive-classroom] failed:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('unarchive-classroom', (event, id) => {
+    try {
+      db.prepare('UPDATE classrooms SET archived_at = NULL WHERE id = ?').run(Number(id))
+      return { success: true }
+    } catch (error) {
+      log.error('[unarchive-classroom] failed:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('promote-students', (event, { fromClassroomId, toClassroomId }) => {
+    try {
+      const classroom = db
+        .prepare('SELECT name FROM classrooms WHERE id = ?')
+        .get(Number(toClassroomId))
+      if (!classroom) return { success: false, moved: 0, error: 'ไม่พบห้องปลายทาง' }
+      const result = db
+        .prepare(
+          `UPDATE students
+           SET classroom_id = ?, classroom_label = ?
+           WHERE classroom_id = ? AND is_active = 1`
+        )
+        .run(Number(toClassroomId), classroom.name, Number(fromClassroomId))
+      return { success: true, moved: Number(result.changes) || 0 }
+    } catch (error) {
+      log.error('[promote-students] failed:', error)
+      return { success: false, moved: 0, error: error.message }
+    }
+  })
+
+  // ─── Sprint 3: Grade Items (คะแนนเก็บ) ────────────────────
+  ipcMain.handle('get-grade-items', (event, { classroom, subjectCode, semester, year }) => {
+    return db
+      .prepare(
+        `SELECT id, classroom_id, subject_code, semester, academic_year, item_name,
+                full_score, weight, category, display_order, created_at
+         FROM grade_items
+         WHERE classroom_id = ? AND subject_code = ? AND semester = ? AND academic_year = ?
+         ORDER BY display_order, id`
+      )
+      .all(Number(classroom), String(subjectCode), Number(semester), String(year))
+  })
+
+  ipcMain.handle('create-grade-item', (event, item) => {
+    try {
+      const result = db
+        .prepare(
+          `INSERT INTO grade_items
+           (classroom_id, subject_code, semester, academic_year, item_name, full_score, weight, category, display_order)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          Number(item.classroom_id),
+          String(item.subject_code),
+          Number(item.semester),
+          String(item.academic_year),
+          String(item.item_name),
+          Number(item.full_score) || 10,
+          Number(item.weight) || 1,
+          String(item.category || 'formative'),
+          Number(item.display_order) || 0
+        )
+      return db.prepare('SELECT * FROM grade_items WHERE id = ?').get(result.lastInsertRowid)
+    } catch (error) {
+      log.error('[create-grade-item] failed:', error)
+      throw error
+    }
+  })
+
+  ipcMain.handle('update-grade-item', (event, { id, ...data }) => {
+    try {
+      const current = db.prepare('SELECT * FROM grade_items WHERE id = ?').get(Number(id))
+      if (!current) return { success: false, error: 'ไม่พบชิ้นงาน' }
+      db.prepare(
+        `UPDATE grade_items
+         SET item_name = ?, full_score = ?, weight = ?, category = ?, display_order = ?
+         WHERE id = ?`
+      ).run(
+        data.item_name ?? current.item_name,
+        data.full_score ?? current.full_score,
+        data.weight ?? current.weight,
+        data.category ?? current.category,
+        data.display_order ?? current.display_order,
+        Number(id)
+      )
+      return { success: true }
+    } catch (error) {
+      log.error('[update-grade-item] failed:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('delete-grade-item', (event, id) => {
+    try {
+      const tx = db.transaction(() => {
+        db.prepare('DELETE FROM grade_item_scores WHERE grade_item_id = ?').run(Number(id))
+        db.prepare('DELETE FROM grade_items WHERE id = ?').run(Number(id))
+      })
+      tx()
+      return { success: true }
+    } catch (error) {
+      log.error('[delete-grade-item] failed:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('get-grade-item-scores', (event, itemId) => {
+    return db
+      .prepare(
+        `SELECT id, grade_item_id, student_id, score, note
+         FROM grade_item_scores WHERE grade_item_id = ?`
+      )
+      .all(Number(itemId))
+  })
+
+  ipcMain.handle('get-all-grade-item-scores', (event, { classroom, subjectCode, semester, year }) => {
+    return db
+      .prepare(
+        `SELECT s.id, s.grade_item_id, s.student_id, s.score, s.note
+         FROM grade_item_scores s
+         INNER JOIN grade_items gi ON gi.id = s.grade_item_id
+         WHERE gi.classroom_id = ? AND gi.subject_code = ?
+           AND gi.semester = ? AND gi.academic_year = ?`
+      )
+      .all(Number(classroom), String(subjectCode), Number(semester), String(year))
+  })
+
+  ipcMain.handle('save-grade-item-scores', (event, { itemId, scores }) => {
+    try {
+      const tx = db.transaction(() => {
+        db.prepare('DELETE FROM grade_item_scores WHERE grade_item_id = ?').run(Number(itemId))
+        const insert = db.prepare(
+          'INSERT INTO grade_item_scores (grade_item_id, student_id, score, note) VALUES (?, ?, ?, ?)'
+        )
+        for (const s of scores || []) {
+          if (s.score === null || s.score === undefined || s.score === '') continue
+          insert.run(Number(itemId), Number(s.student_id), Number(s.score), String(s.note || ''))
+        }
+      })
+      tx()
+      return { success: true }
+    } catch (error) {
+      log.error('[save-grade-item-scores] failed:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ─── Sprint 3: Evaluations (คุณลักษณะ + อ่าน/คิด/เขียน) ──
+  ipcMain.handle('get-evaluations', (event, { classroom, semester, year }) => {
+    return db
+      .prepare(
+        `SELECT id, student_id, classroom_id, semester, academic_year, category, item_code, level, note
+         FROM student_evaluations
+         WHERE classroom_id = ? AND semester = ? AND academic_year = ?`
+      )
+      .all(Number(classroom), Number(semester), String(year))
+  })
+
+  ipcMain.handle('save-evaluations', (event, { classroom, semester, year, evaluations }) => {
+    try {
+      const tx = db.transaction(() => {
+        const upsert = db.prepare(
+          `INSERT INTO student_evaluations
+           (student_id, classroom_id, semester, academic_year, category, item_code, level, note)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(student_id, semester, academic_year, item_code)
+           DO UPDATE SET level = excluded.level, note = excluded.note, category = excluded.category`
+        )
+        for (const e of evaluations || []) {
+          upsert.run(
+            Number(e.student_id),
+            Number(classroom),
+            Number(semester),
+            String(year),
+            String(e.category),
+            String(e.item_code),
+            Number(e.level),
+            String(e.note || '')
+          )
+        }
+      })
+      tx()
+      return { success: true }
+    } catch (error) {
+      log.error('[save-evaluations] failed:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('create-classroom', (event, { name, level, academic_year, color }) => {
     const normalizedName = textOrNull(name)
     if (!normalizedName) {
       throw new Error('Missing classroom name')
@@ -394,27 +1029,34 @@ function setupIpcHandlers() {
     }
 
     const result = db
-      .prepare('INSERT INTO classrooms (name, level, academic_year) VALUES (?, ?, ?)')
-      .run(normalizedName, textOrNull(level) || 'ห้องเรียน', textOrNull(academic_year) || currentAcademicYear())
+      .prepare('INSERT INTO classrooms (name, level, academic_year, color) VALUES (?, ?, ?, ?)')
+      .run(normalizedName, textOrNull(level) || 'ห้องเรียน', textOrNull(academic_year) || currentAcademicYear(), textOrNull(color))
 
     return {
       id: Number(result.lastInsertRowid),
       name: normalizedName,
       level: textOrNull(level) || 'ห้องเรียน',
       academic_year: textOrNull(academic_year) || currentAcademicYear(),
+      color: textOrNull(color),
     }
   })
 
-  ipcMain.handle('update-classroom', (event, { id, name, level, academic_year }) => {
+  ipcMain.handle('update-classroom', (event, { id, name, level, academic_year, color }) => {
     const normalizedName = textOrNull(name)
     if (!id || !normalizedName) {
       throw new Error('Missing classroom data')
     }
 
-    db.prepare('UPDATE classrooms SET name = ?, level = ?, academic_year = ? WHERE id = ?').run(
+    // preserve color เมื่อ color undefined (ไม่ได้ส่งมา) — ดึงจาก DB เดิม
+    const current = db.prepare('SELECT color FROM classrooms WHERE id = ?').get(id)
+    const newColor =
+      color === undefined ? (current ? current.color : null) : (textOrNull(color) || null)
+
+    db.prepare('UPDATE classrooms SET name = ?, level = ?, academic_year = ?, color = ? WHERE id = ?').run(
       normalizedName,
       textOrNull(level) || 'ห้องเรียน',
       textOrNull(academic_year) || currentAcademicYear(),
+      newColor,
       id
     )
     db.prepare('UPDATE students SET classroom_label = ? WHERE classroom_id = ?').run(normalizedName, id)
@@ -423,12 +1065,27 @@ function setupIpcHandlers() {
   })
 
   ipcMain.handle('delete-classroom', (event, id) => {
-    db.prepare('DELETE FROM attendance WHERE student_id IN (SELECT id FROM students WHERE classroom_id = ?)').run(id)
-    db.prepare('DELETE FROM health_check WHERE student_id IN (SELECT id FROM students WHERE classroom_id = ?)').run(id)
-    db.prepare('DELETE FROM grades WHERE student_id IN (SELECT id FROM students WHERE classroom_id = ?)').run(id)
-    db.prepare('DELETE FROM students WHERE classroom_id = ?').run(id)
-    db.prepare('DELETE FROM schedule WHERE classroom_id = ?').run(id)
-    db.prepare('DELETE FROM classrooms WHERE id = ?').run(id)
+    // สร้าง snapshot ก่อนลบ — ถ้าครูเผลอลบจะกู้คืนได้
+    createSnapshot('school_before_delete_classroom')
+    // ใช้ transaction — atomic, rollback ถ้าขั้นใดล้มเหลว
+    const tx = db.transaction(() => {
+      const studentIds = db
+        .prepare('SELECT id FROM students WHERE classroom_id = ?')
+        .all(id)
+        .map((r) => r.id)
+
+      if (studentIds.length > 0) {
+        const placeholders = studentIds.map(() => '?').join(',')
+        db.prepare(`DELETE FROM student_notes WHERE student_id IN (${placeholders})`).run(...studentIds)
+        db.prepare(`DELETE FROM attendance WHERE student_id IN (${placeholders})`).run(...studentIds)
+        db.prepare(`DELETE FROM health_check WHERE student_id IN (${placeholders})`).run(...studentIds)
+        db.prepare(`DELETE FROM grades WHERE student_id IN (${placeholders})`).run(...studentIds)
+      }
+      db.prepare('DELETE FROM students WHERE classroom_id = ?').run(id)
+      db.prepare('DELETE FROM schedules WHERE classroom_id = ?').run(id)
+      db.prepare('DELETE FROM classrooms WHERE id = ?').run(id)
+    })
+    tx()
     return { success: true }
   })
 
@@ -506,14 +1163,38 @@ function setupIpcHandlers() {
   })
 
   ipcMain.handle('delete-student', (event, id) => {
-    db.prepare('UPDATE students SET is_active = 0 WHERE id = ?').run(id)
+    db.prepare(
+      'UPDATE students SET is_active = 0, deleted_at = CURRENT_TIMESTAMP WHERE id = ?'
+    ).run(id)
+    return { success: true }
+  })
+
+  // Student Notes (บันทึกประจำตัวนักเรียน)
+  ipcMain.handle('get-student-notes', (event, studentId) => {
+    return db
+      .prepare(
+        'SELECT id, student_id, date, note, created_at FROM student_notes WHERE student_id = ? ORDER BY date DESC, id DESC'
+      )
+      .all(Number(studentId))
+  })
+
+  ipcMain.handle('add-student-note', (event, { student_id, date, note }) => {
+    const result = db
+      .prepare('INSERT INTO student_notes (student_id, date, note) VALUES (?, ?, ?)')
+      .run(Number(student_id), String(date), String(note || '').trim())
+    return db.prepare('SELECT * FROM student_notes WHERE id = ?').get(result.lastInsertRowid)
+  })
+
+  ipcMain.handle('delete-student-note', (event, id) => {
+    db.prepare('DELETE FROM student_notes WHERE id = ?').run(Number(id))
     return { success: true }
   })
 
   ipcMain.handle('get-attendance', (event, { date, classroom }) => {
     return db
       .prepare(`
-        SELECT s.id, s.student_id, s.student_number, s.title, s.first_name, s.last_name, a.status, a.note
+        SELECT s.id, s.student_id, s.student_number, s.title, s.first_name, s.last_name,
+               s.photo_path, s.guardian_phone, a.status, a.note
         FROM students s
         LEFT JOIN attendance a ON a.student_id = s.id AND a.date = ?
         WHERE s.classroom_id = ? AND s.is_active = 1
@@ -527,34 +1208,51 @@ function setupIpcHandlers() {
       }))
   })
 
+  ipcMain.handle('get-attendance-dates', (event, { classroom, yearMonth }) => {
+    return db
+      .prepare('SELECT DISTINCT date FROM attendance WHERE classroom_id = ? AND date LIKE ?')
+      .all(classroom, `${yearMonth}%`)
+      .map((row) => row.date)
+  })
+
   ipcMain.handle('save-attendance', (event, { date, classroom, attendance = {}, health = {} }) => {
-    db.prepare(
-      'DELETE FROM attendance WHERE date = ? AND student_id IN (SELECT id FROM students WHERE classroom_id = ?)'
-    ).run(date, classroom)
-    db.prepare(
-      'DELETE FROM health_check WHERE date = ? AND student_id IN (SELECT id FROM students WHERE classroom_id = ?)'
-    ).run(date, classroom)
+    const tx = db.transaction(() => {
+      // Attendance — DELETE+INSERT ใช้ classroom_id ตรงๆ (เร็วและตรงกว่า)
+      db.prepare('DELETE FROM attendance WHERE classroom_id = ? AND date = ?').run(classroom, date)
 
-    const insertAttendance = db.prepare(
-      'INSERT INTO attendance (student_id, date, status, note) VALUES (?, ?, ?, ?)'
-    )
-    const insertHealth = db.prepare(
-      'INSERT INTO health_check (student_id, date, brushed_teeth, drank_milk, note) VALUES (?, ?, ?, ?, ?)'
-    )
-
-    Object.entries(attendance).forEach(([studentId, entry]) => {
-      insertAttendance.run(Number(studentId), date, entry.status || 'มา', entry.note || '')
-    })
-
-    Object.entries(health).forEach(([studentId, entry]) => {
-      insertHealth.run(
-        Number(studentId),
-        date,
-        entry.brushed_teeth ? 1 : 0,
-        entry.drank_milk ? 1 : 0,
-        entry.note || ''
+      const insertAttendance = db.prepare(
+        'INSERT INTO attendance (student_id, classroom_id, date, status, note) VALUES (?, ?, ?, ?, ?)'
       )
+      Object.entries(attendance).forEach(([studentId, entry]) => {
+        insertAttendance.run(
+          Number(studentId),
+          classroom,
+          date,
+          entry.status || 'มา',
+          entry.note || ''
+        )
+      })
+
+      // Health — บันทึกเฉพาะกรณีที่ส่งมา (อย่าลบทิ้งถ้า empty object)
+      if (Object.keys(health).length > 0) {
+        db.prepare('DELETE FROM health_check WHERE classroom_id = ? AND date = ?').run(classroom, date)
+        const insertHealth = db.prepare(
+          'INSERT INTO health_check (student_id, classroom_id, date, brushed_teeth, drank_milk, weight_kg, height_cm) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        )
+        Object.entries(health).forEach(([studentId, entry]) => {
+          insertHealth.run(
+            Number(studentId),
+            classroom,
+            date,
+            entry.brushed_teeth ? 1 : 0,
+            entry.drank_milk ? 1 : 0,
+            entry.weight_kg ?? null,
+            entry.height_cm ?? null
+          )
+        })
+      }
     })
+    tx()
 
     return { success: true }
   })
@@ -562,7 +1260,8 @@ function setupIpcHandlers() {
   ipcMain.handle('get-grades', (event, { classroom, semester, year }) => {
     return db
       .prepare(`
-        SELECT s.id, s.student_id, s.first_name, s.last_name, g.subject, g.score
+        SELECT s.id, s.student_id, s.first_name, s.last_name,
+               g.subject_code, g.score, g.midterm_score, g.final_score
         FROM students s
         LEFT JOIN grades g ON g.student_id = s.id AND g.semester = ? AND g.academic_year = ?
         WHERE s.classroom_id = ? AND s.is_active = 1
@@ -571,48 +1270,202 @@ function setupIpcHandlers() {
       .all(semester, year, classroom)
   })
 
-  ipcMain.handle('save-grades', (event, { semester, year, grades }) => {
-    const deleteByStudent = db.prepare('DELETE FROM grades WHERE student_id = ? AND semester = ? AND academic_year = ?')
-    const insertGrade = db.prepare(
-      'INSERT INTO grades (student_id, subject, semester, academic_year, score) VALUES (?, ?, ?, ?, ?)'
-    )
+  ipcMain.handle('save-grades', (event, { classroom, semester, year, grades }) => {
+    const tx = db.transaction(() => {
+      const deleteByStudent = db.prepare(
+        'DELETE FROM grades WHERE student_id = ? AND semester = ? AND academic_year = ?'
+      )
+      const insertGrade = db.prepare(
+        'INSERT INTO grades (student_id, classroom_id, subject_code, semester, academic_year, score, midterm_score, final_score) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+      )
 
-    Object.entries(grades).forEach(([studentId, subjectMap]) => {
-      deleteByStudent.run(Number(studentId), semester, year)
-      Object.entries(subjectMap).forEach(([subject, score]) => {
-        if (score !== null && score !== undefined && score !== '') {
-          insertGrade.run(Number(studentId), subject, semester, year, score)
-        }
+      Object.entries(grades).forEach(([studentId, subjectMap]) => {
+        deleteByStudent.run(Number(studentId), semester, year)
+        Object.entries(subjectMap).forEach(([subjectCode, entry]) => {
+          const midterm =
+            entry && typeof entry === 'object' ? entry.midterm || 0 : Number(entry) || 0
+          const final_ = entry && typeof entry === 'object' ? entry.final || 0 : 0
+          const score = midterm + final_
+          if (score > 0 || midterm > 0 || final_ > 0) {
+            insertGrade.run(
+              Number(studentId),
+              classroom,
+              subjectCode,
+              semester,
+              year,
+              score,
+              midterm,
+              final_
+            )
+          }
+        })
       })
     })
+    tx()
 
     return { success: true }
   })
 
   ipcMain.handle('get-schedule', (event, classroom) => {
     return db
-      .prepare(`
-        SELECT s.*, sub.name AS subject_name, sub.color AS subject_color
-        FROM schedule s
-        LEFT JOIN subjects sub ON sub.id = s.subject_id
-        WHERE s.classroom_id = ?
-        ORDER BY s.day_of_week, s.period
-      `)
+      .prepare(
+        `SELECT classroom_id, day_of_week, period, subject_code, subject_name, class_level, room
+         FROM schedules
+         WHERE classroom_id = ?
+         ORDER BY day_of_week, period`
+      )
       .all(classroom)
   })
 
   ipcMain.handle('save-schedule', (event, { classroom, schedule }) => {
-    db.prepare('DELETE FROM schedule WHERE classroom_id = ?').run(classroom)
-    const insertSchedule = db.prepare(
-      'INSERT INTO schedule (classroom_id, day_of_week, period, subject_id, teacher_name) VALUES (?, ?, ?, ?, ?)'
-    )
+    const tx = db.transaction(() => {
+      db.prepare('DELETE FROM schedules WHERE classroom_id = ?').run(classroom)
+      const insertSchedule = db.prepare(
+        'INSERT INTO schedules (classroom_id, day_of_week, period, subject_code, subject_name, class_level, room) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      )
 
-    Object.entries(schedule).forEach(([key, entry]) => {
-      const [day, period] = key.split('-').map(Number)
-      insertSchedule.run(classroom, day, period, entry.subject_id || null, entry.teacher_name || '')
+      Object.entries(schedule).forEach(([key, entry]) => {
+        const [day, period] = key.split('-').map(Number)
+        insertSchedule.run(
+          classroom,
+          day,
+          period,
+          entry.subject_code || '',
+          entry.subject_name || '',
+          entry.class_level || '',
+          entry.room || ''
+        )
+      })
     })
+    tx()
 
     return { success: true }
+  })
+
+  // ─── Health Check (สุขภาพประจำวัน) ───────────────────────
+  ipcMain.handle('get-health', (event, { classroom, date }) => {
+    return db
+      .prepare(
+        `SELECT student_id, classroom_id, date, brushed_teeth, drank_milk, weight_kg, height_cm
+         FROM health_check
+         WHERE classroom_id = ? AND date = ?`
+      )
+      .all(classroom, date)
+      .map((row) => ({
+        student_id: row.student_id,
+        classroom_id: row.classroom_id,
+        date: row.date,
+        brushed_teeth: !!row.brushed_teeth,
+        drank_milk: !!row.drank_milk,
+        weight_kg: row.weight_kg,
+        height_cm: row.height_cm,
+      }))
+  })
+
+  ipcMain.handle('save-health', (event, { classroom, date, entries }) => {
+    const tx = db.transaction(() => {
+      db.prepare('DELETE FROM health_check WHERE classroom_id = ? AND date = ?').run(classroom, date)
+      const insert = db.prepare(
+        'INSERT INTO health_check (student_id, classroom_id, date, brushed_teeth, drank_milk, weight_kg, height_cm) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      )
+      for (const entry of entries || []) {
+        insert.run(
+          Number(entry.student_id),
+          classroom,
+          date,
+          entry.brushed_teeth ? 1 : 0,
+          entry.drank_milk ? 1 : 0,
+          entry.weight_kg ?? null,
+          entry.height_cm ?? null
+        )
+      }
+    })
+    tx()
+    return { success: true }
+  })
+
+  ipcMain.handle('get-all-health', (event, classroomId) => {
+    return db
+      .prepare(
+        `SELECT h.student_id, h.classroom_id, h.date, h.brushed_teeth, h.drank_milk, h.weight_kg, h.height_cm
+         FROM health_check h
+         INNER JOIN students s ON s.id = h.student_id
+         WHERE s.classroom_id = ? AND s.is_active = 1`
+      )
+      .all(classroomId)
+      .map((row) => ({
+        student_id: row.student_id,
+        classroom_id: row.classroom_id,
+        date: row.date,
+        brushed_teeth: !!row.brushed_teeth,
+        drank_milk: !!row.drank_milk,
+        weight_kg: row.weight_kg,
+        height_cm: row.height_cm,
+      }))
+  })
+
+  ipcMain.handle('get-attendance-all', (event, classroomId) => {
+    return db
+      .prepare('SELECT * FROM attendance WHERE classroom_id = ?')
+      .all(classroomId)
+  })
+
+  ipcMain.handle('search-students', (event, query) => {
+    const q = String(query || '').trim()
+    if (q.length < 2) return []
+    const like = `%${q}%`
+    return db
+      .prepare(
+        `SELECT s.*, c.name AS classroom_name
+         FROM students s
+         LEFT JOIN classrooms c ON c.id = s.classroom_id
+         WHERE s.is_active = 1
+           AND (s.first_name LIKE ? OR s.last_name LIKE ? OR s.student_id LIKE ? OR s.student_number LIKE ?)
+         ORDER BY c.name, COALESCE(NULLIF(s.student_number, ''), s.student_id)
+         LIMIT 50`
+      )
+      .all(like, like, like, like)
+  })
+
+  ipcMain.handle('clear-all-data', () => {
+    // สร้าง snapshot ก่อนลบทั้งหมด — กันครูเผลอกดผิดแล้วข้อมูลหายทั้งระบบ
+    createSnapshot('school_before_clear')
+    const tx = db.transaction(() => {
+      db.prepare('DELETE FROM student_notes').run()
+      db.prepare('DELETE FROM health_check').run()
+      db.prepare('DELETE FROM grades').run()
+      db.prepare('DELETE FROM attendance').run()
+      db.prepare('DELETE FROM schedules').run()
+      db.prepare('DELETE FROM students').run()
+      db.prepare('DELETE FROM classrooms').run()
+    })
+    tx()
+    return { success: true }
+  })
+
+  ipcMain.handle('rename-subject-code', (event, { from, to }) => {
+    if (!from || !to || from === to) {
+      return { gradesUpdated: 0, schedulesUpdated: 0 }
+    }
+    const tx = db.transaction(() => {
+      const g = db.prepare('UPDATE grades SET subject_code = ? WHERE subject_code = ?').run(to, from)
+      const s = db
+        .prepare('UPDATE schedules SET subject_code = ? WHERE subject_code = ?')
+        .run(to, from)
+      return {
+        gradesUpdated: Number(g.changes) || 0,
+        schedulesUpdated: Number(s.changes) || 0,
+      }
+    })
+    return tx()
+  })
+
+  ipcMain.handle('rename-subject-name', (event, { code, newName }) => {
+    if (!code || !newName) return { updated: 0 }
+    const result = db
+      .prepare('UPDATE schedules SET subject_name = ? WHERE subject_code = ?')
+      .run(newName, code)
+    return { updated: Number(result.changes) || 0 }
   })
 
   ipcMain.handle('export-data', () => {
@@ -620,12 +1473,26 @@ function setupIpcHandlers() {
       classrooms: db.prepare('SELECT * FROM classrooms').all(),
       students: db.prepare('SELECT * FROM students').all(),
       subjects: db.prepare('SELECT * FROM subjects').all(),
-      grades: db.prepare('SELECT * FROM grades').all(),
-      schedule: db.prepare('SELECT * FROM schedule').all(),
-      attendance: db.prepare('SELECT * FROM attendance').all(),
-      health_check: db.prepare('SELECT * FROM health_check').all(),
+      grades: db
+        .prepare(
+          'SELECT id, student_id, classroom_id, subject_code, score, midterm_score, final_score, semester, academic_year FROM grades'
+        )
+        .all(),
+      schedule: db
+        .prepare(
+          'SELECT classroom_id, day_of_week, period, subject_code, subject_name, class_level, room FROM schedules'
+        )
+        .all(),
+      attendance: db
+        .prepare('SELECT id, student_id, classroom_id, date, status, note FROM attendance')
+        .all(),
+      health_check: db
+        .prepare(
+          'SELECT student_id, classroom_id, date, brushed_teeth, drank_milk, weight_kg, height_cm FROM health_check'
+        )
+        .all(),
       exported_at: new Date().toISOString(),
-      version: '1.1',
+      version: '2.0',
     }
   })
 
@@ -633,120 +1500,134 @@ function setupIpcHandlers() {
     try {
       const { classrooms, students, subjects, grades, schedule, attendance, health_check } = data
 
-      db.prepare('DELETE FROM attendance').run()
-      db.prepare('DELETE FROM health_check').run()
-      db.prepare('DELETE FROM grades').run()
-      db.prepare('DELETE FROM schedule').run()
-      db.prepare('DELETE FROM students').run()
-      db.prepare('DELETE FROM subjects').run()
-      db.prepare('DELETE FROM classrooms').run()
+      const tx = db.transaction(() => {
+        db.prepare('DELETE FROM student_notes').run()
+        db.prepare('DELETE FROM attendance').run()
+        db.prepare('DELETE FROM health_check').run()
+        db.prepare('DELETE FROM grades').run()
+        db.prepare('DELETE FROM schedules').run()
+        db.prepare('DELETE FROM students').run()
+        db.prepare('DELETE FROM subjects').run()
+        db.prepare('DELETE FROM classrooms').run()
 
-      if (classrooms) {
-        const insertClassroom = db.prepare(
-          'INSERT INTO classrooms (id, name, level, academic_year, created_at) VALUES (?, ?, ?, ?, ?)'
-        )
-        classrooms.forEach((classroom) =>
-          insertClassroom.run(
-            classroom.id,
-            classroom.name,
-            classroom.level,
-            classroom.academic_year,
-            classroom.created_at || new Date().toISOString()
+        if (classrooms) {
+          const insertClassroom = db.prepare(
+            'INSERT INTO classrooms (id, name, level, academic_year, color, created_at) VALUES (?, ?, ?, ?, ?, ?)'
           )
-        )
-      }
-
-      if (subjects) {
-        const insertSubject = db.prepare(
-          'INSERT INTO subjects (id, name, code, color) VALUES (?, ?, ?, ?)'
-        )
-        subjects.forEach((subject) => insertSubject.run(subject.id, subject.name, subject.code, subject.color))
-      }
-
-      if (students) {
-        const insertStudent = db.prepare(`
-          INSERT INTO students (id, ${STUDENT_COLUMNS.join(', ')}, is_active, created_at)
-          VALUES (?, ${STUDENT_COLUMNS.map(() => '?').join(', ')}, ?, ?)
-        `)
-
-        students.forEach((student) => {
-          const payload = normalizeStudentPayload(student, student.classroom_label || '')
-          insertStudent.run(
-            student.id,
-            ...getStudentValues({
-              ...payload,
-              classroom_id: Number(student.classroom_id),
-            }),
-            student.is_active ?? 1,
-            student.created_at || new Date().toISOString()
+          classrooms.forEach((classroom) =>
+            insertClassroom.run(
+              classroom.id,
+              classroom.name,
+              classroom.level,
+              classroom.academic_year,
+              classroom.color ?? null,
+              classroom.created_at || new Date().toISOString()
+            )
           )
-        })
-      }
+        }
 
-      if (grades) {
-        const insertGrade = db.prepare(
-          'INSERT INTO grades (id, student_id, subject, semester, academic_year, score, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-        )
-        grades.forEach((grade) =>
-          insertGrade.run(
-            grade.id,
-            grade.student_id,
-            grade.subject,
-            grade.semester,
-            grade.academic_year,
-            grade.score,
-            grade.created_at || new Date().toISOString()
+        if (subjects) {
+          const insertSubject = db.prepare(
+            'INSERT INTO subjects (id, name, code, color) VALUES (?, ?, ?, ?)'
           )
-        )
-      }
+          subjects.forEach((subject) =>
+            insertSubject.run(subject.id, subject.name, subject.code, subject.color)
+          )
+        }
 
-      if (schedule) {
-        const insertSchedule = db.prepare(
-          'INSERT INTO schedule (id, classroom_id, day_of_week, period, subject_id, teacher_name) VALUES (?, ?, ?, ?, ?, ?)'
-        )
-        schedule.forEach((entry) =>
-          insertSchedule.run(
-            entry.id,
-            entry.classroom_id,
-            entry.day_of_week,
-            entry.period,
-            entry.subject_id,
-            entry.teacher_name
-          )
-        )
-      }
+        if (students) {
+          const insertStudent = db.prepare(`
+            INSERT INTO students (id, ${STUDENT_COLUMNS.join(', ')}, is_active, created_at)
+            VALUES (?, ${STUDENT_COLUMNS.map(() => '?').join(', ')}, ?, ?)
+          `)
 
-      if (attendance) {
-        const insertAttendance = db.prepare(
-          'INSERT INTO attendance (id, student_id, date, status, note, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-        )
-        attendance.forEach((entry) =>
-          insertAttendance.run(
-            entry.id,
-            entry.student_id,
-            entry.date,
-            entry.status,
-            entry.note,
-            entry.created_at || new Date().toISOString()
-          )
-        )
-      }
+          students.forEach((student) => {
+            const payload = normalizeStudentPayload(student, student.classroom_label || '')
+            insertStudent.run(
+              student.id,
+              ...getStudentValues({
+                ...payload,
+                classroom_id: Number(student.classroom_id),
+              }),
+              student.is_active ?? 1,
+              student.created_at || new Date().toISOString()
+            )
+          })
+        }
 
-      if (health_check) {
-        const insertHealth = db.prepare(
-          'INSERT INTO health_check (id, student_id, date, brushed_teeth, drank_milk, note) VALUES (?, ?, ?, ?, ?, ?)'
-        )
-        health_check.forEach((entry) =>
-          insertHealth.run(
-            entry.id,
-            entry.student_id,
-            entry.date,
-            entry.brushed_teeth,
-            entry.drank_milk,
-            entry.note
+        if (grades) {
+          const insertGrade = db.prepare(
+            'INSERT INTO grades (student_id, classroom_id, subject_code, score, midterm_score, final_score, semester, academic_year) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
           )
-        )
-      }
+          grades.forEach((grade) => {
+            // รองรับ legacy field name (subject) จาก export เก่า
+            const subjectCode = grade.subject_code || grade.subject || ''
+            const midterm = grade.midterm_score ?? 0
+            const final_ = grade.final_score ?? 0
+            const score = grade.score ?? midterm + final_
+            insertGrade.run(
+              grade.student_id,
+              grade.classroom_id ?? null,
+              subjectCode,
+              score,
+              midterm,
+              final_,
+              grade.semester,
+              grade.academic_year
+            )
+          })
+        }
+
+        if (schedule) {
+          const insertSchedule = db.prepare(
+            'INSERT INTO schedules (classroom_id, day_of_week, period, subject_code, subject_name, class_level, room) VALUES (?, ?, ?, ?, ?, ?, ?)'
+          )
+          schedule.forEach((entry) =>
+            insertSchedule.run(
+              entry.classroom_id,
+              entry.day_of_week,
+              entry.period,
+              entry.subject_code || '',
+              entry.subject_name || '',
+              entry.class_level || '',
+              entry.room || ''
+            )
+          )
+        }
+
+        if (attendance) {
+          const insertAttendance = db.prepare(
+            'INSERT INTO attendance (student_id, classroom_id, date, status, note) VALUES (?, ?, ?, ?, ?)'
+          )
+          attendance.forEach((entry) =>
+            insertAttendance.run(
+              entry.student_id,
+              entry.classroom_id ?? null,
+              entry.date,
+              entry.status,
+              entry.note ?? ''
+            )
+          )
+        }
+
+        if (health_check) {
+          const insertHealth = db.prepare(
+            'INSERT INTO health_check (student_id, classroom_id, date, brushed_teeth, drank_milk, weight_kg, height_cm) VALUES (?, ?, ?, ?, ?, ?, ?)'
+          )
+          health_check.forEach((entry) =>
+            insertHealth.run(
+              entry.student_id,
+              entry.classroom_id ?? null,
+              entry.date,
+              entry.brushed_teeth ? 1 : 0,
+              entry.drank_milk ? 1 : 0,
+              entry.weight_kg ?? null,
+              entry.height_cm ?? null
+            )
+          )
+        }
+      })
+      tx()
 
       return { success: true }
     } catch (error) {
@@ -838,6 +1719,563 @@ function setupIpcHandlers() {
     }
   })
 
+  // ─── Backup IPC ─────────────────────────────────────────────
+  ipcMain.handle('get-backup-info', () => {
+    try {
+      const dir = getBackupDir()
+      const files = getBackupFiles()
+      if (files.length === 0) {
+        return { lastBackup: null, count: 0, folder: dir }
+      }
+      const latest = files[0]
+      const stats = fs.statSync(path.join(dir, latest))
+      return {
+        lastBackup: stats.mtime.toISOString(),
+        count: files.length,
+        folder: dir,
+      }
+    } catch (error) {
+      log.error('[Backup] get-backup-info failed:', error)
+      return { lastBackup: null, count: 0, folder: null, error: error.message }
+    }
+  })
+
+  ipcMain.handle('open-backup-folder', async () => {
+    try {
+      const dir = getBackupDir()
+      if (!dir) {
+        return { success: false, error: 'Backup directory not ready' }
+      }
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true })
+      }
+      // shell.openPath returns '' on success, error string on failure
+      const result = await shell.openPath(dir)
+      if (result) {
+        return { success: false, error: result }
+      }
+      return { success: true, folder: dir }
+    } catch (error) {
+      log.error('[Backup] open-backup-folder failed:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ─── Restore-backup / List-backups ──────────────────────────
+  // คืน list ของไฟล์ backup ทั้ง daily + snapshot ที่อยู่ใน backupDir
+  ipcMain.handle('list-backups', () => {
+    try {
+      const dir = getBackupDir()
+      if (!dir || !fs.existsSync(dir)) return []
+      const files = fs
+        .readdirSync(dir)
+        .filter((f) => ALL_BACKUP_PATTERN.test(f))
+      const items = files.map((fileName) => {
+        const full = path.join(dir, fileName)
+        const stats = fs.statSync(full)
+        return {
+          fileName,
+          date: stats.mtime.toISOString(),
+          sizeBytes: stats.size,
+        }
+      })
+      // ใหม่สุดอยู่ก่อน
+      items.sort((a, b) => (a.date < b.date ? 1 : -1))
+      return items
+    } catch (error) {
+      log.error('[Backup] list-backups failed:', error)
+      return []
+    }
+  })
+
+  // กู้คืนไฟล์ backup: snapshot ปัจจุบัน → copy backup ทับ → relaunch
+  ipcMain.handle('restore-backup', async (event, fileName) => {
+    try {
+      const dir = getBackupDir()
+      if (!dir || !fs.existsSync(dir)) {
+        return { success: false, error: 'ไม่พบโฟลเดอร์สำรอง' }
+      }
+      // ปลอดภัยจาก path traversal — รับเฉพาะชื่อไฟล์ที่ match pattern
+      if (!ALL_BACKUP_PATTERN.test(fileName)) {
+        return { success: false, error: 'ชื่อไฟล์ไม่ถูกต้อง' }
+      }
+      const source = path.join(dir, fileName)
+      if (!fs.existsSync(source)) {
+        return { success: false, error: 'ไฟล์สำรองที่เลือกไม่มีอยู่' }
+      }
+
+      // เก็บ snapshot ของข้อมูลปัจจุบันก่อนทับ — กันกรณีกู้คืนผิดไฟล์
+      createSnapshot('school_before_restore')
+
+      // ปิด DB ก่อน copy (Windows file lock)
+      if (db) {
+        try {
+          db.close()
+          log.info('[Restore] DB closed before copy')
+        } catch (err) {
+          log.warn('[Restore] DB close failed:', err)
+        }
+        db = null
+      }
+
+      // คัดลอกไฟล์ backup ทับ school.db
+      fs.copyFileSync(source, dbPath)
+      log.info('[Restore] Restored from:', fileName)
+
+      // ลบไฟล์ WAL/SHM ถ้ามี (ของ DB เดิม) — หลัง restore จะถูกสร้างใหม่
+      try {
+        const wal = `${dbPath}-wal`
+        const shm = `${dbPath}-shm`
+        if (fs.existsSync(wal)) fs.unlinkSync(wal)
+        if (fs.existsSync(shm)) fs.unlinkSync(shm)
+      } catch (err) {
+        log.warn('[Restore] Cleanup WAL/SHM failed:', err)
+      }
+
+      // Relaunch แอป — re-init ทุกอย่าง ปลอดภัยกว่า reopen DB ใน process เดิม
+      setTimeout(() => {
+        app.relaunch()
+        app.exit(0)
+      }, 200)
+
+      return { success: true }
+    } catch (error) {
+      log.error('[Backup] restore-backup failed:', error)
+      return { success: false, error: error.message || 'กู้คืนไม่สำเร็จ' }
+    }
+  })
+
+  // คืนสถิติของห้อง — ใช้แสดงผลกระทบก่อนลบใน confirm dialog
+  ipcMain.handle('get-classroom-stats', (event, id) => {
+    try {
+      const cid = Number(id)
+      const studentIds = db
+        .prepare('SELECT id FROM students WHERE classroom_id = ?')
+        .all(cid)
+        .map((r) => r.id)
+      const studentCount = studentIds.length
+      let attendanceCount = 0
+      let gradeCount = 0
+      let healthCount = 0
+      if (studentIds.length > 0) {
+        const placeholders = studentIds.map(() => '?').join(',')
+        attendanceCount = db
+          .prepare(`SELECT COUNT(*) AS c FROM attendance WHERE student_id IN (${placeholders})`)
+          .get(...studentIds).c
+        gradeCount = db
+          .prepare(`SELECT COUNT(*) AS c FROM grades WHERE student_id IN (${placeholders})`)
+          .get(...studentIds).c
+        healthCount = db
+          .prepare(`SELECT COUNT(*) AS c FROM health_check WHERE student_id IN (${placeholders})`)
+          .get(...studentIds).c
+      }
+      const scheduleCount = db
+        .prepare('SELECT COUNT(*) AS c FROM schedules WHERE classroom_id = ?')
+        .get(cid).c
+      return {
+        studentCount,
+        attendanceCount,
+        gradeCount,
+        healthCount,
+        scheduleCount,
+      }
+    } catch (error) {
+      log.error('[get-classroom-stats] failed:', error)
+      return { studentCount: 0, attendanceCount: 0, gradeCount: 0, healthCount: 0, scheduleCount: 0 }
+    }
+  })
+
+  // สถิติทั้งระบบ — ใช้ก่อน clear-all-data
+  ipcMain.handle('get-all-stats', () => {
+    try {
+      return {
+        classroomCount: db.prepare('SELECT COUNT(*) AS c FROM classrooms').get().c,
+        studentCount: db.prepare('SELECT COUNT(*) AS c FROM students').get().c,
+        attendanceCount: db.prepare('SELECT COUNT(*) AS c FROM attendance').get().c,
+        gradeCount: db.prepare('SELECT COUNT(*) AS c FROM grades').get().c,
+        healthCount: db.prepare('SELECT COUNT(*) AS c FROM health_check').get().c,
+        scheduleCount: db.prepare('SELECT COUNT(*) AS c FROM schedules').get().c,
+      }
+    } catch (error) {
+      log.error('[get-all-stats] failed:', error)
+      return {
+        classroomCount: 0,
+        studentCount: 0,
+        attendanceCount: 0,
+        gradeCount: 0,
+        healthCount: 0,
+        scheduleCount: 0,
+      }
+    }
+  })
+
+  // ─── Sprint 2: Photos ────────────────────────────────────────
+  function getPhotosDir() {
+    const base = isDev ? process.cwd() : app.getPath('userData')
+    const dir = path.join(base, 'photos')
+    if (!fs.existsSync(dir)) {
+      try {
+        fs.mkdirSync(dir, { recursive: true })
+      } catch (err) {
+        log.warn('[Photos] mkdir failed:', err)
+      }
+    }
+    return dir
+  }
+
+  ipcMain.handle('save-student-photo', (event, { studentId, fileBuffer, ext }) => {
+    try {
+      const dir = getPhotosDir()
+      const safeExt = String(ext || 'jpg')
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '')
+        .slice(0, 5) || 'jpg'
+      const fileName = `${studentId}.${safeExt}`
+      const fullPath = path.join(dir, fileName)
+
+      // ลบไฟล์เก่าทุก extension ที่อาจมีอยู่ก่อน (เพื่อกันค้าง)
+      try {
+        const old = db
+          .prepare('SELECT photo_path FROM students WHERE id = ?')
+          .get(Number(studentId))
+        if (old && old.photo_path) {
+          const oldPath = path.join(dir, old.photo_path)
+          if (fs.existsSync(oldPath) && oldPath !== fullPath) {
+            fs.unlinkSync(oldPath)
+          }
+        }
+      } catch (err) {
+        log.warn('[Photos] cleanup old failed:', err)
+      }
+
+      const buf = Buffer.from(fileBuffer)
+      fs.writeFileSync(fullPath, buf)
+
+      db.prepare('UPDATE students SET photo_path = ? WHERE id = ?').run(
+        fileName,
+        Number(studentId)
+      )
+
+      return { success: true, photo_path: fileName }
+    } catch (error) {
+      log.error('[save-student-photo] failed:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('delete-student-photo', (event, studentId) => {
+    try {
+      const dir = getPhotosDir()
+      const row = db
+        .prepare('SELECT photo_path FROM students WHERE id = ?')
+        .get(Number(studentId))
+      if (row && row.photo_path) {
+        const fullPath = path.join(dir, row.photo_path)
+        if (fs.existsSync(fullPath)) {
+          fs.unlinkSync(fullPath)
+        }
+      }
+      db.prepare('UPDATE students SET photo_path = NULL WHERE id = ?').run(Number(studentId))
+      return { success: true }
+    } catch (error) {
+      log.error('[delete-student-photo] failed:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('get-photo-data-url', (event, photoPath) => {
+    try {
+      if (!photoPath) return null
+      const dir = getPhotosDir()
+      // ปลอดภัยจาก path traversal — รับเฉพาะ basename
+      const safe = path.basename(String(photoPath))
+      const fullPath = path.join(dir, safe)
+      if (!fs.existsSync(fullPath)) return null
+      const ext = path.extname(safe).slice(1).toLowerCase() || 'jpeg'
+      const mime = ext === 'png' ? 'image/png' : ext === 'gif' ? 'image/gif' : 'image/jpeg'
+      const buf = fs.readFileSync(fullPath)
+      return `data:${mime};base64,${buf.toString('base64')}`
+    } catch (error) {
+      log.error('[get-photo-data-url] failed:', error)
+      return null
+    }
+  })
+
+  // ─── Sprint 2: Trash (Recycle Bin) ───────────────────────────
+  ipcMain.handle('get-trashed-students', () => {
+    try {
+      return db
+        .prepare(
+          `SELECT s.*, c.name AS classroom_name
+           FROM students s
+           LEFT JOIN classrooms c ON c.id = s.classroom_id
+           WHERE s.is_active = 0
+           ORDER BY s.deleted_at DESC`
+        )
+        .all()
+    } catch (error) {
+      log.error('[get-trashed-students] failed:', error)
+      return []
+    }
+  })
+
+  ipcMain.handle('restore-student', (event, { id, newClassroomId }) => {
+    try {
+      if (newClassroomId) {
+        const classroom = db
+          .prepare('SELECT name FROM classrooms WHERE id = ?')
+          .get(Number(newClassroomId))
+        db.prepare(
+          'UPDATE students SET is_active = 1, deleted_at = NULL, classroom_id = ?, classroom_label = ? WHERE id = ?'
+        ).run(Number(newClassroomId), classroom ? classroom.name : '', Number(id))
+      } else {
+        db.prepare(
+          'UPDATE students SET is_active = 1, deleted_at = NULL WHERE id = ?'
+        ).run(Number(id))
+      }
+      return { success: true }
+    } catch (error) {
+      log.error('[restore-student] failed:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('purge-student', (event, id) => {
+    try {
+      const tx = db.transaction(() => {
+        db.prepare('DELETE FROM student_notes WHERE student_id = ?').run(Number(id))
+        db.prepare('DELETE FROM attendance WHERE student_id = ?').run(Number(id))
+        db.prepare('DELETE FROM grades WHERE student_id = ?').run(Number(id))
+        db.prepare('DELETE FROM health_check WHERE student_id = ?').run(Number(id))
+        db.prepare('DELETE FROM students WHERE id = ?').run(Number(id))
+      })
+      tx()
+      return { success: true }
+    } catch (error) {
+      log.error('[purge-student] failed:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('empty-trash', () => {
+    try {
+      let purged = 0
+      const tx = db.transaction(() => {
+        const ids = db
+          .prepare('SELECT id FROM students WHERE is_active = 0')
+          .all()
+          .map((r) => r.id)
+        if (ids.length === 0) return
+        const placeholders = ids.map(() => '?').join(',')
+        db.prepare(`DELETE FROM student_notes WHERE student_id IN (${placeholders})`).run(...ids)
+        db.prepare(`DELETE FROM attendance WHERE student_id IN (${placeholders})`).run(...ids)
+        db.prepare(`DELETE FROM grades WHERE student_id IN (${placeholders})`).run(...ids)
+        db.prepare(`DELETE FROM health_check WHERE student_id IN (${placeholders})`).run(...ids)
+        db.prepare(`DELETE FROM students WHERE id IN (${placeholders})`).run(...ids)
+        purged = ids.length
+      })
+      tx()
+      return { success: true, purged }
+    } catch (error) {
+      log.error('[empty-trash] failed:', error)
+      return { success: false, purged: 0, error: error.message }
+    }
+  })
+
+  // ─── Sprint 2: Duplicate classroom (+ Sprint 3: promote + archive) ──
+  ipcMain.handle('duplicate-classroom', (event, payload) => {
+    try {
+      const { sourceId, newName, newAcademicYear } = payload || {}
+      const promoteStudents = !!payload?.promoteStudents
+      const archiveSource = !!payload?.archiveSource
+
+      const trimmedName = String(newName || '').trim()
+      if (!trimmedName) {
+        return { success: false, error: 'กรุณาระบุชื่อห้องใหม่' }
+      }
+
+      const source = db.prepare('SELECT * FROM classrooms WHERE id = ?').get(Number(sourceId))
+      if (!source) return { success: false, error: 'ไม่พบห้องเรียนต้นทาง' }
+
+      const existing = db.prepare('SELECT id FROM classrooms WHERE name = ?').get(trimmedName)
+      if (existing) return { success: false, error: 'มีห้องชื่อนี้อยู่แล้ว' }
+
+      let newId = 0
+      let movedStudents = 0
+      const tx = db.transaction(() => {
+        const result = db
+          .prepare(
+            'INSERT INTO classrooms (name, level, academic_year, color) VALUES (?, ?, ?, ?)'
+          )
+          .run(
+            trimmedName,
+            source.level,
+            String(newAcademicYear || currentAcademicYear()).trim(),
+            source.color ?? null
+          )
+        newId = Number(result.lastInsertRowid)
+
+        const schedules = db
+          .prepare(
+            'SELECT day_of_week, period, subject_code, subject_name, class_level, room FROM schedules WHERE classroom_id = ?'
+          )
+          .all(Number(sourceId))
+        const insert = db.prepare(
+          'INSERT INTO schedules (classroom_id, day_of_week, period, subject_code, subject_name, class_level, room) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        )
+        for (const s of schedules) {
+          insert.run(
+            newId,
+            s.day_of_week,
+            s.period,
+            s.subject_code,
+            s.subject_name,
+            s.class_level,
+            s.room
+          )
+        }
+
+        // promote: ย้ายนักเรียนจากห้องเดิมไปห้องใหม่
+        if (promoteStudents) {
+          const moveResult = db
+            .prepare(
+              `UPDATE students
+               SET classroom_id = ?, classroom_label = ?
+               WHERE classroom_id = ? AND is_active = 1`
+            )
+            .run(newId, trimmedName, Number(sourceId))
+          movedStudents = Number(moveResult.changes) || 0
+        }
+
+        // archive: ทำห้องเดิมเป็น archived
+        if (archiveSource) {
+          db.prepare('UPDATE classrooms SET archived_at = CURRENT_TIMESTAMP WHERE id = ?').run(
+            Number(sourceId)
+          )
+        }
+      })
+      tx()
+
+      return { success: true, id: newId, name: trimmedName, movedStudents }
+    } catch (error) {
+      log.error('[duplicate-classroom] failed:', error)
+      return { success: false, error: error.message }
+    }
+  })
+
+  // ─── Sprint 2: Dashboard stats ───────────────────────────────
+  ipcMain.handle('get-dashboard-stats', () => {
+    try {
+      const classroomCount = db.prepare('SELECT COUNT(*) AS c FROM classrooms').get().c
+      const studentCount = db
+        .prepare('SELECT COUNT(*) AS c FROM students WHERE is_active = 1')
+        .get().c
+
+      const thirtyDaysAgo = new Date()
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+      const cutoff = thirtyDaysAgo.toISOString().slice(0, 10)
+
+      const topAbsent = db
+        .prepare(
+          `SELECT s.id, s.first_name, s.last_name, s.title, s.classroom_id, s.photo_path,
+                  c.name as classroom_name,
+                  COUNT(a.id) as absent_count
+           FROM attendance a
+           INNER JOIN students s ON s.id = a.student_id AND s.is_active = 1
+           LEFT JOIN classrooms c ON c.id = s.classroom_id
+           WHERE a.status IN ('ขาด', 'ลาป่วย', 'ลากิจ') AND a.date >= ?
+           GROUP BY s.id
+           ORDER BY absent_count DESC
+           LIMIT 5`
+        )
+        .all(cutoff)
+
+      const studentsWithBmi = db
+        .prepare(
+          `SELECT s.id, s.title, s.first_name, s.last_name, s.weight_kg, s.height_cm, s.photo_path,
+                  c.name as classroom_name
+           FROM students s
+           LEFT JOIN classrooms c ON c.id = s.classroom_id
+           WHERE s.is_active = 1
+             AND s.weight_kg IS NOT NULL AND s.weight_kg > 0
+             AND s.height_cm IS NOT NULL AND s.height_cm > 0`
+        )
+        .all()
+
+      const bmiAbnormal = []
+      for (const s of studentsWithBmi) {
+        const hm = s.height_cm / 100
+        const bmi = s.weight_kg / (hm * hm)
+        if (bmi < 18.5 || bmi >= 25) {
+          bmiAbnormal.push({
+            id: s.id,
+            title: s.title,
+            first_name: s.first_name,
+            last_name: s.last_name,
+            classroom_name: s.classroom_name,
+            photo_path: s.photo_path,
+            bmi: Math.round(bmi * 10) / 10,
+            status: bmi < 18.5 ? 'ผอม' : bmi < 30 ? 'อ้วน' : 'อ้วนมาก',
+          })
+        }
+      }
+
+      const recentStudents = db
+        .prepare(
+          `SELECT s.id, s.first_name, s.last_name, s.title, s.photo_path,
+                  c.name as classroom_name, s.created_at
+           FROM students s
+           LEFT JOIN classrooms c ON c.id = s.classroom_id
+           WHERE s.is_active = 1
+           ORDER BY s.id DESC
+           LIMIT 10`
+        )
+        .all()
+
+      const recentAttendance = db
+        .prepare(
+          `SELECT a.date, c.id as classroom_id, c.name as classroom_name, COUNT(a.id) as count
+           FROM attendance a
+           LEFT JOIN classrooms c ON c.id = a.classroom_id
+           GROUP BY a.date, c.id
+           ORDER BY a.date DESC
+           LIMIT 5`
+        )
+        .all()
+
+      const latestClassroom = db
+        .prepare(
+          `SELECT c.id, c.name,
+                  (SELECT AVG(g.score) FROM grades g WHERE g.classroom_id = c.id AND g.score > 0) as avg_score
+           FROM classrooms c
+           ORDER BY c.id DESC
+           LIMIT 1`
+        )
+        .get()
+
+      return {
+        classroomCount,
+        studentCount,
+        topAbsent,
+        bmiAbnormal: bmiAbnormal.slice(0, 10),
+        recentStudents,
+        recentAttendance,
+        latestClassroom,
+      }
+    } catch (error) {
+      log.error('[get-dashboard-stats] failed:', error)
+      return {
+        classroomCount: 0,
+        studentCount: 0,
+        topAbsent: [],
+        bmiAbnormal: [],
+        recentStudents: [],
+        recentAttendance: [],
+        latestClassroom: null,
+      }
+    }
+  })
+
   log.info('[IPC] Handlers registered')
 }
 
@@ -849,6 +2287,12 @@ app.whenReady().then(() => {
     app.quit()
     return
   }
+
+  // สำรองข้อมูลอัตโนมัติเมื่อเปิดแอป (วันละครั้งต่อวัน)
+  runDailyBackup()
+
+  // Auto-purge trash > 30 วัน (ตอนเปิดแอป)
+  autoPurgeOldTrash()
 
   setupIpcHandlers()
   createWindow()
