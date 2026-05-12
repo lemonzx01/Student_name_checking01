@@ -438,7 +438,7 @@ function StudentsPageContent() {
 
       {/* Student Detail Modal */}
       {selectedStudent ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:pl-[296px]">
           <div className="modal-overlay absolute inset-0 bg-slate-950/40 backdrop-blur-sm" onClick={() => setSelectedStudent(null)} />
           <div className="modal-content relative max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-[var(--radius-lg)] bg-white p-6 shadow-2xl">
             <div className="mb-6 flex items-start justify-between">

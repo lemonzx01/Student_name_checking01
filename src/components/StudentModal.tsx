@@ -280,7 +280,7 @@ export default function StudentModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:pl-[296px]">
       <div className="modal-overlay absolute inset-0 bg-slate-950/40 backdrop-blur-sm" onClick={onClose} />
       <div className="modal-content relative max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-[var(--radius-lg)] bg-white shadow-2xl">
         {/* Sticky Header */}
