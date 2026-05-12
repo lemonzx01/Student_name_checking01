@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { School, X } from 'lucide-react'
 import CustomSelect from './CustomSelect'
-import { Classroom } from '@/types'
+import { Classroom, CLASSROOM_COLORS } from '@/types'
 import { createClassroomRecord, updateClassroomRecord } from '@/lib/client-data'
 
 interface Props {
@@ -22,6 +22,7 @@ export default function CreateClassroomModal({
   const [name, setName] = useState('')
   const [level, setLevel] = useState('ประถมศึกษา')
   const [academicYear, setAcademicYear] = useState(String(new Date().getFullYear() + 543))
+  const [color, setColor] = useState<string>('blue')
   const [saving, setSaving] = useState(false)
 
   const levelOptions = [
@@ -40,12 +41,14 @@ export default function CreateClassroomModal({
       setName(editingClassroom.name)
       setLevel(editingClassroom.level)
       setAcademicYear(editingClassroom.academic_year)
+      setColor(editingClassroom.color || 'blue')
       return
     }
 
     setName('')
     setLevel('ประถมศึกษา')
     setAcademicYear(String(new Date().getFullYear() + 543))
+    setColor('blue')
   }, [editingClassroom, isOpen])
 
   if (!isOpen) {
@@ -66,12 +69,14 @@ export default function CreateClassroomModal({
           name: name.trim(),
           level,
           academic_year: academicYear.trim(),
+          color,
         })
       } else {
         await createClassroomRecord({
           name: name.trim(),
           level,
           academic_year: academicYear.trim(),
+          color,
         })
       }
 
@@ -137,6 +142,29 @@ export default function CreateClassroomModal({
               className="w-full rounded-xl border border-[var(--line)] px-4 py-2.5 text-sm outline-none transition focus:border-[var(--primary)] focus:ring-0"
             />
           </label>
+
+          <div>
+            <span className="mb-2 block text-sm font-semibold text-slate-700">สีห้องเรียน</span>
+            <div className="flex flex-wrap gap-2">
+              {CLASSROOM_COLORS.map((c) => (
+                <button
+                  key={c.value}
+                  type="button"
+                  onClick={() => setColor(c.value)}
+                  className={`group relative flex h-9 w-9 items-center justify-center rounded-xl ${c.bg} transition-all hover:scale-110 ${
+                    color === c.value ? 'ring-2 ring-offset-2 ring-slate-400 scale-110' : ''
+                  }`}
+                  title={c.label}
+                >
+                  {color === c.value && (
+                    <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <div className="flex gap-3 pt-3">
             <button

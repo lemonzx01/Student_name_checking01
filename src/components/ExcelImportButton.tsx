@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { AlertCircle, CheckCircle2, FileSpreadsheet, Loader2, X } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Download, FileSpreadsheet, Loader2, X } from 'lucide-react'
 import { importStudentsFromExcel } from '@/lib/client-data'
+import { downloadStudentTemplate } from '@/lib/excel-template'
 import { extractImportedStudents } from '@/lib/student-import'
 
 interface Props {
@@ -82,15 +83,28 @@ export default function ExcelImportButton({
         className="hidden"
       />
 
-      <button
-        type="button"
-        onClick={() => inputRef.current?.click()}
-        disabled={loading}
-        className={`btn-press inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${buttonClassName}`}
-      >
-        {loading ? <Loader2 size={16} className="animate-spin" /> : <FileSpreadsheet size={16} />}
-        {loading ? 'กำลังอ่านไฟล์...' : 'Import Excel'}
-      </button>
+      <div className="inline-flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={loading}
+          title="นำเข้ารายชื่อนักเรียนจากไฟล์ Excel"
+          className={`btn-press inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${buttonClassName}`}
+        >
+          {loading ? <Loader2 size={16} className="animate-spin" /> : <FileSpreadsheet size={16} />}
+          {loading ? 'กำลังอ่านไฟล์...' : 'Import Excel'}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => downloadStudentTemplate()}
+          title="ดาวน์โหลดไฟล์ template ตัวอย่างไปกรอกข้อมูล"
+          className="btn-press inline-flex items-center gap-1.5 rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-xs font-medium text-slate-600 transition hover:border-emerald-300 hover:text-emerald-700"
+        >
+          <Download size={12} />
+          ดาวน์โหลด template ตัวอย่าง
+        </button>
+      </div>
 
       {message && (
         <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2">

@@ -1,11 +1,21 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { User, UserPlus, X } from 'lucide-react'
+import { Camera, MessageSquare, Trash2, Upload, User, UserPlus, X } from 'lucide-react'
 import { Classroom, Student, StudentFormInput } from '@/types'
-import { createStudentRecord, getClassrooms, updateStudentRecord } from '@/lib/client-data'
+import {
+  createStudentRecord,
+  deleteStudentPhoto,
+  getClassrooms,
+  saveStudentPhoto,
+  updateStudentRecord,
+} from '@/lib/client-data'
 import CalendarPicker from '@/components/CalendarPicker'
 import CustomSelect from '@/components/CustomSelect'
+import ParentContactModal from '@/components/ParentContactModal'
+import StudentAvatar from '@/components/StudentAvatar'
+import { invalidatePhotoCache } from '@/lib/hooks/usePhotoUrl'
+import { useDialog } from '@/lib/hooks/useConfirm'
 
 interface Props {
   isOpen: boolean
@@ -37,6 +47,7 @@ function getInitialFormData(classroomId?: number | null): StudentFormInput {
     guardian_last_name: '',
     guardian_occupation: '',
     guardian_relation: '',
+    guardian_phone: '',
     father_title: '',
     father_first_name: '',
     father_last_name: '',
@@ -47,6 +58,49 @@ function getInitialFormData(classroomId?: number | null): StudentFormInput {
     mother_occupation: '',
     disadvantage: '',
     source_payload: null,
+    photo_path: null,
+  }
+}
+
+/**
+ * Resize + compress รูปด้วย Canvas API ก่อน upload
+ * ลดเป็น max 400x400 + JPEG quality 0.8
+ */
+async function resizeImage(file: File): Promise<{ blob: Blob; ext: string }> {
+  const maxSize = 400
+  const url = URL.createObjectURL(file)
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image()
+      i.onload = () => resolve(i)
+      i.onerror = () => reject(new Error('Image load failed'))
+      i.src = url
+    })
+
+    let { width, height } = img
+    if (width > maxSize || height > maxSize) {
+      const ratio = Math.min(maxSize / width, maxSize / height)
+      width = Math.round(width * ratio)
+      height = Math.round(height * ratio)
+    }
+
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('Canvas context unavailable')
+    // วาดพื้นขาวก่อน — กันรูป png โปร่งใสกลายเป็นดำตอน save jpeg
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, width, height)
+    ctx.drawImage(img, 0, 0, width, height)
+
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, 'image/jpeg', 0.8)
+    )
+    if (!blob) throw new Error('Canvas toBlob failed')
+    return { blob, ext: 'jpg' }
+  } finally {
+    URL.revokeObjectURL(url)
   }
 }
 
@@ -71,6 +125,9 @@ export default function StudentModal({
   const [classrooms, setClassrooms] = useState<Classroom[]>([])
   const [formData, setFormData] = useState<StudentFormInput>(getInitialFormData(classroomId))
   const [saving, setSaving] = useState(false)
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const [contactOpen, setContactOpen] = useState(false)
+  const { alert } = useDialog()
 
   const activeClassroomName = useMemo(
     () => classrooms.find((item) => item.id === formData.classroom_id)?.name || '',
@@ -112,6 +169,7 @@ export default function StudentModal({
         guardian_last_name: student.guardian_last_name ?? '',
         guardian_occupation: student.guardian_occupation ?? '',
         guardian_relation: student.guardian_relation ?? '',
+        guardian_phone: student.guardian_phone ?? '',
         father_title: student.father_title ?? '',
         father_first_name: student.father_first_name ?? '',
         father_last_name: student.father_last_name ?? '',
@@ -122,6 +180,7 @@ export default function StudentModal({
         mother_occupation: student.mother_occupation ?? '',
         disadvantage: student.disadvantage ?? '',
         source_payload: student.source_payload ?? null,
+        photo_path: student.photo_path ?? null,
       })
       return
     }
@@ -163,6 +222,65 @@ export default function StudentModal({
     setFormData((prev) => ({ ...prev, [field]: value }))
   }
 
+  async function handlePhotoUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = '' // reset เพื่อให้ select ไฟล์ซ้ำได้
+    if (!file) return
+
+    if (!student) {
+      await alert({
+        title: 'บันทึกข้อมูลนักเรียนก่อน',
+        message: 'กรุณากดบันทึกข้อมูลนักเรียนก่อน แล้วค่อยอัปโหลดรูปประจำตัว',
+        variant: 'warning',
+      })
+      return
+    }
+
+    setUploadingPhoto(true)
+    try {
+      const { blob, ext } = await resizeImage(file)
+      const result = await saveStudentPhoto(student.id, blob, ext)
+      if (!result.success || !result.photo_path) {
+        throw new Error(result.error || 'อัปโหลดไม่สำเร็จ')
+      }
+      // invalidate cache เก่า + ตั้งค่า photo_path ใหม่ (cache buster suffix)
+      invalidatePhotoCache(formData.photo_path)
+      invalidatePhotoCache(result.photo_path)
+      setFormData((prev) => ({ ...prev, photo_path: result.photo_path! }))
+    } catch (err) {
+      console.error('[StudentModal] upload photo failed:', err)
+      await alert({
+        title: 'อัปโหลดรูปไม่สำเร็จ',
+        message: err instanceof Error ? err.message : 'ลองใหม่อีกครั้ง',
+        variant: 'error',
+      })
+    } finally {
+      setUploadingPhoto(false)
+    }
+  }
+
+  async function handlePhotoDelete() {
+    if (!student || !formData.photo_path) return
+    setUploadingPhoto(true)
+    try {
+      const result = await deleteStudentPhoto(student.id)
+      if (!result.success) {
+        throw new Error(result.error || 'ลบไม่สำเร็จ')
+      }
+      invalidatePhotoCache(formData.photo_path)
+      setFormData((prev) => ({ ...prev, photo_path: null }))
+    } catch (err) {
+      console.error('[StudentModal] delete photo failed:', err)
+      await alert({
+        title: 'ลบรูปไม่สำเร็จ',
+        message: err instanceof Error ? err.message : 'ลองใหม่อีกครั้ง',
+        variant: 'error',
+      })
+    } finally {
+      setUploadingPhoto(false)
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="modal-overlay absolute inset-0 bg-slate-950/40 backdrop-blur-sm" onClick={onClose} />
@@ -192,6 +310,67 @@ export default function StudentModal({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6">
+          {/* Section: รูปประจำตัว */}
+          <div className="mb-5">
+            <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-800">
+              <div className="h-1.5 w-1.5 rounded-full bg-cyan-500" />
+              รูปประจำตัว
+            </h3>
+            <div className="flex items-center gap-5 rounded-2xl border border-[var(--line)] bg-slate-50 p-4">
+              <StudentAvatar
+                photoPath={formData.photo_path}
+                name={`${formData.first_name || ''} ${formData.last_name || ''}`.trim() || 'นักเรียน'}
+                size={120}
+                className="border-4 border-white shadow-sm"
+              />
+              <div className="flex-1 space-y-2">
+                {!student ? (
+                  <p className="text-xs text-[var(--muted)]">
+                    บันทึกข้อมูลนักเรียนก่อน แล้วเปิดแก้ไขเพื่ออัปโหลดรูป
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-xs text-[var(--muted)]">
+                      รูปจะถูกย่อให้ไม่เกิน 400×400 อัตโนมัติ — ไฟล์เล็ก โหลดเร็ว
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <label
+                        className={`btn-press inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-[var(--primary)] px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[var(--primary-strong)] ${
+                          uploadingPhoto ? 'pointer-events-none opacity-50' : ''
+                        }`}
+                      >
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handlePhotoUpload}
+                          disabled={uploadingPhoto}
+                          className="hidden"
+                        />
+                        {formData.photo_path ? <Camera size={14} /> : <Upload size={14} />}
+                        {uploadingPhoto
+                          ? 'กำลังอัปโหลด...'
+                          : formData.photo_path
+                            ? 'เปลี่ยนรูป'
+                            : 'อัปโหลดรูป'}
+                      </label>
+                      {formData.photo_path && (
+                        <button
+                          type="button"
+                          onClick={handlePhotoDelete}
+                          disabled={uploadingPhoto}
+                          className="btn-press inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+                        >
+                          <Trash2 size={14} />
+                          ลบรูป
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
           {/* Section: รหัสและห้อง */}
           <div className="mb-5">
             <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-800">
@@ -243,10 +422,17 @@ export default function StudentModal({
             </h3>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               <FormField label="คำนำหน้า">
-                <input
+                <CustomSelect
                   value={formData.title ?? ''}
-                  onChange={(e) => updateField('title', e.target.value)}
-                  className={inputClass}
+                  onChange={(v) => updateField('title', String(v))}
+                  options={[
+                    { value: '', label: 'เลือกคำนำหน้า' },
+                    { value: 'เด็กชาย', label: 'เด็กชาย' },
+                    { value: 'เด็กหญิง', label: 'เด็กหญิง' },
+                    { value: 'นาย', label: 'นาย' },
+                    { value: 'นางสาว', label: 'นางสาว' },
+                  ]}
+                  placeholder="เลือกคำนำหน้า"
                 />
               </FormField>
               <FormField label="ชื่อ">
@@ -317,6 +503,198 @@ export default function StudentModal({
                   className={inputClass}
                 />
               </FormField>
+              <FormField label="บ้านเลขที่">
+                <input
+                  value={formData.house_no ?? ''}
+                  onChange={(e) => updateField('house_no', e.target.value)}
+                  className={inputClass}
+                />
+              </FormField>
+              <FormField label="หมู่">
+                <input
+                  value={formData.village_no ?? ''}
+                  onChange={(e) => updateField('village_no', e.target.value)}
+                  className={inputClass}
+                />
+              </FormField>
+              <FormField label="ความด้อยโอกาส">
+                <input
+                  value={formData.disadvantage ?? ''}
+                  onChange={(e) => updateField('disadvantage', e.target.value)}
+                  className={inputClass}
+                />
+              </FormField>
+            </div>
+          </div>
+
+          {/* Section: ผู้ปกครอง */}
+          <div className="mb-5">
+            <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-800">
+              <div className="h-1.5 w-1.5 rounded-full bg-violet-500" />
+              ผู้ปกครอง
+            </h3>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <FormField label="คำนำหน้าผู้ปกครอง">
+                <CustomSelect
+                  value={formData.guardian_title ?? ''}
+                  onChange={(v) => updateField('guardian_title', String(v))}
+                  options={[
+                    { value: '', label: 'เลือก' },
+                    { value: 'นาย', label: 'นาย' },
+                    { value: 'นาง', label: 'นาง' },
+                    { value: 'นางสาว', label: 'นางสาว' },
+                  ]}
+                  placeholder="เลือก"
+                />
+              </FormField>
+              <FormField label="ชื่อผู้ปกครอง">
+                <input
+                  value={formData.guardian_first_name ?? ''}
+                  onChange={(e) => updateField('guardian_first_name', e.target.value)}
+                  className={inputClass}
+                />
+              </FormField>
+              <FormField label="นามสกุลผู้ปกครอง">
+                <input
+                  value={formData.guardian_last_name ?? ''}
+                  onChange={(e) => updateField('guardian_last_name', e.target.value)}
+                  className={inputClass}
+                />
+              </FormField>
+              <FormField label="ความเกี่ยวข้อง">
+                <CustomSelect
+                  value={formData.guardian_relation ?? ''}
+                  onChange={(v) => updateField('guardian_relation', String(v))}
+                  options={[
+                    { value: '', label: 'เลือก' },
+                    { value: 'บิดา', label: 'บิดา' },
+                    { value: 'มารดา', label: 'มารดา' },
+                    { value: 'ปู่', label: 'ปู่' },
+                    { value: 'ย่า', label: 'ย่า' },
+                    { value: 'ตา', label: 'ตา' },
+                    { value: 'ยาย', label: 'ยาย' },
+                    { value: 'ลุง', label: 'ลุง' },
+                    { value: 'ป้า', label: 'ป้า' },
+                    { value: 'น้า', label: 'น้า' },
+                    { value: 'อา', label: 'อา' },
+                    { value: 'อื่นๆ', label: 'อื่นๆ' },
+                  ]}
+                  placeholder="เลือก"
+                />
+              </FormField>
+              <FormField label="อาชีพผู้ปกครอง">
+                <input
+                  value={formData.guardian_occupation ?? ''}
+                  onChange={(e) => updateField('guardian_occupation', e.target.value)}
+                  className={inputClass}
+                />
+              </FormField>
+              <FormField label="เบอร์โทรผู้ปกครอง">
+                <div className="flex gap-2">
+                  <input
+                    type="tel"
+                    inputMode="tel"
+                    value={formData.guardian_phone ?? ''}
+                    onChange={(e) => updateField('guardian_phone', e.target.value)}
+                    placeholder="08x-xxx-xxxx"
+                    className={inputClass}
+                  />
+                  {student && (
+                    <button
+                      type="button"
+                      onClick={() => setContactOpen(true)}
+                      title="ส่งข้อความให้ผู้ปกครอง (คัดลอก/LINE)"
+                      className="btn-press flex-shrink-0 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700"
+                    >
+                      <MessageSquare size={14} />
+                    </button>
+                  )}
+                </div>
+              </FormField>
+            </div>
+          </div>
+
+          {/* Section: บิดา-มารดา */}
+          <div className="mb-5">
+            <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-800">
+              <div className="h-1.5 w-1.5 rounded-full bg-pink-500" />
+              บิดา
+            </h3>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <FormField label="คำนำหน้า">
+                <CustomSelect
+                  value={formData.father_title ?? ''}
+                  onChange={(v) => updateField('father_title', String(v))}
+                  options={[
+                    { value: '', label: 'เลือก' },
+                    { value: 'นาย', label: 'นาย' },
+                  ]}
+                  placeholder="เลือก"
+                />
+              </FormField>
+              <FormField label="ชื่อบิดา">
+                <input
+                  value={formData.father_first_name ?? ''}
+                  onChange={(e) => updateField('father_first_name', e.target.value)}
+                  className={inputClass}
+                />
+              </FormField>
+              <FormField label="นามสกุลบิดา">
+                <input
+                  value={formData.father_last_name ?? ''}
+                  onChange={(e) => updateField('father_last_name', e.target.value)}
+                  className={inputClass}
+                />
+              </FormField>
+              <FormField label="อาชีพบิดา">
+                <input
+                  value={formData.father_occupation ?? ''}
+                  onChange={(e) => updateField('father_occupation', e.target.value)}
+                  className={inputClass}
+                />
+              </FormField>
+            </div>
+          </div>
+
+          <div className="mb-5">
+            <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-800">
+              <div className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+              มารดา
+            </h3>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <FormField label="คำนำหน้า">
+                <CustomSelect
+                  value={formData.mother_title ?? ''}
+                  onChange={(v) => updateField('mother_title', String(v))}
+                  options={[
+                    { value: '', label: 'เลือก' },
+                    { value: 'นาง', label: 'นาง' },
+                    { value: 'นางสาว', label: 'นางสาว' },
+                  ]}
+                  placeholder="เลือก"
+                />
+              </FormField>
+              <FormField label="ชื่อมารดา">
+                <input
+                  value={formData.mother_first_name ?? ''}
+                  onChange={(e) => updateField('mother_first_name', e.target.value)}
+                  className={inputClass}
+                />
+              </FormField>
+              <FormField label="นามสกุลมารดา">
+                <input
+                  value={formData.mother_last_name ?? ''}
+                  onChange={(e) => updateField('mother_last_name', e.target.value)}
+                  className={inputClass}
+                />
+              </FormField>
+              <FormField label="อาชีพมารดา">
+                <input
+                  value={formData.mother_occupation ?? ''}
+                  onChange={(e) => updateField('mother_occupation', e.target.value)}
+                  className={inputClass}
+                />
+              </FormField>
             </div>
           </div>
 
@@ -339,6 +717,23 @@ export default function StudentModal({
           </div>
         </form>
       </div>
+
+      {student && (
+        <ParentContactModal
+          isOpen={contactOpen}
+          onClose={() => setContactOpen(false)}
+          student={{
+            id: student.id,
+            title: formData.title ?? student.title,
+            first_name: formData.first_name || student.first_name,
+            last_name: formData.last_name || student.last_name,
+            classroom_name: student.classroom_name,
+            classroom_label: formData.classroom_label ?? student.classroom_label,
+            guardian_phone: formData.guardian_phone ?? student.guardian_phone,
+          }}
+          defaultTemplate="general"
+        />
+      )}
     </div>
   )
 }

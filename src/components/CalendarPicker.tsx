@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
 
 interface CalendarPickerProps {
@@ -10,6 +10,10 @@ interface CalendarPickerProps {
   compact?: boolean
   /** Allow picking years far in the past (e.g. for birth dates). Default range: 100 years back */
   yearRange?: number
+  /** Set of date strings (YYYY-MM-DD) that should show a dot indicator */
+  markedDates?: Set<string>
+  /** Callback when the visible month changes — receives "YYYY-MM" */
+  onMonthChange?: (yearMonth: string) => void
 }
 
 const DAYS = ['จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส', 'อา']
@@ -47,6 +51,8 @@ export default function CalendarPicker({
   label,
   compact = false,
   yearRange = 100,
+  markedDates,
+  onMonthChange,
 }: CalendarPickerProps) {
   const today = new Date()
   const todayStr = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`
@@ -57,7 +63,11 @@ export default function CalendarPicker({
   const [open, setOpen] = useState(false)
   const [mode, setMode] = useState<'calendar' | 'month' | 'year'>('calendar')
   const [yearPageStart, setYearPageStart] = useState(Math.floor(initial.getFullYear() / 12) * 12)
+  // ตำแหน่ง dropdown — ปรับอัตโนมัติเมื่อพื้นที่ขวา/ล่างไม่พอ ป้องกันโผล่นอกขอบจอ
+  const [alignRight, setAlignRight] = useState(false)
+  const [openUpward, setOpenUpward] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -83,22 +93,65 @@ export default function CalendarPicker({
     }
   }, [open])
 
-  function prevMonth() {
-    if (viewMonth === 0) {
-      setViewMonth(11)
-      setViewYear(viewYear - 1)
-    } else {
-      setViewMonth(viewMonth - 1)
+  // วัดพื้นที่รอบ ๆ ปุ่ม trigger ก่อน dropdown โผล่ — ป้องกันโผล่นอกขอบจอ
+  // และ re-measure ตอน resize/scroll ขณะ dropdown เปิดอยู่
+  useLayoutEffect(() => {
+    if (!open || !triggerRef.current) return
+
+    function measure() {
+      if (!triggerRef.current) return
+      const rect = triggerRef.current.getBoundingClientRect()
+      const dropdownWidth = 280
+      const dropdownHeight = 360 // ค่าประมาณรวม footer
+      const margin = 8
+
+      // ขอบขวา: ถ้ากว้างขวาไม่พอ → flip ไปจัดชิดขวา (right-0)
+      const spaceRight = window.innerWidth - rect.left
+      setAlignRight(spaceRight < dropdownWidth + margin)
+
+      // ขอบล่าง: ถ้าใต้ปุ่มไม่พอแต่ข้างบนมีที่ → เปิดขึ้นบน
+      const spaceBelow = window.innerHeight - rect.bottom
+      const spaceAbove = rect.top
+      setOpenUpward(spaceBelow < dropdownHeight + margin && spaceAbove > spaceBelow)
     }
+
+    measure()
+
+    // ฟัง resize/scroll ตอนเปิดอยู่ — กันกรณี viewport เปลี่ยนระหว่างเปิด popup
+    window.addEventListener('resize', measure)
+    window.addEventListener('scroll', measure, true) // capture เพื่อจับ scroll ของ parent ทุกตัว
+    return () => {
+      window.removeEventListener('resize', measure)
+      window.removeEventListener('scroll', measure, true)
+    }
+  }, [open])
+
+  function prevMonth() {
+    let newMonth = viewMonth
+    let newYear = viewYear
+    if (viewMonth === 0) {
+      newMonth = 11
+      newYear = viewYear - 1
+    } else {
+      newMonth = viewMonth - 1
+    }
+    setViewMonth(newMonth)
+    setViewYear(newYear)
+    onMonthChange?.(`${newYear}-${pad(newMonth + 1)}`)
   }
 
   function nextMonth() {
+    let newMonth = viewMonth
+    let newYear = viewYear
     if (viewMonth === 11) {
-      setViewMonth(0)
-      setViewYear(viewYear + 1)
+      newMonth = 0
+      newYear = viewYear + 1
     } else {
-      setViewMonth(viewMonth + 1)
+      newMonth = viewMonth + 1
     }
+    setViewMonth(newMonth)
+    setViewYear(newYear)
+    onMonthChange?.(`${newYear}-${pad(newMonth + 1)}`)
   }
 
   function selectDate(day: number) {
@@ -140,6 +193,7 @@ export default function CalendarPicker({
         </span>
       )}
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-3.5 py-2.5 text-left text-sm outline-none transition hover:border-slate-300 focus:border-[var(--primary)]"
@@ -151,7 +205,11 @@ export default function CalendarPicker({
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full z-50 mt-1.5 w-[280px] rounded-xl border border-[var(--line)] bg-white p-4 shadow-xl">
+        <div
+          className={`absolute z-50 w-[280px] rounded-xl border border-[var(--line)] bg-white p-4 shadow-xl ${
+            alignRight ? 'right-0' : 'left-0'
+          } ${openUpward ? 'bottom-full mb-1.5' : 'top-full mt-1.5'}`}
+        >
 
           {/* ── Year picker mode ── */}
           {mode === 'year' && (
@@ -275,6 +333,7 @@ export default function CalendarPicker({
                 : ''
               const isSelected = cell.current && dateStr === value
               const isToday = cell.current && dateStr === todayStr
+              const isMarked = cell.current && markedDates?.has(dateStr)
 
               return (
                 <button
@@ -290,6 +349,9 @@ export default function CalendarPicker({
                   `}
                 >
                   {cell.day}
+                  {isMarked && (
+                    <span className={`absolute bottom-0.5 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full ${isSelected ? 'bg-white' : 'bg-emerald-500'}`} />
+                  )}
                 </button>
               )
             })}

@@ -1,33 +1,29 @@
 'use client'
 
 import Link from 'next/link'
-import { Calendar, ClipboardCheck, MoreVertical, Pencil, School, Trash2, Users } from 'lucide-react'
+import { Archive, Calendar, ClipboardCheck, Copy, MoreVertical, Pencil, School, Trash2, Users } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
-import { Classroom } from '@/types'
+import { Classroom, getClassroomColor } from '@/types'
 
 interface ClassroomCardProps {
   classroom: Classroom
   onEdit: (classroom: Classroom) => void
   onDelete: (classroom: Classroom) => void
+  onDuplicate?: (classroom: Classroom) => void
+  onArchive?: (classroom: Classroom) => void
 }
-
-const COLOR_SETS = [
-  'bg-blue-500',
-  'bg-violet-500',
-  'bg-emerald-500',
-  'bg-orange-500',
-  'bg-pink-500',
-  'bg-indigo-500',
-]
 
 export default function ClassroomCard({
   classroom,
   onEdit,
   onDelete,
+  onDuplicate,
+  onArchive,
 }: ClassroomCardProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
-  const color = COLOR_SETS[classroom.id % COLOR_SETS.length]
+  const colorDef = getClassroomColor(classroom)
+  const color = colorDef.bg
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -62,6 +58,7 @@ export default function ClassroomCard({
             <button
               type="button"
               onClick={() => setMenuOpen(!menuOpen)}
+              title="ตัวเลือก: แก้ไข / ลบ"
               className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
             >
               <MoreVertical size={16} />
@@ -76,13 +73,33 @@ export default function ClassroomCard({
                   <Pencil size={14} />
                   แก้ไข
                 </button>
+                {onDuplicate && (
+                  <button
+                    type="button"
+                    onClick={() => { onDuplicate(classroom); setMenuOpen(false) }}
+                    className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-indigo-600 transition hover:bg-indigo-50"
+                  >
+                    <Copy size={14} />
+                    ขึ้นปีใหม่
+                  </button>
+                )}
+                {onArchive && (
+                  <button
+                    type="button"
+                    onClick={() => { onArchive(classroom); setMenuOpen(false) }}
+                    className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-amber-700 transition hover:bg-amber-50"
+                  >
+                    <Archive size={14} />
+                    เก็บถาวร
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => { onDelete(classroom); setMenuOpen(false) }}
                   className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-red-600 transition hover:bg-red-50"
                 >
                   <Trash2 size={14} />
-                  ลบห้อง
+                  ลบถาวร
                 </button>
               </div>
             )}

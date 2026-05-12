@@ -27,16 +27,115 @@
   --shadow-lg: 0 12px 40px rgba(15,23,42,0.1), 0 4px 12px rgba(15,23,42,0.05);
 }
 
+/* ─── Dark theme ─────────────────────────────────────── */
+/* Sprint 2: override CSS variables เมื่อ <html data-theme="dark"> */
+[data-theme="dark"] {
+  --bg: #0b1220;
+  --surface: #131b2c;
+  --surface-soft: #1a233a;
+  --text: #e5edf9;
+  --muted: #94a3c0;
+  --line: #2b3852;
+  --primary: #60a5fa;
+  --primary-soft: #1e3a8a;
+  --primary-strong: #93c5fd;
+  --success: #34d399;
+  --success-soft: #064e3b;
+  --warning: #fbbf24;
+  --warning-soft: #78350f;
+  --danger: #f87171;
+  --danger-soft: #7f1d1d;
+  --nav: #0b1220;
+  --nav-hover: #1e293b;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.35), 0 2px 4px rgba(0,0,0,0.25);
+  --shadow-lg: 0 12px 40px rgba(0,0,0,0.5), 0 4px 12px rgba(0,0,0,0.3);
+  color-scheme: dark;
+}
+
+/* Dark mode — แก้ Tailwind utility ที่ฝัง color literal ให้ดูดีในธีมมืด */
+[data-theme="dark"] body {
+  color: var(--text);
+}
+
+/* white surfaces → use --surface ใน dark */
+[data-theme="dark"] .bg-white {
+  background-color: var(--surface) !important;
+}
+[data-theme="dark"] .bg-slate-50,
+[data-theme="dark"] .bg-slate-50\/80,
+[data-theme="dark"] .bg-slate-50\/90,
+[data-theme="dark"] .bg-slate-50\/50,
+[data-theme="dark"] .bg-slate-100 {
+  background-color: var(--surface-soft) !important;
+}
+[data-theme="dark"] .bg-slate-950\/40 {
+  background-color: rgba(0, 0, 0, 0.55) !important;
+}
+
+/* slate text → light */
+[data-theme="dark"] .text-slate-900,
+[data-theme="dark"] .text-slate-800,
+[data-theme="dark"] .text-slate-700 {
+  color: var(--text) !important;
+}
+[data-theme="dark"] .text-slate-600,
+[data-theme="dark"] .text-slate-500,
+[data-theme="dark"] .text-slate-400 {
+  color: var(--muted) !important;
+}
+
+/* slate borders → use --line */
+[data-theme="dark"] .border-slate-50,
+[data-theme="dark"] .border-slate-100,
+[data-theme="dark"] .border-slate-200,
+[data-theme="dark"] .border-slate-300 {
+  border-color: var(--line) !important;
+}
+
+/* hover bg-slate */
+[data-theme="dark"] .hover\:bg-slate-50:hover,
+[data-theme="dark"] .hover\:bg-slate-100:hover {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Skeleton ใน dark mode */
+[data-theme="dark"] .skeleton {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="dark"] .table-row-hover:hover {
+  background-color: rgba(255, 255, 255, 0.04) !important;
+}
+
+/* Dark scrollbar */
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: #2b3852;
+}
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: #3b4a6a;
+}
+[data-theme="dark"] * {
+  scrollbar-color: #2b3852 transparent;
+}
+
+/* ─── Font Size (สำหรับครูที่สายตาไม่ค่อยดี) ──── */
+[data-font-size="large"] {
+  font-size: 19px;
+}
+[data-font-size="extra-large"] {
+  font-size: 21px;
+}
+
 * {
   box-sizing: border-box;
 }
 
 html {
-  background:
-    radial-gradient(ellipse at 0% 0%, rgba(37, 99, 235, 0.08), transparent 50%),
-    radial-gradient(ellipse at 100% 100%, rgba(139, 92, 246, 0.05), transparent 50%),
-    linear-gradient(180deg, #f6f9ff 0%, #eef2f9 100%);
+  background: var(--bg);
   min-height: 100vh;
+  /* ขยายฟอนต์ให้ครูรุ่นใหญ่อ่านง่าย: base 17px (เดิม 16px) */
+  font-size: 17px;
 }
 
 body {
@@ -47,6 +146,20 @@ body {
   background: transparent;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  line-height: 1.6;
+}
+
+/* ปุ่มต่างๆ มี touch target ขั้นต่ำให้กดง่าย */
+button,
+a[role="button"],
+input[type="button"],
+input[type="submit"] {
+  min-height: 40px;
+}
+
+/* ปุ่มเล็ก (ใน table/cell) ยอมให้เล็กกว่าได้ */
+.btn-compact {
+  min-height: 0 !important;
 }
 
 a {
@@ -61,7 +174,7 @@ textarea {
   font: inherit;
 }
 
-/* Scrollbar */
+/* Scrollbar (light/default) */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -74,10 +187,60 @@ textarea {
 ::-webkit-scrollbar-thumb {
   background: #c1cfe0;
   border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: #9bb0ca;
+  background-clip: padding-box;
+}
+
+/* ซ่อนปุ่มลูกศรบน/ล่างของ scrollbar ระบบ (Windows) */
+::-webkit-scrollbar-button {
+  display: none;
+  height: 0;
+  width: 0;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Firefox — scrollbar บาง สีอ่อน */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #c1cfe0 transparent;
+}
+
+/* Sidebar scrollbar — ธีมเข้ม โปร่งแสง เรียวกว่า */
+.sidebar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+}
+
+.sidebar-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 4px 0;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  border: none;
+  transition: background 0.2s ease;
+}
+
+.sidebar-scroll:hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.35);
 }
 
 /* Animations */
@@ -164,9 +327,8 @@ textarea {
 
 /* Skeleton loading */
 .skeleton {
-  background: linear-gradient(90deg, #e8eef6 25%, #f0f5fc 50%, #e8eef6 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s ease-in-out infinite;
+  background-color: #e8eef6;
+  animation: pulse-soft 1.5s ease-in-out infinite;
   border-radius: var(--radius);
 }
 
@@ -218,13 +380,14 @@ textarea:focus-visible {
   box-shadow: var(--shadow-lg);
 }
 
-/* Stat card gradient borders */
+/* Stat card colored left borders */
 .stat-blue { border-left: 3px solid #3b82f6; }
 .stat-green { border-left: 3px solid #22c55e; }
 .stat-amber { border-left: 3px solid #f59e0b; }
 .stat-purple { border-left: 3px solid #8b5cf6; }
 .stat-red { border-left: 3px solid #ef4444; }
 .stat-sky { border-left: 3px solid #0ea5e9; }
+.stat-pink { border-left: 3px solid #ec4899; }
 
 /* Table row hover */
 .table-row-hover {
@@ -268,4 +431,97 @@ input, select, textarea {
 /* Button press */
 .btn-press:active {
   transform: scale(0.97);
+}
+
+/* ─── Print layout (สำหรับพิมพ์ผ่านเบราว์เซอร์) ─── */
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+
+  html, body {
+    background: #fff !important;
+    font-size: 12pt;
+  }
+
+  /* ซ่อน sidebar, ปุ่ม action, modal, toast เมื่อพิมพ์ */
+  aside,
+  .sidebar-drawer,
+  .sidebar-overlay,
+  [aria-label="เปิดเมนู"],
+  button.no-print,
+  .no-print {
+    display: none !important;
+  }
+
+  /* main เต็มหน้ากระดาษ ไม่มี margin sidebar */
+  main {
+    margin-left: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* ลบ shadow + border radius ใหญ่ๆ ตอนพิมพ์ให้เรียบ */
+  .shadow-sm,
+  .shadow-md,
+  .shadow-lg,
+  [class*="shadow-["] {
+    box-shadow: none !important;
+  }
+
+  /* ตัด animation */
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  /* แต่ละ card ไม่ควรขึ้นหน้าใหม่กลางๆ */
+  section, .print-avoid-break {
+    page-break-inside: avoid;
+  }
+}
+
+/* ─── Tooltip แบบ native สำหรับปุ่ม icon ─── */
+[data-tip] {
+  position: relative;
+}
+
+[data-tip]:hover::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 10px;
+  background: #0f172a;
+  color: #fff;
+  font-size: 12px;
+  border-radius: 8px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+[data-tip]:hover::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: #0f172a;
+  pointer-events: none;
+  z-index: 100;
+}
+
+/* ─── Senior text utilities (สำหรับหน้าที่อยากตัวอักษรใหญ่เป็นพิเศษ) ─── */
+.text-senior {
+  font-size: 1.125rem; /* ~19px */
+  line-height: 1.65;
+}
+
+.text-senior-lg {
+  font-size: 1.25rem; /* ~21px */
+  line-height: 1.6;
 }
