@@ -75,24 +75,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   duplicateClassroom: (data) => ipcRenderer.invoke('duplicate-classroom', data),
 
   // Sprint 2: Dashboard stats
-  getDashboardStats: () => ipcRenderer.invoke('get-dashboard-stats'),
+  getDashboardStats: (classroomId) => ipcRenderer.invoke('get-dashboard-stats', classroomId),
 
   // Sprint 3: Archive classrooms
   getArchivedClassrooms: () => ipcRenderer.invoke('get-archived-classrooms'),
   archiveClassroom: (id) => ipcRenderer.invoke('archive-classroom', id),
   unarchiveClassroom: (id) => ipcRenderer.invoke('unarchive-classroom', id),
   promoteStudents: (data) => ipcRenderer.invoke('promote-students', data),
-
-  // Sprint 3: Grade items (คะแนนเก็บ)
-  getGradeItems: (params) => ipcRenderer.invoke('get-grade-items', params),
-  createGradeItem: (data) => ipcRenderer.invoke('create-grade-item', data),
-  updateGradeItem: (data) => ipcRenderer.invoke('update-grade-item', data),
-  deleteGradeItem: (id) => ipcRenderer.invoke('delete-grade-item', id),
-  getGradeItemScores: (itemId) => ipcRenderer.invoke('get-grade-item-scores', itemId),
-  getAllGradeItemScores: (params) => ipcRenderer.invoke('get-all-grade-item-scores', params),
-  saveGradeItemScores: (data) => ipcRenderer.invoke('save-grade-item-scores', data),
-
-  // Sprint 3: Evaluations (คุณลักษณะ + อ่าน/คิด/เขียน)
-  getEvaluations: (params) => ipcRenderer.invoke('get-evaluations', params),
-  saveEvaluations: (data) => ipcRenderer.invoke('save-evaluations', data),
 })

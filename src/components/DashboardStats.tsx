@@ -27,14 +27,23 @@ function formatThaiShortDate(iso: string): string {
   return `${d} ${months[m - 1]} ${y + 543}`
 }
 
-export default function DashboardStats() {
+interface Props {
+  classroomId?: number | null
+}
+
+export default function DashboardStats({ classroomId }: Props) {
   const [stats, setStats] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (!classroomId) {
+      setStats(null)
+      setLoading(false)
+      return
+    }
     let cancelled = false
     setLoading(true)
-    getDashboardStats()
+    getDashboardStats(classroomId)
       .then((s) => {
         if (!cancelled) setStats(s)
       })
@@ -44,7 +53,23 @@ export default function DashboardStats() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [classroomId])
+
+  const scopedClassroomName = stats?.latestClassroom?.name ?? null
+
+  if (!classroomId) {
+    return (
+      <div className="rounded-[var(--radius-lg)] border border-dashed border-[var(--line)] bg-white px-4 py-10 text-center text-sm text-[var(--muted)]">
+        <p className="font-semibold text-slate-700">ยังไม่ได้เลือกห้องเรียน</p>
+        <p className="mt-1">เลือกห้องเรียนที่{' '}
+          <Link href="/" className="font-semibold text-[var(--primary)] underline">
+            หน้าหลัก
+          </Link>{' '}
+          ก่อนเพื่อดูภาพรวม
+        </p>
+      </div>
+    )
+  }
 
   if (loading) {
     return (
@@ -69,6 +94,12 @@ export default function DashboardStats() {
 
   return (
     <div className="space-y-4">
+      {/* Header — ห้องที่กำลังดู */}
+      <div className="rounded-[var(--radius-lg)] border border-[var(--line)] bg-white px-4 py-3 shadow-[var(--shadow-sm)] text-sm text-slate-600">
+        กำลังดูข้อมูลของห้อง{' '}
+        <span className="font-semibold text-slate-900">{scopedClassroomName ?? '...'}</span>
+      </div>
+
       {/* Top stats */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-5 shadow-[var(--shadow-sm)] stat-blue">
@@ -76,9 +107,11 @@ export default function DashboardStats() {
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
               <School size={22} />
             </div>
-            <div>
-              <p className="text-xs font-medium text-[var(--muted)]">ห้องเรียนทั้งหมด</p>
-              <p className="text-2xl font-bold text-slate-900">{stats.classroomCount}</p>
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-[var(--muted)]">ห้องเรียน</p>
+              <p className="truncate text-2xl font-bold text-slate-900">
+                {scopedClassroomName || '—'}
+              </p>
             </div>
           </div>
         </div>
@@ -88,7 +121,7 @@ export default function DashboardStats() {
               <Users size={22} />
             </div>
             <div>
-              <p className="text-xs font-medium text-[var(--muted)]">นักเรียนทั้งหมด</p>
+              <p className="text-xs font-medium text-[var(--muted)]">นักเรียนในห้อง</p>
               <p className="text-2xl font-bold text-slate-900">{stats.studentCount}</p>
             </div>
           </div>
@@ -110,15 +143,12 @@ export default function DashboardStats() {
               <Award size={22} />
             </div>
             <div>
-              <p className="text-xs font-medium text-[var(--muted)]">เกรดเฉลี่ยห้องล่าสุด</p>
+              <p className="text-xs font-medium text-[var(--muted)]">เกรดเฉลี่ยห้องนี้</p>
               <p className="text-2xl font-bold text-slate-900">
                 {stats.latestClassroom?.avg_score
                   ? Number(stats.latestClassroom.avg_score).toFixed(1)
                   : '—'}
               </p>
-              {stats.latestClassroom?.name && (
-                <p className="text-[11px] text-[var(--muted)]">{stats.latestClassroom.name}</p>
-              )}
             </div>
           </div>
         </div>

@@ -4,12 +4,9 @@ import {
   AttendanceRecord,
   AttendanceStatus,
   Classroom,
-  GradeItem,
-  GradeItemScore,
   ImportedStudentInput,
   ImportStudentsResult,
   Student,
-  StudentEvaluation,
   StudentFormInput,
   StudentNote,
 } from '@/types'
@@ -640,6 +637,8 @@ export async function duplicateClassroomRecord(
 
 // ─── Sprint 2: Dashboard Stats ─────────────────────────────
 export interface DashboardStats {
+  scope: 'classroom' | 'all'
+  classroomId: number | null
   classroomCount: number
   studentCount: number
   topAbsent: Array<{
@@ -683,16 +682,17 @@ export interface DashboardStats {
   } | null
 }
 
-export async function getDashboardStats(): Promise<DashboardStats | null> {
+export async function getDashboardStats(classroomId?: number | null): Promise<DashboardStats | null> {
   if (await waitForElectronAPI()) {
     try {
-      return await window.electronAPI!.getDashboardStats()
+      return await window.electronAPI!.getDashboardStats(classroomId ?? null)
     } catch {
       return null
     }
   }
   try {
-    const res = await fetch('/api/stats/dashboard')
+    const query = typeof classroomId === 'number' && classroomId > 0 ? `?classroom=${classroomId}` : ''
+    const res = await fetch(`/api/stats/dashboard${query}`)
     if (!res.ok) return null
     return res.json()
   } catch {
@@ -775,153 +775,3 @@ export async function promoteStudentsBetweenClassrooms(
   }
 }
 
-// ─── Sprint 3: Grade Items (คะแนนเก็บระหว่างภาค) ──────────
-export async function getGradeItemsList(
-  classroom: number,
-  subjectCode: string,
-  semester: number,
-  year: string
-): Promise<GradeItem[]> {
-  if (await waitForElectronAPI()) {
-    return window.electronAPI!.getGradeItems({ classroom, subjectCode, semester, year })
-  }
-  const params = new URLSearchParams({
-    classroom: String(classroom),
-    subject: subjectCode,
-    semester: String(semester),
-    year,
-  })
-  const res = await fetch(`/api/grade-items?${params}`)
-  if (!res.ok) return []
-  return res.json()
-}
-
-export async function createGradeItemRecord(
-  item: Omit<GradeItem, 'id' | 'created_at'>
-): Promise<GradeItem | null> {
-  if (await waitForElectronAPI()) {
-    return window.electronAPI!.createGradeItem(item)
-  }
-  const res = await fetch('/api/grade-items', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(item),
-  })
-  if (!res.ok) return null
-  return res.json()
-}
-
-export async function updateGradeItemRecord(
-  id: number,
-  data: Partial<Pick<GradeItem, 'item_name' | 'full_score' | 'weight' | 'category' | 'display_order'>>
-): Promise<{ success: boolean; error?: string }> {
-  if (await waitForElectronAPI()) {
-    return window.electronAPI!.updateGradeItem({ id, ...data })
-  }
-  const res = await fetch('/api/grade-items', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id, ...data }),
-  })
-  if (!res.ok) return { success: false, error: 'แก้ไขไม่สำเร็จ' }
-  return { success: true }
-}
-
-export async function deleteGradeItemRecord(
-  id: number
-): Promise<{ success: boolean; error?: string }> {
-  if (await waitForElectronAPI()) {
-    return window.electronAPI!.deleteGradeItem(id)
-  }
-  const res = await fetch(`/api/grade-items?id=${id}`, { method: 'DELETE' })
-  if (!res.ok) return { success: false, error: 'ลบไม่สำเร็จ' }
-  return { success: true }
-}
-
-export async function getGradeItemScoresList(itemId: number): Promise<GradeItemScore[]> {
-  if (await waitForElectronAPI()) {
-    return window.electronAPI!.getGradeItemScores(itemId)
-  }
-  const res = await fetch(`/api/grade-items/scores?itemId=${itemId}`)
-  if (!res.ok) return []
-  return res.json()
-}
-
-export async function getAllGradeItemScoresForClassroom(
-  classroom: number,
-  subjectCode: string,
-  semester: number,
-  year: string
-): Promise<GradeItemScore[]> {
-  if (await waitForElectronAPI()) {
-    return window.electronAPI!.getAllGradeItemScores({ classroom, subjectCode, semester, year })
-  }
-  const params = new URLSearchParams({
-    classroom: String(classroom),
-    subject: subjectCode,
-    semester: String(semester),
-    year,
-  })
-  const res = await fetch(`/api/grade-items/scores?${params}`)
-  if (!res.ok) return []
-  return res.json()
-}
-
-export async function saveGradeItemScoresRecord(
-  itemId: number,
-  scores: Array<{ student_id: number; score: number | null; note?: string }>
-): Promise<{ success: boolean; error?: string }> {
-  if (await waitForElectronAPI()) {
-    return window.electronAPI!.saveGradeItemScores({ itemId, scores })
-  }
-  const res = await fetch('/api/grade-items/scores', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ itemId, scores }),
-  })
-  if (!res.ok) return { success: false, error: 'บันทึกไม่สำเร็จ' }
-  return { success: true }
-}
-
-// ─── Sprint 3: Student Evaluations ────────────────────────
-export async function getEvaluationsList(
-  classroom: number,
-  semester: number,
-  year: string
-): Promise<StudentEvaluation[]> {
-  if (await waitForElectronAPI()) {
-    return window.electronAPI!.getEvaluations({ classroom, semester, year })
-  }
-  const params = new URLSearchParams({
-    classroom: String(classroom),
-    semester: String(semester),
-    year,
-  })
-  const res = await fetch(`/api/evaluations?${params}`)
-  if (!res.ok) return []
-  return res.json()
-}
-
-export async function saveEvaluationsRecord(
-  classroom: number,
-  semester: number,
-  year: string,
-  evaluations: Array<{
-    student_id: number
-    category: string
-    item_code: string
-    level: number
-    note?: string
-  }>
-): Promise<{ success: boolean; error?: string }> {
-  if (await waitForElectronAPI()) {
-    return window.electronAPI!.saveEvaluations({ classroom, semester, year, evaluations })
-  }
-  const res = await fetch('/api/evaluations', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ classroom, semester, year, evaluations }),
-  })
-  if (!res.ok) return { success: false, error: 'บันทึกไม่สำเร็จ' }
-  return { success: true }
-}

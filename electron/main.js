@@ -15,8 +15,6 @@ const gotTheLock = app.requestSingleInstanceLock()
 if (!gotTheLock) {
   log.info('[Main] Another instance is already running, quitting...')
   app.quit()
-  // หยุดการ execute ส่วนที่เหลือของไฟล์นี้ — กัน initDatabase / createWindow รันโดย instance ที่ 2
-  process.exit(0)
 }
 
 let mainWindow = null
@@ -526,55 +524,6 @@ function initDatabase() {
       CREATE INDEX IF NOT EXISTS idx_grades_classroom ON grades(classroom_id, semester, academic_year);
       CREATE INDEX IF NOT EXISTS idx_schedules_classroom ON schedules(classroom_id);
       CREATE INDEX IF NOT EXISTS idx_student_notes_student ON student_notes(student_id, date DESC);
-
-      -- Sprint 3: คะแนนเก็บระหว่างภาค
-      CREATE TABLE IF NOT EXISTS grade_items (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        classroom_id INTEGER NOT NULL,
-        subject_code TEXT NOT NULL,
-        semester INTEGER NOT NULL,
-        academic_year TEXT NOT NULL,
-        item_name TEXT NOT NULL,
-        full_score REAL NOT NULL DEFAULT 10,
-        weight REAL NOT NULL DEFAULT 1,
-        category TEXT NOT NULL DEFAULT 'formative',
-        display_order INTEGER NOT NULL DEFAULT 0,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (classroom_id) REFERENCES classrooms(id)
-      );
-
-      CREATE TABLE IF NOT EXISTS grade_item_scores (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        grade_item_id INTEGER NOT NULL,
-        student_id INTEGER NOT NULL,
-        score REAL,
-        note TEXT DEFAULT '',
-        UNIQUE(grade_item_id, student_id),
-        FOREIGN KEY (grade_item_id) REFERENCES grade_items(id) ON DELETE CASCADE,
-        FOREIGN KEY (student_id) REFERENCES students(id)
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_grade_items_classroom ON grade_items(classroom_id, subject_code, semester, academic_year);
-      CREATE INDEX IF NOT EXISTS idx_grade_item_scores_item ON grade_item_scores(grade_item_id);
-
-      -- Sprint 3: คุณลักษณะอันพึงประสงค์ + อ่าน/คิด/เขียน
-      CREATE TABLE IF NOT EXISTS student_evaluations (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        student_id INTEGER NOT NULL,
-        classroom_id INTEGER NOT NULL,
-        semester INTEGER NOT NULL,
-        academic_year TEXT NOT NULL,
-        category TEXT NOT NULL,
-        item_code TEXT NOT NULL,
-        level INTEGER NOT NULL,
-        note TEXT DEFAULT '',
-        UNIQUE(student_id, semester, academic_year, item_code),
-        FOREIGN KEY (student_id) REFERENCES students(id),
-        FOREIGN KEY (classroom_id) REFERENCES classrooms(id)
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_evaluations_classroom ON student_evaluations(classroom_id, semester, academic_year);
-      CREATE INDEX IF NOT EXISTS idx_evaluations_student ON student_evaluations(student_id, semester, academic_year);
     `)
 
     // legacy column migrations (สำหรับ schema เดิมของ Electron) — ทำหลัง CREATE TABLE IF NOT EXISTS
@@ -659,6 +608,7 @@ function localDateString() {
 // สร้าง snapshot ของ DB ปัจจุบัน เก็บลง backups/<prefix>_<timestamp>.db
 // ใช้ก่อนทำ destructive operation (restore / clear-all / delete-classroom)
 // คืน path ของไฟล์ที่สร้าง หรือ null ถ้าสร้างไม่ได้
+// ใช้ db.backup() ของ better-sqlite3 — รวม WAL pending writes (atomic)
 function createSnapshot(prefix) {
   try {
     if (!dbPath || !fs.existsSync(dbPath)) {
@@ -676,6 +626,15 @@ function createSnapshot(prefix) {
       `_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`
     const fileName = `${prefix}_${ts}.db`
     const fullPath = path.join(backupDir, fileName)
+    if (db && typeof db.backup === 'function') {
+      // backup() เป็น async — รอผลก่อนคืน path ไม่ได้ เพราะ caller ไม่ใช่ async
+      // ใช้ checkpoint แล้ว copyFile ภายใต้ writer lock เพื่อให้ atomic แทน
+      try {
+        db.pragma('wal_checkpoint(FULL)')
+      } catch (err) {
+        log.warn('[Backup] wal_checkpoint failed:', err)
+      }
+    }
     fs.copyFileSync(dbPath, fullPath)
     log.info('[Backup] Snapshot created:', fileName)
     return fullPath
@@ -732,6 +691,12 @@ function runDailyBackup() {
 
     // ถ้ามีไฟล์ของวันนี้แล้ว แปลว่า backup ไปแล้ว (เปิดแอปรอบที่ 2 ในวันเดียวกัน) ข้าม
     if (!fs.existsSync(todayFile)) {
+      // checkpoint WAL ก่อน copy เพื่อให้ backup เก็บข้อมูลล่าสุด (atomic)
+      try {
+        if (db) db.pragma('wal_checkpoint(FULL)')
+      } catch (err) {
+        log.warn('[Backup] daily wal_checkpoint failed:', err)
+      }
       fs.copyFileSync(dbPath, todayFile)
       log.info('[Backup] Created daily backup:', todayFile)
     } else {
@@ -765,10 +730,30 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: true,
+      webSecurity: true,
       preload: path.join(__dirname, 'preload.js'),
     },
     frame: true,
     show: false,
+  })
+
+  // กัน renderer เปิด external URL ผ่าน window.open / target=_blank
+  // → ส่งให้ default browser แทน, กันโดน redirect ออกไปไซต์อันตราย
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith('http://localhost') || url.startsWith('file://')) {
+      return { action: 'allow' }
+    }
+    shell.openExternal(url).catch((err) => log.warn('[Main] openExternal failed:', err))
+    return { action: 'deny' }
+  })
+
+  // กัน navigation ไปยัง URL ภายนอก (เช่น XSS ที่เปลี่ยน location.href)
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (!url.startsWith('http://localhost') && !url.startsWith('file://')) {
+      event.preventDefault()
+      shell.openExternal(url).catch((err) => log.warn('[Main] openExternal failed:', err))
+    }
   })
 
   mainWindow.once('ready-to-show', () => {
@@ -855,165 +840,6 @@ function setupIpcHandlers() {
     } catch (error) {
       log.error('[promote-students] failed:', error)
       return { success: false, moved: 0, error: error.message }
-    }
-  })
-
-  // ─── Sprint 3: Grade Items (คะแนนเก็บ) ────────────────────
-  ipcMain.handle('get-grade-items', (event, { classroom, subjectCode, semester, year }) => {
-    return db
-      .prepare(
-        `SELECT id, classroom_id, subject_code, semester, academic_year, item_name,
-                full_score, weight, category, display_order, created_at
-         FROM grade_items
-         WHERE classroom_id = ? AND subject_code = ? AND semester = ? AND academic_year = ?
-         ORDER BY display_order, id`
-      )
-      .all(Number(classroom), String(subjectCode), Number(semester), String(year))
-  })
-
-  ipcMain.handle('create-grade-item', (event, item) => {
-    try {
-      const result = db
-        .prepare(
-          `INSERT INTO grade_items
-           (classroom_id, subject_code, semester, academic_year, item_name, full_score, weight, category, display_order)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        )
-        .run(
-          Number(item.classroom_id),
-          String(item.subject_code),
-          Number(item.semester),
-          String(item.academic_year),
-          String(item.item_name),
-          Number(item.full_score) || 10,
-          Number(item.weight) || 1,
-          String(item.category || 'formative'),
-          Number(item.display_order) || 0
-        )
-      return db.prepare('SELECT * FROM grade_items WHERE id = ?').get(result.lastInsertRowid)
-    } catch (error) {
-      log.error('[create-grade-item] failed:', error)
-      throw error
-    }
-  })
-
-  ipcMain.handle('update-grade-item', (event, { id, ...data }) => {
-    try {
-      const current = db.prepare('SELECT * FROM grade_items WHERE id = ?').get(Number(id))
-      if (!current) return { success: false, error: 'ไม่พบชิ้นงาน' }
-      db.prepare(
-        `UPDATE grade_items
-         SET item_name = ?, full_score = ?, weight = ?, category = ?, display_order = ?
-         WHERE id = ?`
-      ).run(
-        data.item_name ?? current.item_name,
-        data.full_score ?? current.full_score,
-        data.weight ?? current.weight,
-        data.category ?? current.category,
-        data.display_order ?? current.display_order,
-        Number(id)
-      )
-      return { success: true }
-    } catch (error) {
-      log.error('[update-grade-item] failed:', error)
-      return { success: false, error: error.message }
-    }
-  })
-
-  ipcMain.handle('delete-grade-item', (event, id) => {
-    try {
-      const tx = db.transaction(() => {
-        db.prepare('DELETE FROM grade_item_scores WHERE grade_item_id = ?').run(Number(id))
-        db.prepare('DELETE FROM grade_items WHERE id = ?').run(Number(id))
-      })
-      tx()
-      return { success: true }
-    } catch (error) {
-      log.error('[delete-grade-item] failed:', error)
-      return { success: false, error: error.message }
-    }
-  })
-
-  ipcMain.handle('get-grade-item-scores', (event, itemId) => {
-    return db
-      .prepare(
-        `SELECT id, grade_item_id, student_id, score, note
-         FROM grade_item_scores WHERE grade_item_id = ?`
-      )
-      .all(Number(itemId))
-  })
-
-  ipcMain.handle('get-all-grade-item-scores', (event, { classroom, subjectCode, semester, year }) => {
-    return db
-      .prepare(
-        `SELECT s.id, s.grade_item_id, s.student_id, s.score, s.note
-         FROM grade_item_scores s
-         INNER JOIN grade_items gi ON gi.id = s.grade_item_id
-         WHERE gi.classroom_id = ? AND gi.subject_code = ?
-           AND gi.semester = ? AND gi.academic_year = ?`
-      )
-      .all(Number(classroom), String(subjectCode), Number(semester), String(year))
-  })
-
-  ipcMain.handle('save-grade-item-scores', (event, { itemId, scores }) => {
-    try {
-      const tx = db.transaction(() => {
-        db.prepare('DELETE FROM grade_item_scores WHERE grade_item_id = ?').run(Number(itemId))
-        const insert = db.prepare(
-          'INSERT INTO grade_item_scores (grade_item_id, student_id, score, note) VALUES (?, ?, ?, ?)'
-        )
-        for (const s of scores || []) {
-          if (s.score === null || s.score === undefined || s.score === '') continue
-          insert.run(Number(itemId), Number(s.student_id), Number(s.score), String(s.note || ''))
-        }
-      })
-      tx()
-      return { success: true }
-    } catch (error) {
-      log.error('[save-grade-item-scores] failed:', error)
-      return { success: false, error: error.message }
-    }
-  })
-
-  // ─── Sprint 3: Evaluations (คุณลักษณะ + อ่าน/คิด/เขียน) ──
-  ipcMain.handle('get-evaluations', (event, { classroom, semester, year }) => {
-    return db
-      .prepare(
-        `SELECT id, student_id, classroom_id, semester, academic_year, category, item_code, level, note
-         FROM student_evaluations
-         WHERE classroom_id = ? AND semester = ? AND academic_year = ?`
-      )
-      .all(Number(classroom), Number(semester), String(year))
-  })
-
-  ipcMain.handle('save-evaluations', (event, { classroom, semester, year, evaluations }) => {
-    try {
-      const tx = db.transaction(() => {
-        const upsert = db.prepare(
-          `INSERT INTO student_evaluations
-           (student_id, classroom_id, semester, academic_year, category, item_code, level, note)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(student_id, semester, academic_year, item_code)
-           DO UPDATE SET level = excluded.level, note = excluded.note, category = excluded.category`
-        )
-        for (const e of evaluations || []) {
-          upsert.run(
-            Number(e.student_id),
-            Number(classroom),
-            Number(semester),
-            String(year),
-            String(e.category),
-            String(e.item_code),
-            Number(e.level),
-            String(e.note || '')
-          )
-        }
-      })
-      tx()
-      return { success: true }
-    } catch (error) {
-      log.error('[save-evaluations] failed:', error)
-      return { success: false, error: error.message }
     }
   })
 
@@ -1179,9 +1005,16 @@ function setupIpcHandlers() {
   })
 
   ipcMain.handle('add-student-note', (event, { student_id, date, note }) => {
+    // ตรวจ input ให้ตรงกับ Web API (POST /notes) — reject empty หลัง trim
+    const sid = Number(student_id)
+    const dateStr = String(date || '').trim()
+    const noteStr = String(note || '').trim()
+    if (!Number.isInteger(sid) || sid <= 0 || !dateStr || !noteStr) {
+      throw new Error('student_id, date และ note ต้องไม่ว่าง')
+    }
     const result = db
       .prepare('INSERT INTO student_notes (student_id, date, note) VALUES (?, ?, ?)')
-      .run(Number(student_id), String(date), String(note || '').trim())
+      .run(sid, dateStr, noteStr)
     return db.prepare('SELECT * FROM student_notes WHERE id = ?').get(result.lastInsertRowid)
   })
 
@@ -1499,6 +1332,12 @@ function setupIpcHandlers() {
   ipcMain.handle('import-data', (event, data) => {
     try {
       const { classrooms, students, subjects, grades, schedule, attendance, health_check } = data
+
+      // snapshot ก่อน destructive import — กู้คืนได้ถ้าครู import ผิดไฟล์
+      const snapshotPath = createSnapshot('before_import')
+      if (snapshotPath) {
+        log.info('[Import] Pre-import snapshot:', snapshotPath)
+      }
 
       const tx = db.transaction(() => {
         db.prepare('DELETE FROM student_notes').run()
@@ -1923,21 +1762,72 @@ function setupIpcHandlers() {
     return dir
   }
 
-  ipcMain.handle('save-student-photo', (event, { studentId, fileBuffer, ext }) => {
+  // จำกัดขนาดรูปนักเรียน 5MB — รูป profile ครูถ่ายมือถือทั่วไปไม่เกินนี้
+  // กัน OOM และ asar bloat ถ้ามีรูปขนาด GB ส่งผ่าน IPC
+  const MAX_PHOTO_BYTES = 5 * 1024 * 1024
+  // magic bytes สำหรับ JPEG / PNG / WebP / GIF เท่านั้น — ปฏิเสธไฟล์ exe ที่ rename เป็น .jpg
+  function detectImageType(buf) {
+    if (!buf || buf.length < 12) return null
+    if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'jpg'
+    if (
+      buf[0] === 0x89 &&
+      buf[1] === 0x50 &&
+      buf[2] === 0x4e &&
+      buf[3] === 0x47 &&
+      buf[4] === 0x0d &&
+      buf[5] === 0x0a &&
+      buf[6] === 0x1a &&
+      buf[7] === 0x0a
+    )
+      return 'png'
+    if (
+      buf[0] === 0x47 &&
+      buf[1] === 0x49 &&
+      buf[2] === 0x46 &&
+      buf[3] === 0x38
+    )
+      return 'gif'
+    if (
+      buf[0] === 0x52 &&
+      buf[1] === 0x49 &&
+      buf[2] === 0x46 &&
+      buf[3] === 0x46 &&
+      buf[8] === 0x57 &&
+      buf[9] === 0x45 &&
+      buf[10] === 0x42 &&
+      buf[11] === 0x50
+    )
+      return 'webp'
+    return null
+  }
+
+  ipcMain.handle('save-student-photo', (event, { studentId, fileBuffer }) => {
     try {
+      const sid = Number(studentId)
+      if (!Number.isInteger(sid) || sid <= 0) {
+        return { success: false, error: 'studentId ไม่ถูกต้อง' }
+      }
+      const buf = Buffer.from(fileBuffer || [])
+      if (buf.length === 0) {
+        return { success: false, error: 'ไฟล์ว่างเปล่า' }
+      }
+      if (buf.length > MAX_PHOTO_BYTES) {
+        return { success: false, error: 'ไฟล์รูปใหญ่เกิน 5MB' }
+      }
+      const detected = detectImageType(buf)
+      if (!detected) {
+        return { success: false, error: 'ไฟล์ไม่ใช่รูปภาพ (รองรับ jpg/png/gif/webp)' }
+      }
+
       const dir = getPhotosDir()
-      const safeExt = String(ext || 'jpg')
-        .toLowerCase()
-        .replace(/[^a-z0-9]/g, '')
-        .slice(0, 5) || 'jpg'
-      const fileName = `${studentId}.${safeExt}`
+      const fileName = `${sid}.${detected}`
       const fullPath = path.join(dir, fileName)
 
       // ลบไฟล์เก่าทุก extension ที่อาจมีอยู่ก่อน (เพื่อกันค้าง)
       try {
         const old = db
           .prepare('SELECT photo_path FROM students WHERE id = ?')
-          .get(Number(studentId))
+          .get(sid)
         if (old && old.photo_path) {
           const oldPath = path.join(dir, old.photo_path)
           if (fs.existsSync(oldPath) && oldPath !== fullPath) {
@@ -1948,13 +1838,9 @@ function setupIpcHandlers() {
         log.warn('[Photos] cleanup old failed:', err)
       }
 
-      const buf = Buffer.from(fileBuffer)
       fs.writeFileSync(fullPath, buf)
 
-      db.prepare('UPDATE students SET photo_path = ? WHERE id = ?').run(
-        fileName,
-        Number(studentId)
-      )
+      db.prepare('UPDATE students SET photo_path = ? WHERE id = ?').run(fileName, sid)
 
       return { success: true, photo_path: fileName }
     } catch (error) {
@@ -2164,12 +2050,20 @@ function setupIpcHandlers() {
   })
 
   // ─── Sprint 2: Dashboard stats ───────────────────────────────
-  ipcMain.handle('get-dashboard-stats', () => {
+  ipcMain.handle('get-dashboard-stats', (_event, classroomId) => {
     try {
+      const scoped = typeof classroomId === 'number' && classroomId > 0
+      const cId = scoped ? classroomId : null
+
       const classroomCount = db.prepare('SELECT COUNT(*) AS c FROM classrooms').get().c
+
       const studentCount = db
-        .prepare('SELECT COUNT(*) AS c FROM students WHERE is_active = 1')
-        .get().c
+        .prepare(
+          scoped
+            ? 'SELECT COUNT(*) AS c FROM students WHERE is_active = 1 AND classroom_id = ?'
+            : 'SELECT COUNT(*) AS c FROM students WHERE is_active = 1'
+        )
+        .get(...(scoped ? [cId] : [])).c
 
       const thirtyDaysAgo = new Date()
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
@@ -2184,11 +2078,12 @@ function setupIpcHandlers() {
            INNER JOIN students s ON s.id = a.student_id AND s.is_active = 1
            LEFT JOIN classrooms c ON c.id = s.classroom_id
            WHERE a.status IN ('ขาด', 'ลาป่วย', 'ลากิจ') AND a.date >= ?
+             ${scoped ? 'AND s.classroom_id = ?' : ''}
            GROUP BY s.id
            ORDER BY absent_count DESC
            LIMIT 5`
         )
-        .all(cutoff)
+        .all(...(scoped ? [cutoff, cId] : [cutoff]))
 
       const studentsWithBmi = db
         .prepare(
@@ -2198,9 +2093,10 @@ function setupIpcHandlers() {
            LEFT JOIN classrooms c ON c.id = s.classroom_id
            WHERE s.is_active = 1
              AND s.weight_kg IS NOT NULL AND s.weight_kg > 0
-             AND s.height_cm IS NOT NULL AND s.height_cm > 0`
+             AND s.height_cm IS NOT NULL AND s.height_cm > 0
+             ${scoped ? 'AND s.classroom_id = ?' : ''}`
         )
-        .all()
+        .all(...(scoped ? [cId] : []))
 
       const bmiAbnormal = []
       for (const s of studentsWithBmi) {
@@ -2227,33 +2123,43 @@ function setupIpcHandlers() {
            FROM students s
            LEFT JOIN classrooms c ON c.id = s.classroom_id
            WHERE s.is_active = 1
+             ${scoped ? 'AND s.classroom_id = ?' : ''}
            ORDER BY s.id DESC
            LIMIT 10`
         )
-        .all()
+        .all(...(scoped ? [cId] : []))
 
       const recentAttendance = db
         .prepare(
           `SELECT a.date, c.id as classroom_id, c.name as classroom_name, COUNT(a.id) as count
            FROM attendance a
            LEFT JOIN classrooms c ON c.id = a.classroom_id
+           ${scoped ? 'WHERE a.classroom_id = ?' : ''}
            GROUP BY a.date, c.id
            ORDER BY a.date DESC
            LIMIT 5`
         )
-        .all()
+        .all(...(scoped ? [cId] : []))
 
       const latestClassroom = db
         .prepare(
-          `SELECT c.id, c.name,
-                  (SELECT AVG(g.score) FROM grades g WHERE g.classroom_id = c.id AND g.score > 0) as avg_score
-           FROM classrooms c
-           ORDER BY c.id DESC
-           LIMIT 1`
+          scoped
+            ? `SELECT c.id, c.name,
+                      (SELECT AVG(g.score) FROM grades g WHERE g.classroom_id = c.id AND g.score > 0) as avg_score
+               FROM classrooms c
+               WHERE c.id = ?
+               LIMIT 1`
+            : `SELECT c.id, c.name,
+                      (SELECT AVG(g.score) FROM grades g WHERE g.classroom_id = c.id AND g.score > 0) as avg_score
+               FROM classrooms c
+               ORDER BY c.id DESC
+               LIMIT 1`
         )
-        .get()
+        .get(...(scoped ? [cId] : []))
 
       return {
+        scope: scoped ? 'classroom' : 'all',
+        classroomId: cId,
         classroomCount,
         studentCount,
         topAbsent,
@@ -2265,6 +2171,8 @@ function setupIpcHandlers() {
     } catch (error) {
       log.error('[get-dashboard-stats] failed:', error)
       return {
+        scope: 'all',
+        classroomId: null,
         classroomCount: 0,
         studentCount: 0,
         topAbsent: [],
@@ -2279,30 +2187,33 @@ function setupIpcHandlers() {
   log.info('[IPC] Handlers registered')
 }
 
-app.whenReady().then(() => {
-  log.info('[App] Ready')
+// ถ้าเป็น instance ที่สอง — ข้าม initialization ทั้งหมด รอ quit
+if (gotTheLock) {
+  app.whenReady().then(() => {
+    log.info('[App] Ready')
 
-  if (!initDatabase()) {
-    log.error('[App] Database init failed')
-    app.quit()
-    return
-  }
-
-  // สำรองข้อมูลอัตโนมัติเมื่อเปิดแอป (วันละครั้งต่อวัน)
-  runDailyBackup()
-
-  // Auto-purge trash > 30 วัน (ตอนเปิดแอป)
-  autoPurgeOldTrash()
-
-  setupIpcHandlers()
-  createWindow()
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow()
+    if (!initDatabase()) {
+      log.error('[App] Database init failed')
+      app.quit()
+      return
     }
+
+    // สำรองข้อมูลอัตโนมัติเมื่อเปิดแอป (วันละครั้งต่อวัน)
+    runDailyBackup()
+
+    // Auto-purge trash > 30 วัน (ตอนเปิดแอป)
+    autoPurgeOldTrash()
+
+    setupIpcHandlers()
+    createWindow()
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow()
+      }
+    })
   })
-})
+}
 
 app.on('window-all-closed', () => {
   log.info('[App] All windows closed')

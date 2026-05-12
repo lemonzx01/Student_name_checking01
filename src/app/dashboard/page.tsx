@@ -1,10 +1,26 @@
 'use client'
 
+import { Suspense, useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { ChevronLeft, LayoutDashboard } from 'lucide-react'
 import DashboardStats from '@/components/DashboardStats'
 
-export default function DashboardPage() {
+function DashboardContent() {
+  const searchParams = useSearchParams()
+  const classroomFromUrl = searchParams.get('classroom')
+  const [storedClassroomId, setStoredClassroomId] = useState<string | null>(null)
+
+  // fallback ไปอ่านจาก localStorage (sidebar ใช้ key เดียวกัน)
+  useEffect(() => {
+    if (classroomFromUrl) return
+    const saved = localStorage.getItem('selectedClassroom')
+    if (saved) setStoredClassroomId(saved)
+  }, [classroomFromUrl])
+
+  const activeClassroomRaw = classroomFromUrl || storedClassroomId
+  const activeClassroomId = activeClassroomRaw ? Number(activeClassroomRaw) : null
+
   return (
     <div className="mx-auto max-w-7xl animate-fade-in">
       {/* Breadcrumb */}
@@ -30,7 +46,15 @@ export default function DashboardPage() {
         </p>
       </section>
 
-      <DashboardStats />
+      <DashboardStats classroomId={activeClassroomId} />
     </div>
+  )
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={<div className="mx-auto max-w-7xl animate-fade-in" />}>
+      <DashboardContent />
+    </Suspense>
   )
 }

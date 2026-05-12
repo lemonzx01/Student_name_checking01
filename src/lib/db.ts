@@ -4,14 +4,11 @@ import {
   AttendanceStatus,
   Classroom,
   GradeEntry,
-  GradeItem,
-  GradeItemScore,
   HealthEntry,
   ImportedStudentInput,
   ImportStudentsResult,
   ScheduleItem,
   Student,
-  StudentEvaluation,
   StudentFormInput,
 } from '@/types'
 
@@ -51,6 +48,7 @@ function getDb(): any {
       level TEXT NOT NULL,
       academic_year TEXT NOT NULL,
       color TEXT,
+      archived_at DATETIME,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -76,6 +74,7 @@ function getDb(): any {
       guardian_last_name TEXT,
       guardian_occupation TEXT,
       guardian_relation TEXT,
+      guardian_phone TEXT,
       father_title TEXT,
       father_first_name TEXT,
       father_last_name TEXT,
@@ -86,6 +85,8 @@ function getDb(): any {
       mother_occupation TEXT,
       disadvantage TEXT,
       source_payload TEXT,
+      photo_path TEXT,
+      deleted_at DATETIME,
       is_active INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (classroom_id) REFERENCES classrooms(id)
@@ -119,6 +120,8 @@ function getDb(): any {
       classroom_id INTEGER NOT NULL,
       subject_code TEXT NOT NULL,
       score REAL NOT NULL DEFAULT 0,
+      midterm_score REAL DEFAULT 0,
+      final_score REAL DEFAULT 0,
       semester INTEGER NOT NULL,
       academic_year TEXT NOT NULL,
       FOREIGN KEY (student_id) REFERENCES students(id)
@@ -131,6 +134,8 @@ function getDb(): any {
       date TEXT NOT NULL,
       brushed_teeth INTEGER DEFAULT 0,
       drank_milk INTEGER DEFAULT 0,
+      weight_kg REAL,
+      height_cm REAL,
       FOREIGN KEY (student_id) REFERENCES students(id)
     );
 
@@ -159,55 +164,6 @@ function getDb(): any {
     CREATE INDEX IF NOT EXISTS idx_health_classroom_date ON health_check(classroom_id, date);
     CREATE INDEX IF NOT EXISTS idx_grades_classroom ON grades(classroom_id, semester, academic_year);
     CREATE INDEX IF NOT EXISTS idx_schedules_classroom ON schedules(classroom_id);
-
-    -- Sprint 3: คะแนนเก็บระหว่างภาค (grade items)
-    CREATE TABLE IF NOT EXISTS grade_items (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      classroom_id INTEGER NOT NULL,
-      subject_code TEXT NOT NULL,
-      semester INTEGER NOT NULL,
-      academic_year TEXT NOT NULL,
-      item_name TEXT NOT NULL,
-      full_score REAL NOT NULL DEFAULT 10,
-      weight REAL NOT NULL DEFAULT 1,
-      category TEXT NOT NULL DEFAULT 'formative',
-      display_order INTEGER NOT NULL DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (classroom_id) REFERENCES classrooms(id)
-    );
-
-    CREATE TABLE IF NOT EXISTS grade_item_scores (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      grade_item_id INTEGER NOT NULL,
-      student_id INTEGER NOT NULL,
-      score REAL,
-      note TEXT DEFAULT '',
-      UNIQUE(grade_item_id, student_id),
-      FOREIGN KEY (grade_item_id) REFERENCES grade_items(id) ON DELETE CASCADE,
-      FOREIGN KEY (student_id) REFERENCES students(id)
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_grade_items_classroom ON grade_items(classroom_id, subject_code, semester, academic_year);
-    CREATE INDEX IF NOT EXISTS idx_grade_item_scores_item ON grade_item_scores(grade_item_id);
-
-    -- Sprint 3: คุณลักษณะอันพึงประสงค์ + อ่าน/คิด/เขียน
-    CREATE TABLE IF NOT EXISTS student_evaluations (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      student_id INTEGER NOT NULL,
-      classroom_id INTEGER NOT NULL,
-      semester INTEGER NOT NULL,
-      academic_year TEXT NOT NULL,
-      category TEXT NOT NULL,
-      item_code TEXT NOT NULL,
-      level INTEGER NOT NULL,
-      note TEXT DEFAULT '',
-      UNIQUE(student_id, semester, academic_year, item_code),
-      FOREIGN KEY (student_id) REFERENCES students(id),
-      FOREIGN KEY (classroom_id) REFERENCES classrooms(id)
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_evaluations_classroom ON student_evaluations(classroom_id, semester, academic_year);
-    CREATE INDEX IF NOT EXISTS idx_evaluations_student ON student_evaluations(student_id, semester, academic_year);
   `)
 
   // Sprint 3: archived_at column for classrooms (soft archive)
@@ -837,8 +793,9 @@ export function updateStudentPhotoPath(studentId: number, photoPath: string | nu
 export function duplicateClassroom(
   sourceId: number,
   newName: string,
-  newAcademicYear: string
-): { id: number; name: string } {
+  newAcademicYear: string,
+  options: { promoteStudents?: boolean; archiveSource?: boolean } = {}
+): { id: number; name: string; movedStudents: number } {
   const d = getDb()
   const source = d.prepare('SELECT * FROM classrooms WHERE id = ?').get(sourceId) as
     | Classroom
@@ -850,6 +807,7 @@ export function duplicateClassroom(
   if (existing) throw new Error('Classroom name already exists')
 
   let newId = 0
+  let movedStudents = 0
   const tx = d.transaction(() => {
     const result = d
       .prepare('INSERT INTO classrooms (name, level, academic_year, color) VALUES (?, ?, ?, ?)')
@@ -868,20 +826,43 @@ export function duplicateClassroom(
     for (const s of schedules as any[]) {
       insert.run(newId, s.day_of_week, s.period, s.subject_code, s.subject_name, s.class_level, s.room)
     }
+
+    if (options.promoteStudents) {
+      const moved = d
+        .prepare(
+          `UPDATE students
+           SET classroom_id = ?, classroom_label = ?
+           WHERE classroom_id = ? AND is_active = 1`
+        )
+        .run(newId, trimmedName, sourceId)
+      movedStudents = Number(moved.changes) || 0
+    }
+
+    if (options.archiveSource) {
+      d.prepare('UPDATE classrooms SET archived_at = CURRENT_TIMESTAMP WHERE id = ?').run(sourceId)
+    }
   })
   tx()
 
-  return { id: newId, name: trimmedName }
+  return { id: newId, name: trimmedName, movedStudents }
 }
 
 // ─── Dashboard Stats ─────────────────────────────────────────
 
-export function getDashboardStats() {
+export function getDashboardStats(classroomId?: number | null) {
   const d = getDb()
+  const scoped = typeof classroomId === 'number' && classroomId > 0
+  const cId = scoped ? classroomId : null
+
   const classroomCount = (d.prepare('SELECT COUNT(*) AS c FROM classrooms').get() as { c: number }).c
+
   const studentCount = (d
-    .prepare('SELECT COUNT(*) AS c FROM students WHERE is_active = 1')
-    .get() as { c: number }).c
+    .prepare(
+      scoped
+        ? 'SELECT COUNT(*) AS c FROM students WHERE is_active = 1 AND classroom_id = ?'
+        : 'SELECT COUNT(*) AS c FROM students WHERE is_active = 1'
+    )
+    .get(...(scoped ? [cId] : [])) as { c: number }).c
 
   // Top 5 absent students (last 30 days)
   const thirtyDaysAgo = new Date()
@@ -890,29 +871,31 @@ export function getDashboardStats() {
 
   const topAbsent = d
     .prepare(
-      `SELECT s.id, s.first_name, s.last_name, s.title, s.classroom_id, c.name as classroom_name,
+      `SELECT s.id, s.first_name, s.last_name, s.title, s.photo_path, s.classroom_id, c.name as classroom_name,
               COUNT(a.id) as absent_count
        FROM attendance a
        INNER JOIN students s ON s.id = a.student_id AND s.is_active = 1
        LEFT JOIN classrooms c ON c.id = s.classroom_id
        WHERE a.status IN ('ขาด', 'ลาป่วย', 'ลากิจ') AND a.date >= ?
+         ${scoped ? 'AND s.classroom_id = ?' : ''}
        GROUP BY s.id
        ORDER BY absent_count DESC
        LIMIT 5`
     )
-    .all(cutoff)
+    .all(...(scoped ? [cutoff, cId] : [cutoff]))
 
   // BMI abnormal (latest weight/height per student)
   const studentsWithBmi = d
     .prepare(
-      `SELECT s.id, s.title, s.first_name, s.last_name, s.weight_kg, s.height_cm, c.name as classroom_name
+      `SELECT s.id, s.title, s.first_name, s.last_name, s.photo_path, s.weight_kg, s.height_cm, c.name as classroom_name
        FROM students s
        LEFT JOIN classrooms c ON c.id = s.classroom_id
        WHERE s.is_active = 1
          AND s.weight_kg IS NOT NULL AND s.weight_kg > 0
-         AND s.height_cm IS NOT NULL AND s.height_cm > 0`
+         AND s.height_cm IS NOT NULL AND s.height_cm > 0
+         ${scoped ? 'AND s.classroom_id = ?' : ''}`
     )
-    .all()
+    .all(...(scoped ? [cId] : []))
 
   const bmiAbnormal: any[] = []
   for (const s of studentsWithBmi as any[]) {
@@ -924,6 +907,7 @@ export function getDashboardStats() {
         title: s.title,
         first_name: s.first_name,
         last_name: s.last_name,
+        photo_path: s.photo_path,
         classroom_name: s.classroom_name,
         bmi: Math.round(bmi * 10) / 10,
         status: bmi < 18.5 ? 'ผอม' : bmi < 30 ? 'อ้วน' : 'อ้วนมาก',
@@ -934,14 +918,15 @@ export function getDashboardStats() {
   // Recent students (last 10 added)
   const recentStudents = d
     .prepare(
-      `SELECT s.id, s.first_name, s.last_name, s.title, c.name as classroom_name, s.created_at
+      `SELECT s.id, s.first_name, s.last_name, s.title, s.photo_path, c.name as classroom_name, s.created_at
        FROM students s
        LEFT JOIN classrooms c ON c.id = s.classroom_id
        WHERE s.is_active = 1
+         ${scoped ? 'AND s.classroom_id = ?' : ''}
        ORDER BY s.id DESC
        LIMIT 10`
     )
-    .all()
+    .all(...(scoped ? [cId] : []))
 
   // Recent attendance dates
   const recentAttendance = d
@@ -949,24 +934,33 @@ export function getDashboardStats() {
       `SELECT DISTINCT a.date, c.id as classroom_id, c.name as classroom_name, COUNT(a.id) as count
        FROM attendance a
        LEFT JOIN classrooms c ON c.id = a.classroom_id
+       ${scoped ? 'WHERE a.classroom_id = ?' : ''}
        GROUP BY a.date, c.id
        ORDER BY a.date DESC
        LIMIT 5`
     )
-    .all()
+    .all(...(scoped ? [cId] : []))
 
-  // Latest classroom (recently used)
+  // Latest classroom (scope-aware: ห้องที่เลือกอยู่ ถ้ามี, ไม่งั้นห้องล่าสุด)
   const latestClassroom = d
     .prepare(
-      `SELECT c.id, c.name,
-              (SELECT AVG(g.score) FROM grades g WHERE g.classroom_id = c.id AND g.score > 0) as avg_score
-       FROM classrooms c
-       ORDER BY c.id DESC
-       LIMIT 1`
+      scoped
+        ? `SELECT c.id, c.name,
+                  (SELECT AVG(g.score) FROM grades g WHERE g.classroom_id = c.id AND g.score > 0) as avg_score
+           FROM classrooms c
+           WHERE c.id = ?
+           LIMIT 1`
+        : `SELECT c.id, c.name,
+                  (SELECT AVG(g.score) FROM grades g WHERE g.classroom_id = c.id AND g.score > 0) as avg_score
+           FROM classrooms c
+           ORDER BY c.id DESC
+           LIMIT 1`
     )
-    .get()
+    .get(...(scoped ? [cId] : []))
 
   return {
+    scope: scoped ? 'classroom' : 'all',
+    classroomId: cId,
     classroomCount,
     studentCount,
     topAbsent,
@@ -1241,13 +1235,18 @@ export function saveGrades(
 ): void {
   const d = getDb()
   const transaction = d.transaction(() => {
-    d.prepare(
-      'DELETE FROM grades WHERE classroom_id = ? AND semester = ? AND academic_year = ?'
-    ).run(classroomId, semester, academicYear)
+    const deleteByStudent = d.prepare(
+      'DELETE FROM grades WHERE student_id = ? AND semester = ? AND academic_year = ?'
+    )
     const insert = d.prepare(
       'INSERT INTO grades (student_id, classroom_id, subject_code, score, midterm_score, final_score, semester, academic_year) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
     )
+    const deletedStudents = new Set<number>()
     for (const entry of entries) {
+      if (!deletedStudents.has(entry.student_id)) {
+        deleteByStudent.run(entry.student_id, semester, academicYear)
+        deletedStudents.add(entry.student_id)
+      }
       const score = (entry.midterm_score || 0) + (entry.final_score || 0)
       insert.run(entry.student_id, classroomId, entry.subject_code, score, entry.midterm_score || 0, entry.final_score || 0, semester, academicYear)
     }
@@ -1296,6 +1295,33 @@ export function saveHealth(
     }
   })
   transaction()
+}
+
+// Atomic upsert ของ health record ตัวเดียว — ใช้แทน read-modify-write ใน API
+// กัน race condition เมื่อมี 2 request พร้อมกันบนวันเดียวกัน
+export function upsertHealthEntry(
+  classroomId: number,
+  date: string,
+  entry: Omit<HealthEntry, 'classroom_id' | 'date'>
+): void {
+  const d = getDb()
+  const tx = d.transaction(() => {
+    d.prepare(
+      'DELETE FROM health_check WHERE classroom_id = ? AND date = ? AND student_id = ?'
+    ).run(classroomId, date, entry.student_id)
+    d.prepare(
+      'INSERT INTO health_check (student_id, classroom_id, date, brushed_teeth, drank_milk, weight_kg, height_cm) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).run(
+      entry.student_id,
+      classroomId,
+      date,
+      entry.brushed_teeth ? 1 : 0,
+      entry.drank_milk ? 1 : 0,
+      entry.weight_kg ?? null,
+      entry.height_cm ?? null
+    )
+  })
+  tx()
 }
 
 export function getAllHealthByClassroom(classroomId: number): HealthEntry[] {
@@ -1472,175 +1498,6 @@ export function importData(data: {
   } catch (error) {
     return { success: false, error: String(error) }
   }
-}
-
-// ─── Sprint 3: Grade Items (คะแนนเก็บระหว่างภาค) ─────────────
-
-export function getGradeItems(
-  classroomId: number,
-  subjectCode: string,
-  semester: number,
-  academicYear: string
-): GradeItem[] {
-  return getDb()
-    .prepare(
-      `SELECT id, classroom_id, subject_code, semester, academic_year, item_name,
-              full_score, weight, category, display_order, created_at
-       FROM grade_items
-       WHERE classroom_id = ? AND subject_code = ? AND semester = ? AND academic_year = ?
-       ORDER BY display_order, id`
-    )
-    .all(classroomId, subjectCode, semester, academicYear)
-}
-
-export function createGradeItem(item: Omit<GradeItem, 'id' | 'created_at'>): GradeItem {
-  const d = getDb()
-  const result = d
-    .prepare(
-      `INSERT INTO grade_items
-       (classroom_id, subject_code, semester, academic_year, item_name, full_score, weight, category, display_order)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(
-      item.classroom_id,
-      item.subject_code,
-      item.semester,
-      item.academic_year,
-      item.item_name,
-      item.full_score,
-      item.weight,
-      item.category,
-      item.display_order ?? 0
-    )
-  return d.prepare('SELECT * FROM grade_items WHERE id = ?').get(result.lastInsertRowid)
-}
-
-export function updateGradeItem(
-  id: number,
-  data: Partial<Pick<GradeItem, 'item_name' | 'full_score' | 'weight' | 'category' | 'display_order'>>
-): void {
-  const d = getDb()
-  const current = d.prepare('SELECT * FROM grade_items WHERE id = ?').get(id)
-  if (!current) return
-  d.prepare(
-    `UPDATE grade_items
-     SET item_name = ?, full_score = ?, weight = ?, category = ?, display_order = ?
-     WHERE id = ?`
-  ).run(
-    data.item_name ?? current.item_name,
-    data.full_score ?? current.full_score,
-    data.weight ?? current.weight,
-    data.category ?? current.category,
-    data.display_order ?? current.display_order,
-    id
-  )
-}
-
-export function deleteGradeItem(id: number): void {
-  const d = getDb()
-  const tx = d.transaction(() => {
-    d.prepare('DELETE FROM grade_item_scores WHERE grade_item_id = ?').run(id)
-    d.prepare('DELETE FROM grade_items WHERE id = ?').run(id)
-  })
-  tx()
-}
-
-export function getGradeItemScores(itemId: number): GradeItemScore[] {
-  return getDb()
-    .prepare(
-      `SELECT id, grade_item_id, student_id, score, note
-       FROM grade_item_scores WHERE grade_item_id = ?`
-    )
-    .all(itemId)
-}
-
-export function getAllGradeItemScoresForClassroom(
-  classroomId: number,
-  subjectCode: string,
-  semester: number,
-  academicYear: string
-): GradeItemScore[] {
-  return getDb()
-    .prepare(
-      `SELECT s.id, s.grade_item_id, s.student_id, s.score, s.note
-       FROM grade_item_scores s
-       INNER JOIN grade_items gi ON gi.id = s.grade_item_id
-       WHERE gi.classroom_id = ? AND gi.subject_code = ?
-         AND gi.semester = ? AND gi.academic_year = ?`
-    )
-    .all(classroomId, subjectCode, semester, academicYear)
-}
-
-export function saveGradeItemScores(
-  itemId: number,
-  scores: Array<{ student_id: number; score: number | null; note?: string }>
-): void {
-  const d = getDb()
-  const tx = d.transaction(() => {
-    d.prepare('DELETE FROM grade_item_scores WHERE grade_item_id = ?').run(itemId)
-    const insert = d.prepare(
-      'INSERT INTO grade_item_scores (grade_item_id, student_id, score, note) VALUES (?, ?, ?, ?)'
-    )
-    for (const s of scores) {
-      if (s.score === null || s.score === undefined) continue
-      insert.run(itemId, s.student_id, s.score, s.note ?? '')
-    }
-  })
-  tx()
-}
-
-// ─── Sprint 3: Student Evaluations ───────────────────────────
-
-export function getEvaluations(
-  classroomId: number,
-  semester: number,
-  academicYear: string
-): StudentEvaluation[] {
-  return getDb()
-    .prepare(
-      `SELECT id, student_id, classroom_id, semester, academic_year, category, item_code, level, note
-       FROM student_evaluations
-       WHERE classroom_id = ? AND semester = ? AND academic_year = ?`
-    )
-    .all(classroomId, semester, academicYear)
-}
-
-export function saveEvaluations(
-  classroomId: number,
-  semester: number,
-  academicYear: string,
-  evaluations: Array<{
-    student_id: number
-    category: string
-    item_code: string
-    level: number
-    note?: string
-  }>
-): void {
-  const d = getDb()
-  const tx = d.transaction(() => {
-    // upsert each — preserve other items for that student
-    const upsert = d.prepare(
-      `INSERT INTO student_evaluations
-       (student_id, classroom_id, semester, academic_year, category, item_code, level, note)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(student_id, semester, academic_year, item_code)
-       DO UPDATE SET level = excluded.level, note = excluded.note, category = excluded.category`
-    )
-    for (const e of evaluations) {
-      upsert.run(
-        e.student_id,
-        classroomId,
-        semester,
-        academicYear,
-        e.category,
-        e.item_code,
-        e.level,
-        e.note ?? ''
-      )
-    }
-  })
-  tx()
 }
 
 // ─── Sprint 3: Promote students between classrooms ───────────

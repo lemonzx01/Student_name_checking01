@@ -5,7 +5,6 @@ import { usePathname, useSearchParams } from 'next/navigation'
 import {
   Activity,
   Archive,
-  Award,
   CalendarDays,
   ClipboardCheck,
   Download,
@@ -42,12 +41,8 @@ const MAIN_MENU: MenuItem[] = [
 
 const DATA_MENU: MenuItem[] = [
   { href: '/grades', label: 'คะแนน/เกรด', icon: FileBarChart, desc: 'กรอกคะแนนรายวิชา' },
-  { href: '/grades/items', label: 'คะแนนเก็บ', icon: ListChecks, desc: 'ใบงาน / ทดสอบย่อย' },
-  { href: '/evaluations', label: 'ประเมินคุณลักษณะ', icon: Award, desc: '8 ข้อ + อ่าน/คิด/เขียน' },
   { href: '/health', label: 'สุขภาพ', icon: Activity, desc: 'น้ำหนัก ส่วนสูง BMI' },
   { href: '/report-card', label: 'ใบรายงานคะแนน', icon: FileText, desc: 'PDF เฉพาะวิชาที่สอน' },
-  { href: '/report/por5', label: 'ใบ ปพ.5', icon: FileText, desc: 'สมุดประเมินผลทั้งห้อง' },
-  { href: '/report/por6', label: 'ใบ ปพ.6', icon: FileText, desc: 'รายงานต่อผู้ปกครอง' },
   { href: '/export-excel', label: 'ส่งออกข้อมูล', icon: Download, desc: 'Excel / PDF' },
   { href: '/archive', label: 'ห้องเก็บถาวร', icon: Archive, desc: 'ห้องเรียนที่ archive แล้ว' },
   { href: '/trash', label: 'ถังขยะ', icon: Trash2, desc: 'นักเรียนที่ลบ (30 วัน)' },
@@ -65,6 +60,18 @@ export default function Sidebar({ classroomId, mobileOpen = false, onMobileClose
   const searchParams = useSearchParams()
   const activeClassroom = searchParams.get('classroom') || classroomId
   const [classroomName, setClassroomName] = useState('')
+
+  // หา href ที่ตรงกับ pathname แบบ "longest prefix" — กันกรณี nested route ติด parent active พร้อมกัน
+  // เช่น /attendance/report ต้องติดที่ /attendance แต่ถ้ามี /attendance/report ใน menu จะติดที่อันที่ยาวกว่า
+  const activeHref = (() => {
+    if (pathname === '/') return '/'
+    const all = [...MAIN_MENU, ...DATA_MENU].map((m) => m.href).filter((h) => h !== '/')
+    return (
+      all
+        .filter((h) => pathname === h || pathname.startsWith(h + '/'))
+        .sort((a, b) => b.length - a.length)[0] ?? ''
+    )
+  })()
 
   useEffect(() => {
     if (!activeClassroom) return
@@ -85,7 +92,7 @@ export default function Sidebar({ classroomId, mobileOpen = false, onMobileClose
   function renderMenuItems(items: MenuItem[]) {
     return items.map((item) => {
       const Icon = item.icon
-      const isActive = item.href === '/' ? pathname === '/' : pathname.startsWith(item.href)
+      const isActive = item.href === activeHref
 
       return (
         <Link

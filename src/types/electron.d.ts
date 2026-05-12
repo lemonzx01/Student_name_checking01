@@ -142,66 +142,10 @@ declare global {
         toClassroomId: number
       }) => Promise<{ success: boolean; moved: number; error?: string }>
 
-      // Sprint 3: Grade items (คะแนนเก็บ)
-      getGradeItems: (params: {
-        classroom: number
-        subjectCode: string
-        semester: number
-        year: string
-      }) => Promise<any[]>
-      createGradeItem: (data: {
-        classroom_id: number
-        subject_code: string
-        semester: number
-        academic_year: string
-        item_name: string
-        full_score: number
-        weight: number
-        category: string
-        display_order: number
-      }) => Promise<any>
-      updateGradeItem: (data: {
-        id: number
-        item_name?: string
-        full_score?: number
-        weight?: number
-        category?: string
-        display_order?: number
-      }) => Promise<{ success: boolean; error?: string }>
-      deleteGradeItem: (id: number) => Promise<{ success: boolean; error?: string }>
-      getGradeItemScores: (itemId: number) => Promise<any[]>
-      getAllGradeItemScores: (params: {
-        classroom: number
-        subjectCode: string
-        semester: number
-        year: string
-      }) => Promise<any[]>
-      saveGradeItemScores: (data: {
-        itemId: number
-        scores: Array<{ student_id: number; score: number | null; note?: string }>
-      }) => Promise<{ success: boolean; error?: string }>
-
-      // Sprint 3: Evaluations
-      getEvaluations: (params: {
-        classroom: number
-        semester: number
-        year: string
-      }) => Promise<any[]>
-      saveEvaluations: (data: {
-        classroom: number
-        semester: number
-        year: string
-        evaluations: Array<{
-          student_id: number
-          category: string
-          item_code: string
-          level: number
-          note?: string
-        }>
-      }) => Promise<{ success: boolean; error?: string }>
-
       // Sprint 2: Dashboard stats
-      getDashboardStats: () => Promise<{
+      getDashboardStats: (classroomId?: number | null) => Promise<{
+        scope: 'classroom' | 'all'
+        classroomId: number | null
         classroomCount: number
         studentCount: number
         topAbsent: Array<{
