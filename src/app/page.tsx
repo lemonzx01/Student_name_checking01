@@ -1,18 +1,81 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { BookOpen, FileSpreadsheet, Plus, School, TrendingUp, Users } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
+import {
+  Activity,
+  BookOpen,
+  ClipboardCheck,
+  Download,
+  FileBarChart,
+  LayoutDashboard,
+  Plus,
+  School,
+  Users,
+} from 'lucide-react'
+import AttendanceCalendar from '@/components/AttendanceCalendar'
+import BackupStatusCard from '@/components/BackupStatusCard'
 import ClassroomCard from '@/components/ClassroomCard'
 import CreateClassroomModal from '@/components/CreateClassroomModal'
+import DuplicateClassroomModal from '@/components/DuplicateClassroomModal'
 import ExcelImportButton from '@/components/ExcelImportButton'
+import GlobalSearch from '@/components/GlobalSearch'
+import TodaySchedule from '@/components/TodaySchedule'
 import { Classroom } from '@/types'
-import { deleteClassroomRecord, getClassrooms } from '@/lib/client-data'
+import {
+  archiveClassroomRecord,
+  deleteClassroomRecord,
+  getClassrooms,
+  getClassroomStats,
+} from '@/lib/client-data'
+import { useDialog } from '@/lib/hooks/useConfirm'
+
+const THAI_DAYS = ['วันอาทิตย์', 'วันจันทร์', 'วันอังคาร', 'วันพุธ', 'วันพฤหัสบดี', 'วันศุกร์', 'วันเสาร์']
+const THAI_MONTHS = [
+  'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+  'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
+]
+
+function formatThaiDate(d: Date): string {
+  return `${THAI_DAYS[d.getDay()]}ที่ ${d.getDate()} ${THAI_MONTHS[d.getMonth()]} ${d.getFullYear() + 543}`
+}
+
+interface QuickActionProps {
+  href: string
+  icon: typeof ClipboardCheck
+  title: string
+  desc: string
+  color: string
+}
+
+function QuickAction({ href, icon: Icon, title, desc, color }: QuickActionProps) {
+  return (
+    <Link
+      href={href}
+      className="btn-press group flex items-center gap-4 rounded-2xl border border-[var(--line)] bg-white p-5 shadow-[var(--shadow-sm)] transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)]"
+    >
+      <div
+        className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl transition-transform group-hover:scale-110"
+        style={{ backgroundColor: `${color}18`, color }}
+      >
+        <Icon size={28} strokeWidth={2.2} />
+      </div>
+      <div className="min-w-0">
+        <p className="text-lg font-bold text-slate-900">{title}</p>
+        <p className="mt-0.5 text-[13px] text-[var(--muted)]">{desc}</p>
+      </div>
+    </Link>
+  )
+}
 
 export default function HomePage() {
   const [classrooms, setClassrooms] = useState<Classroom[]>([])
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
   const [editingClassroom, setEditingClassroom] = useState<Classroom | null>(null)
+  const [duplicateSource, setDuplicateSource] = useState<Classroom | null>(null)
+  const [lastClassroomId, setLastClassroomId] = useState<number | null>(null)
+  const { confirm, alert } = useDialog()
 
   async function loadClassrooms() {
     setLoading(true)
@@ -26,92 +89,105 @@ export default function HomePage() {
 
   useEffect(() => {
     loadClassrooms()
+    // โหลดห้องล่าสุดที่ครูเปิด (เก็บไว้ตอน navigate ใน ClientLayout)
+    const saved = typeof window !== 'undefined' ? localStorage.getItem('selectedClassroom') : null
+    if (saved) setLastClassroomId(Number(saved))
   }, [])
 
-  async function handleDelete(classroom: Classroom) {
-    const confirmed = window.confirm(`ลบห้อง ${classroom.name} และข้อมูลนักเรียนทั้งหมดหรือไม่?`)
-    if (!confirmed) {
-      return
+  async function handleArchive(classroom: Classroom) {
+    const ok = await confirm({
+      title: `เก็บห้อง ${classroom.name} เป็นถาวร?`,
+      message:
+        'ห้องนี้จะถูกซ่อนจากหน้าหลัก แต่ข้อมูลจะยังอยู่ — เปิดดูได้ที่เมนู "ห้องเก็บถาวร" หรือนำกลับมาใช้ได้ภายหลัง',
+      confirmText: 'เก็บถาวร',
+    })
+    if (!ok) return
+    try {
+      const result = await archiveClassroomRecord(classroom.id)
+      if (!result.success) throw new Error(result.error || 'เก็บถาวรไม่สำเร็จ')
+      await loadClassrooms()
+    } catch (err) {
+      await alert({
+        title: 'เก็บถาวรไม่สำเร็จ',
+        message: err instanceof Error ? err.message : 'ลองใหม่อีกครั้ง',
+        variant: 'error',
+      })
     }
+  }
 
-    await deleteClassroomRecord(classroom.id)
-    await loadClassrooms()
+  async function handleDelete(classroom: Classroom) {
+    // โหลดสถิติของห้องเพื่อแสดงผลกระทบ — fallback ถ้าโหลดไม่ได้ (web mode)
+    const stats = await getClassroomStats(classroom.id)
+    const studentCount = stats?.studentCount ?? (classroom.student_count || 0)
+
+    const details = (
+      <div className="space-y-1">
+        <p className="font-semibold text-slate-800">ข้อมูลที่จะถูกลบทั้งหมด:</p>
+        <ul className="ml-4 list-disc space-y-0.5 text-slate-600">
+          <li>นักเรียน {studentCount} คน</li>
+          {stats && (
+            <>
+              <li>รายการเช็คชื่อ {stats.attendanceCount} รายการ</li>
+              <li>รายการคะแนน {stats.gradeCount} รายการ</li>
+              <li>รายการสุขภาพ {stats.healthCount} รายการ</li>
+              <li>ช่องตารางสอน {stats.scheduleCount} ช่อง</li>
+            </>
+          )}
+        </ul>
+        <p className="mt-2 text-xs text-red-700">
+          ระบบจะสร้างไฟล์สำรองโดยอัตโนมัติก่อนลบ — กู้คืนได้จากหน้า &quot;ตั้งค่า&quot;
+        </p>
+      </div>
+    )
+
+    const ok = await confirm({
+      title: `ลบห้อง ${classroom.name}?`,
+      message: 'การลบนี้จะลบนักเรียนและข้อมูลที่เกี่ยวข้องทั้งหมด',
+      details,
+      variant: 'danger',
+      confirmText: 'ลบห้องเรียน',
+      requireTypeToConfirm: classroom.name,
+      typeToConfirmPlaceholder: `พิมพ์ ${classroom.name}`,
+    })
+    if (!ok) return
+
+    try {
+      await deleteClassroomRecord(classroom.id)
+      await loadClassrooms()
+    } catch (err) {
+      console.error('[home] delete classroom failed:', err)
+      await alert({
+        title: 'ลบไม่สำเร็จ',
+        message: 'เกิดข้อผิดพลาดในการลบห้อง — ลองใหม่อีกครั้ง',
+        variant: 'error',
+      })
+    }
   }
 
   const totalStudents = classrooms.reduce((sum, c) => sum + (c.student_count || 0), 0)
+  const today = useMemo(() => new Date(), [])
+  const thaiDate = useMemo(() => formatThaiDate(today), [today])
+
+  // Quick Actions ไปห้องล่าสุดที่เปิด ถ้าไม่มีใช้ห้องแรก
+  const quickClassroom = useMemo(() => {
+    if (lastClassroomId && classrooms.some((c) => c.id === lastClassroomId)) {
+      return classrooms.find((c) => c.id === lastClassroomId) ?? null
+    }
+    return classrooms[0] ?? null
+  }, [lastClassroomId, classrooms])
+  const quickClassroomId = quickClassroom?.id
 
   return (
     <div className="mx-auto max-w-7xl animate-fade-in">
-      {/* Hero Section */}
-      <section className="animate-slide-up mb-8 overflow-hidden rounded-[var(--radius-lg)] border border-blue-100/60 bg-gradient-to-br from-white via-white to-blue-50/50 p-6 shadow-[var(--shadow-md)] md:p-8">
-        <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-          <div>
-            <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-600">
-              <FileSpreadsheet size={13} />
-              Student Import Ready
-            </div>
-            <h1 className="max-w-2xl text-2xl font-bold leading-tight text-slate-900 md:text-3xl lg:text-4xl">
-              จัดการนักเรียนรายห้อง
-              <span className="mt-1 block text-lg font-normal text-[var(--muted)] md:text-xl">
-                import ข้อมูลจาก Excel ให้ตรงกับต้นฉบับ
-              </span>
-            </h1>
-            <div className="mt-5 flex flex-wrap gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingClassroom(null)
-                  setModalOpen(true)
-                }}
-                className="btn-press inline-flex items-center gap-2 rounded-2xl bg-[var(--primary)] px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition-all hover:bg-[var(--primary-strong)] hover:shadow-blue-500/30"
-              >
-                <Plus size={18} />
-                สร้างห้องเรียน
-              </button>
-              <ExcelImportButton onImported={loadClassrooms} />
-            </div>
-          </div>
-
-          {/* Stats Panel */}
-          <div className="grid gap-3 stagger-children">
-            <div className="animate-slide-up flex items-center gap-4 rounded-2xl bg-white p-4 shadow-[var(--shadow-sm)] stat-blue">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-                <School size={22} />
-              </div>
-              <div>
-                <p className="text-xs font-medium text-[var(--muted)]">จำนวนห้องทั้งหมด</p>
-                <p className="text-2xl font-bold text-slate-900">{classrooms.length}</p>
-              </div>
-            </div>
-            <div className="animate-slide-up flex items-center gap-4 rounded-2xl bg-white p-4 shadow-[var(--shadow-sm)] stat-green">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-                <Users size={22} />
-              </div>
-              <div>
-                <p className="text-xs font-medium text-[var(--muted)]">นักเรียนทั้งหมด</p>
-                <p className="text-2xl font-bold text-slate-900">{totalStudents}</p>
-              </div>
-            </div>
-            <div className="animate-slide-up rounded-2xl border border-blue-100 bg-blue-50/50 p-4 text-[13px] leading-6 text-blue-700">
-              <div className="mb-1 flex items-center gap-1.5 font-semibold">
-                <TrendingUp size={14} />
-                คำแนะนำ
-              </div>
-              ระบบรองรับ import จาก Excel โดยอัตโนมัติ — จะ map คอลัมน์หลักอย่าง ห้อง, ชื่อ, นามสกุล, วันเกิด และข้อมูลผู้ปกครองให้
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Classroom Grid */}
-      <section className="animate-slide-up" style={{ animationDelay: '150ms' }}>
-        <div className="mb-5 flex items-end justify-between">
+      {/* ─── รายการห้องเรียน (อยู่บนสุด — เปิดได้ทันที) ─────────── */}
+      <section className="animate-slide-up mb-6">
+        <div className="mb-4 flex items-end justify-between">
           <div>
             <h2 className="text-xl font-bold text-slate-900 md:text-2xl">ห้องเรียนทั้งหมด</h2>
-            <p className="mt-1 text-sm text-[var(--muted)]">กดที่การ์ดเพื่อเปิดรายชื่อนักเรียน</p>
+            <p className="mt-1 text-sm text-[var(--muted)]">คลิกที่การ์ดเพื่อเปิดรายชื่อนักเรียนในห้องนั้น</p>
           </div>
           {classrooms.length > 0 && (
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
               {classrooms.length} ห้อง
             </span>
           )}
@@ -136,20 +212,20 @@ export default function HomePage() {
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-50 text-blue-500">
               <BookOpen size={30} />
             </div>
-            <h3 className="text-lg font-bold text-slate-900">ยังไม่มีห้องเรียน</h3>
-            <p className="mx-auto mt-2 max-w-sm text-sm text-[var(--muted)]">
-              เริ่มจากสร้างห้องเรียนเอง หรือ import ข้อมูลจาก Excel เพื่อให้ระบบสร้างห้องให้อัตโนมัติ
+            <h3 className="text-xl font-bold text-slate-900">ยังไม่มีห้องเรียน</h3>
+            <p className="mx-auto mt-2 max-w-sm text-[15px] text-[var(--muted)]">
+              เริ่มด้วยการสร้างห้องเรียน หรือ นำเข้ารายชื่อจากไฟล์ Excel ระบบจะสร้างห้องให้อัตโนมัติ
             </p>
-            <div className="mt-5 flex flex-wrap justify-center gap-3">
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
               <button
                 type="button"
                 onClick={() => {
                   setEditingClassroom(null)
                   setModalOpen(true)
                 }}
-                className="btn-press inline-flex items-center gap-2 rounded-xl bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--primary-strong)]"
+                className="btn-press inline-flex items-center gap-2 rounded-xl bg-[var(--primary)] px-5 py-3 text-[15px] font-semibold text-white transition hover:bg-[var(--primary-strong)]"
               >
-                <Plus size={16} />
+                <Plus size={18} />
                 สร้างห้องเรียน
               </button>
               <ExcelImportButton onImported={loadClassrooms} />
@@ -166,10 +242,167 @@ export default function HomePage() {
                   setModalOpen(true)
                 }}
                 onDelete={handleDelete}
+                onDuplicate={(item) => setDuplicateSource(item)}
+                onArchive={handleArchive}
               />
             ))}
           </div>
         )}
+      </section>
+
+      {/* ─── ส่วนต้อนรับ + วันที่ + ค้นหา ─────────── */}
+      <section className="animate-slide-up mb-6 overflow-hidden rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-6 shadow-[var(--shadow-sm)] md:p-8">
+        <div className="grid gap-6 lg:grid-cols-[1.3fr_0.7fr] lg:items-center">
+          <div>
+            <p className="text-sm font-medium text-[var(--primary)]">ยินดีต้อนรับ</p>
+            <h1 className="mt-1 text-3xl font-bold leading-tight text-slate-900 md:text-4xl">
+              ระบบจัดการนักเรียน
+            </h1>
+            <p className="mt-2 text-lg text-slate-600">วันนี้คือ{thaiDate}</p>
+            <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-[var(--muted)]">
+              เริ่มจากเลือกเมนูด้านล่าง หรือใช้ช่องค้นหาเพื่อหานักเรียนจากทุกห้องได้ในคลิกเดียว
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <GlobalSearch placeholder="พิมพ์ชื่อ หรือรหัสนักเรียน" />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex items-center gap-3 rounded-xl border border-[var(--line)] bg-white p-4 stat-blue">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                  <School size={22} />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-[var(--muted)]">ห้องทั้งหมด</p>
+                  <p className="text-xl font-bold text-slate-900">{classrooms.length}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 rounded-xl border border-[var(--line)] bg-white p-4 stat-green">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+                  <Users size={22} />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-[var(--muted)]">นักเรียน</p>
+                  <p className="text-xl font-bold text-slate-900">{totalStudents}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ─── วันนี้สอนอะไร + ปฏิทินเช็คชื่อ ─────────── */}
+      {quickClassroomId ? (
+        <section className="animate-slide-up mb-6 space-y-4" style={{ animationDelay: '60ms' }}>
+          <TodaySchedule
+            classroomId={quickClassroomId}
+            classroomName={quickClassroom?.name || ''}
+          />
+          <AttendanceCalendar
+            classroomId={quickClassroomId}
+            classroomName={quickClassroom?.name || ''}
+          />
+        </section>
+      ) : null}
+
+      {/* ─── งานที่ทำบ่อย (Quick Actions) ─────────── */}
+      {quickClassroomId ? (
+        <section className="animate-slide-up mb-8" style={{ animationDelay: '100ms' }}>
+          <div className="mb-4 flex items-end justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900 md:text-2xl">งานที่ทำบ่อย</h2>
+              <p className="mt-1 text-sm text-[var(--muted)]">
+                ไปยัง <span className="font-semibold text-[var(--primary)]">{quickClassroom?.name || '—'}</span>
+                {lastClassroomId && quickClassroomId === lastClassroomId ? ' (ห้องล่าสุดที่เปิด)' : ''}
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <QuickAction
+              href={`/attendance?classroom=${quickClassroomId}`}
+              icon={ClipboardCheck}
+              title="เช็คชื่อวันนี้"
+              desc="มา ขาด ลา รายวัน"
+              color="#2563eb"
+            />
+            <QuickAction
+              href={`/grades?classroom=${quickClassroomId}`}
+              icon={FileBarChart}
+              title="กรอกคะแนน"
+              desc="กลางภาค / ปลายภาค"
+              color="#16a34a"
+            />
+            <QuickAction
+              href={`/health?classroom=${quickClassroomId}`}
+              icon={Activity}
+              title="สุขภาพ"
+              desc="น้ำหนัก ส่วนสูง แปรงฟัน"
+              color="#ea580c"
+            />
+            <QuickAction
+              href={`/export-excel?classroom=${quickClassroomId}`}
+              icon={Download}
+              title="ส่งออกข้อมูล"
+              desc="พิมพ์เป็น Excel หรือ PDF"
+              color="#7c3aed"
+            />
+          </div>
+        </section>
+      ) : null}
+
+      {/* ─── ปุ่ม สร้างห้อง / Import ─────────── */}
+      <section
+        className="animate-slide-up mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--line)] bg-white px-5 py-4 shadow-[var(--shadow-sm)]"
+        style={{ animationDelay: '140ms' }}
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+            <Plus size={20} />
+          </div>
+          <div>
+            <p className="text-[15px] font-bold text-slate-900">เริ่มต้นใช้งาน</p>
+            <p className="text-[13px] text-[var(--muted)]">สร้างห้องเอง หรือนำเข้ารายชื่อจาก Excel</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setEditingClassroom(null)
+              setModalOpen(true)
+            }}
+            className="btn-press inline-flex items-center gap-2 rounded-xl bg-[var(--primary)] px-4 py-2.5 text-[15px] font-semibold text-white shadow-[var(--shadow-sm)] transition-all hover:bg-[var(--primary-strong)]"
+          >
+            <Plus size={18} />
+            สร้างห้องเรียน
+          </button>
+          <ExcelImportButton onImported={loadClassrooms} />
+        </div>
+      </section>
+
+      {/* ─── ลิงก์ไปหน้าภาพรวม (Dashboard) ─────────── */}
+      <section className="animate-slide-up mt-6" style={{ animationDelay: '200ms' }}>
+        <Link
+          href="/dashboard"
+          className="card-hover flex items-center gap-4 rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-5 shadow-[var(--shadow-sm)] transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)]"
+        >
+          <div
+            className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl"
+            style={{ backgroundColor: '#3B82F618', color: '#3B82F6' }}
+          >
+            <LayoutDashboard size={28} strokeWidth={2.2} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-lg font-bold text-slate-900">ภาพรวม (Dashboard)</p>
+            <p className="mt-0.5 text-[13px] text-[var(--muted)]">
+              สถิติขาดเรียน, BMI ผิดปกติ, นักเรียนใหม่, เช็คชื่อล่าสุด
+            </p>
+          </div>
+        </Link>
+      </section>
+
+      {/* ─── สถานะการสำรองข้อมูลอัตโนมัติ ─────────── */}
+      <section className="animate-slide-up mt-8" style={{ animationDelay: '260ms' }}>
+        <BackupStatusCard />
       </section>
 
       <CreateClassroomModal
@@ -177,6 +410,13 @@ export default function HomePage() {
         onClose={() => setModalOpen(false)}
         onSuccess={loadClassrooms}
         editingClassroom={editingClassroom}
+      />
+
+      <DuplicateClassroomModal
+        isOpen={!!duplicateSource}
+        onClose={() => setDuplicateSource(null)}
+        onSuccess={loadClassrooms}
+        source={duplicateSource}
       />
     </div>
   )

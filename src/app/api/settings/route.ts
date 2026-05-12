@@ -1,19 +1,12 @@
 import { NextResponse } from 'next/server'
 import { importData, exportAllData, clearAllData } from '@/lib/db'
-import { isElectron, getElectronAPI } from '@/lib/electron'
 
-export async function GET(request: Request) {
+// หมายเหตุ: route นี้รันบน Next.js server side เท่านั้น
+// ในโหมด Electron, client จะเรียก IPC (window.electronAPI) ตรงๆ — ไม่ผ่าน /api
+// ดังนั้นที่นี่ใช้ Web data layer (src/lib/db.ts) ตรงๆ ไม่ต้องมี Electron branch
+
+export async function GET() {
   try {
-    // Check for Electron API
-    const electronMode = isElectron(request)
-    const electronAPI = getElectronAPI()
-    
-    if (electronMode && electronAPI) {
-      const data = await electronAPI.exportData()
-      return NextResponse.json(data)
-    }
-    
-    // Fallback to in-memory data for web mode
     const data = exportAllData()
     return NextResponse.json(data)
   } catch (error) {
@@ -22,24 +15,18 @@ export async function GET(request: Request) {
   }
 }
 
+const MAX_IMPORT_BYTES = 50 * 1024 * 1024 // 50 MB
+
 export async function POST(request: Request) {
   try {
-    const body = await request.json()
-    
-    // Check for Electron API
-    const electronMode = isElectron(request)
-    const electronAPI = getElectronAPI()
-    
-    if (electronMode && electronAPI) {
-      const result = await electronAPI.importData(body)
-      if (result.success) {
-        return NextResponse.json({ success: true })
-      } else {
-        return NextResponse.json({ error: result.error || 'Import failed' }, { status: 500 })
-      }
+    const contentLength = Number(request.headers.get('content-length') ?? 0)
+    if (contentLength > MAX_IMPORT_BYTES) {
+      return NextResponse.json({ error: 'ไฟล์ใหญ่เกินกำหนด (50 MB)' }, { status: 413 })
     }
-    
-    // Use in-memory store for web mode
+    const body = await request.json()
+    if (typeof body !== 'object' || body === null) {
+      return NextResponse.json({ error: 'รูปแบบข้อมูลไม่ถูกต้อง' }, { status: 400 })
+    }
     const result = importData(body)
     if (result.success) {
       return NextResponse.json({ success: true })

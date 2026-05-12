@@ -3,16 +3,21 @@
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ChevronLeft, Eye, Pencil, Plus, Search, Trash2, UserSquare2, Users, X } from 'lucide-react'
+import { CalendarDays, ChevronLeft, Eye, NotebookPen, Pencil, Phone, Plus, Search, Trash2, UserSquare2, Users, X } from 'lucide-react'
 import CustomSelect from '@/components/CustomSelect'
 import ExcelImportButton from '@/components/ExcelImportButton'
+import StudentAvatar from '@/components/StudentAvatar'
 import StudentModal from '@/components/StudentModal'
-import { Classroom, Student } from '@/types'
+import { Classroom, Student, StudentNote } from '@/types'
 import {
+  addStudentNoteRecord,
+  deleteStudentNoteRecord,
   deleteStudentRecord,
   getClassrooms,
+  getStudentNotes,
   getStudents,
 } from '@/lib/client-data'
+import { useDialog } from '@/lib/hooks/useConfirm'
 
 function displayName(student: Student) {
   return [student.title, student.first_name, student.last_name].filter(Boolean).join(' ')
@@ -36,6 +41,12 @@ function StudentsPageContent() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editingStudent, setEditingStudent] = useState<Student | null>(null)
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
+  const [notes, setNotes] = useState<StudentNote[]>([])
+  const [notesLoading, setNotesLoading] = useState(false)
+  const [noteDate, setNoteDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [noteText, setNoteText] = useState('')
+  const [savingNote, setSavingNote] = useState(false)
+  const { confirm, alert } = useDialog()
 
   const activeClassroomId = classroomFromUrl ? Number(classroomFromUrl) : null
   const activeClassroom = classrooms.find((item) => item.id === activeClassroomId) ?? null
@@ -58,6 +69,98 @@ function StudentsPageContent() {
     refreshData()
   }, [classroomFromUrl])
 
+  // เปิด detail modal อัตโนมัติเมื่อมี ?student=<id> ใน URL (จาก global search)
+  const studentIdFromUrl = searchParams.get('student')
+  useEffect(() => {
+    if (!studentIdFromUrl || students.length === 0) return
+    const found = students.find((s) => String(s.id) === studentIdFromUrl)
+    if (found) {
+      setSelectedStudent(found)
+    }
+  }, [studentIdFromUrl, students])
+
+  // โหลดบันทึกประจำตัว ทุกครั้งที่เปิดดูนักเรียนคนใหม่
+  useEffect(() => {
+    if (!selectedStudent) {
+      setNotes([])
+      setNoteText('')
+      return
+    }
+
+    let cancelled = false
+    setNotesLoading(true)
+    getStudentNotes(selectedStudent.id)
+      .then((rows) => {
+        if (!cancelled) setNotes(rows)
+      })
+      .catch((err) => {
+        console.error('[notes] load error', err)
+        if (!cancelled) setNotes([])
+      })
+      .finally(() => {
+        if (!cancelled) setNotesLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedStudent])
+
+  async function handleAddNote() {
+    if (!selectedStudent) return
+    const trimmed = noteText.trim()
+    if (!trimmed) {
+      await alert({ title: 'ข้อมูลไม่ครบ', message: 'กรุณากรอกข้อความบันทึก', variant: 'warning' })
+      return
+    }
+    if (!noteDate) {
+      await alert({ title: 'ข้อมูลไม่ครบ', message: 'กรุณาเลือกวันที่', variant: 'warning' })
+      return
+    }
+
+    setSavingNote(true)
+    try {
+      const created = await addStudentNoteRecord({
+        student_id: selectedStudent.id,
+        date: noteDate,
+        note: trimmed,
+      })
+      setNotes((prev) => [created, ...prev])
+      setNoteText('')
+    } catch (err) {
+      console.error('[notes] add error', err)
+      await alert({ title: 'บันทึกไม่สำเร็จ', message: 'ลองใหม่อีกครั้ง', variant: 'error' })
+    } finally {
+      setSavingNote(false)
+    }
+  }
+
+  async function handleDeleteNote(note: StudentNote) {
+    const ok = await confirm({
+      title: 'ลบบันทึกนี้?',
+      message: 'บันทึกประจำตัวที่เลือกจะถูกลบทิ้ง',
+      variant: 'danger',
+      confirmText: 'ลบบันทึก',
+    })
+    if (!ok) return
+
+    try {
+      await deleteStudentNoteRecord(note.id)
+      setNotes((prev) => prev.filter((n) => n.id !== note.id))
+    } catch (err) {
+      console.error('[notes] delete error', err)
+      await alert({ title: 'ลบไม่สำเร็จ', message: 'ลองใหม่อีกครั้ง', variant: 'error' })
+    }
+  }
+
+  function formatThaiShortDate(iso: string): string {
+    // รับ 'YYYY-MM-DD' → '12 เม.ย. 2568'
+    const [y, m, d] = iso.split('-').map(Number)
+    if (!y || !m || !d) return iso
+    const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
+    return `${d} ${months[m - 1]} ${y + 543}`
+  }
+
   const filteredStudents = useMemo(() => {
     const query = search.trim().toLowerCase()
     if (!query) {
@@ -79,13 +182,33 @@ function StudentsPageContent() {
   const femaleCount = students.filter((student) => student.gender === 'หญิง').length
 
   async function handleDelete(student: Student) {
-    const confirmed = window.confirm(`ลบนักเรียน ${displayName(student)} หรือไม่?`)
-    if (!confirmed) {
-      return
-    }
+    const ok = await confirm({
+      title: 'ลบนักเรียน?',
+      message: (
+        <>
+          ลบนักเรียน{' '}
+          <span className="font-semibold text-slate-900">{displayName(student)}</span>{' '}
+          ออกจากระบบ
+        </>
+      ),
+      details: (
+        <p className="text-xs text-slate-600">
+          คะแนน บันทึกสุขภาพ และประวัติเช็คชื่อของนักเรียนคนนี้จะยังคงอยู่
+          แต่จะไม่ปรากฏในรายการ
+        </p>
+      ),
+      variant: 'danger',
+      confirmText: 'ลบนักเรียน',
+    })
+    if (!ok) return
 
-    await deleteStudentRecord(student.id)
-    await refreshData()
+    try {
+      await deleteStudentRecord(student.id)
+      await refreshData()
+    } catch (err) {
+      console.error('[students] delete failed:', err)
+      await alert({ title: 'ลบไม่สำเร็จ', message: 'ลองใหม่อีกครั้ง', variant: 'error' })
+    }
   }
 
   return (
@@ -243,7 +366,16 @@ function StudentsPageContent() {
                 filteredStudents.map((student) => (
                   <tr key={student.id} className="table-row-hover border-b border-slate-50">
                     <td className="px-4 py-3 text-sm text-slate-600">{student.student_number || student.student_id}</td>
-                    <td className="px-4 py-3 text-sm font-medium text-slate-900">{displayName(student)}</td>
+                    <td className="px-4 py-3 text-sm font-medium text-slate-900">
+                      <div className="flex items-center gap-2.5">
+                        <StudentAvatar
+                          photoPath={student.photo_path}
+                          name={`${student.first_name} ${student.last_name}`}
+                          size={40}
+                        />
+                        <span>{displayName(student)}</span>
+                      </div>
+                    </td>
                     <td className="px-4 py-3">
                       <span className="rounded-md bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
                         {student.classroom_name || student.classroom_label || '-'}
@@ -317,26 +449,40 @@ function StudentsPageContent() {
                 <h2 className="text-2xl font-bold text-slate-900">{displayName(selectedStudent)}</h2>
                 <p className="mt-1 text-sm text-[var(--muted)]">ข้อมูลรายละเอียดจากไฟล์ Excel</p>
               </div>
-              <button
-                type="button"
-                onClick={() => setSelectedStudent(null)}
-                className="btn-press flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--line)] text-slate-500 transition hover:bg-slate-50"
-              >
-                <X size={16} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedStudent(null)
+                    setEditingStudent(selectedStudent)
+                    setModalOpen(true)
+                  }}
+                  className="btn-press inline-flex items-center gap-1.5 rounded-xl border border-[var(--line)] px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-blue-50 hover:text-blue-600"
+                >
+                  <Pencil size={14} />
+                  แก้ไข
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedStudent(null)}
+                  className="btn-press flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--line)] text-slate-500 transition hover:bg-slate-50"
+                >
+                  <X size={16} />
+                </button>
+              </div>
             </div>
 
             {/* ID Cards */}
             <div className="grid gap-3 stagger-children md:grid-cols-3">
-              <div className="animate-slide-up rounded-2xl bg-gradient-to-br from-blue-50 to-blue-100/50 p-4 stat-blue">
+              <div className="animate-slide-up rounded-2xl bg-blue-50 p-4 stat-blue">
                 <p className="text-xs font-medium text-blue-600">รหัสหลัก</p>
                 <p className="mt-1 text-base font-bold text-slate-900">{selectedStudent.student_id}</p>
               </div>
-              <div className="animate-slide-up rounded-2xl bg-gradient-to-br from-violet-50 to-violet-100/50 p-4 stat-purple">
+              <div className="animate-slide-up rounded-2xl bg-violet-50 p-4 stat-purple">
                 <p className="text-xs font-medium text-violet-600">เลข 13 หลัก</p>
                 <p className="mt-1 text-base font-bold text-slate-900">{formatNullable(selectedStudent.national_id)}</p>
               </div>
-              <div className="animate-slide-up rounded-2xl bg-gradient-to-br from-emerald-50 to-emerald-100/50 p-4 stat-green">
+              <div className="animate-slide-up rounded-2xl bg-emerald-50 p-4 stat-green">
                 <p className="text-xs font-medium text-emerald-600">ห้องเรียน</p>
                 <p className="mt-1 text-base font-bold text-slate-900">{formatNullable(selectedStudent.classroom_name || selectedStudent.classroom_label)}</p>
               </div>
@@ -372,6 +518,28 @@ function StudentsPageContent() {
                   <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                   ผู้ปกครอง
                 </h3>
+
+                {/* เบอร์โทรผู้ปกครอง - โชว์เด่น + ปุ่มโทร */}
+                {selectedStudent.guardian_phone ? (
+                  <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border-2 border-emerald-200 bg-emerald-50 px-4 py-3">
+                    <div>
+                      <p className="text-xs font-medium text-emerald-700">เบอร์โทรผู้ปกครอง</p>
+                      <p className="mt-0.5 text-lg font-bold text-emerald-900">{selectedStudent.guardian_phone}</p>
+                    </div>
+                    <a
+                      href={`tel:${selectedStudent.guardian_phone}`}
+                      className="btn-press inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700"
+                    >
+                      <Phone size={16} />
+                      โทรเลย
+                    </a>
+                  </div>
+                ) : (
+                  <div className="mb-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-center text-sm text-[var(--muted)]">
+                    ยังไม่มีเบอร์โทรผู้ปกครอง — กดแก้ไขเพื่อเพิ่ม
+                  </div>
+                )}
+
                 <div className="grid gap-3 sm:grid-cols-2">
                   {[
                     ['ชื่อผู้ปกครอง', [selectedStudent.guardian_title, selectedStudent.guardian_first_name, selectedStudent.guardian_last_name].filter(Boolean).join(' ')],
@@ -389,6 +557,95 @@ function StudentsPageContent() {
                   ))}
                 </div>
               </div>
+            </div>
+
+            {/* บันทึกประจำตัวนักเรียน */}
+            <div className="mt-5 rounded-2xl border border-[var(--line)] p-5">
+              <h3 className="mb-4 flex items-center gap-2 text-base font-bold text-slate-900">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-100 text-violet-600">
+                  <NotebookPen size={15} />
+                </div>
+                บันทึกประจำตัวนักเรียน
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
+                  {notes.length}
+                </span>
+              </h3>
+
+              {/* ฟอร์มเพิ่มบันทึกใหม่ */}
+              <div className="mb-4 rounded-xl border border-[var(--line)] bg-slate-50 p-4">
+                <div className="mb-3 grid gap-3 sm:grid-cols-[180px_1fr]">
+                  <div>
+                    <label className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-slate-700">
+                      <CalendarDays size={13} />
+                      วันที่
+                    </label>
+                    <input
+                      type="date"
+                      value={noteDate}
+                      onChange={(e) => setNoteDate(e.target.value)}
+                      className="w-full rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none transition focus:border-[var(--primary)]"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-semibold text-slate-700">รายละเอียดบันทึก</label>
+                    <textarea
+                      value={noteText}
+                      onChange={(e) => setNoteText(e.target.value)}
+                      rows={2}
+                      placeholder="เช่น พูดคุยกับผู้ปกครองเรื่องการบ้าน, พฤติกรรมในห้องเรียน, การแจ้งเตือน ฯลฯ"
+                      className="w-full resize-none rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none transition focus:border-[var(--primary)]"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={handleAddNote}
+                    disabled={savingNote || !noteText.trim()}
+                    className="btn-press inline-flex items-center gap-1.5 rounded-xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Plus size={14} />
+                    {savingNote ? 'กำลังบันทึก...' : 'เพิ่มบันทึก'}
+                  </button>
+                </div>
+              </div>
+
+              {/* รายการบันทึก */}
+              {notesLoading ? (
+                <div className="space-y-2">
+                  <div className="skeleton h-16 w-full rounded-xl" />
+                  <div className="skeleton h-16 w-full rounded-xl" />
+                </div>
+              ) : notes.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-sm text-[var(--muted)]">
+                  ยังไม่มีบันทึก — เพิ่มบันทึกแรกด้วยแบบฟอร์มด้านบน
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {notes.map((note) => (
+                    <div
+                      key={note.id}
+                      className="group flex items-start gap-3 rounded-xl border border-[var(--line)] bg-white px-4 py-3 transition hover:border-violet-200 hover:bg-violet-50/30"
+                    >
+                      <div className="flex min-w-[90px] flex-shrink-0 flex-col items-center rounded-lg bg-violet-50 px-2 py-1.5 text-center text-violet-700">
+                        <span className="text-[11px] font-medium">วันที่</span>
+                        <span className="text-sm font-bold">{formatThaiShortDate(note.date)}</span>
+                      </div>
+                      <p className="flex-1 whitespace-pre-wrap text-sm leading-relaxed text-slate-700">
+                        {note.note}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteNote(note)}
+                        className="btn-press flex-shrink-0 rounded-lg p-1.5 text-slate-400 opacity-0 transition hover:bg-red-50 hover:text-red-600 group-hover:opacity-100"
+                        title="ลบบันทึก"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {selectedStudent.source_payload ? (

@@ -1,21 +1,26 @@
 'use client'
 
-import { Suspense, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { CheckCircle2, ChevronLeft, ClipboardCheck, Save, Search, X } from 'lucide-react'
+import { ChevronLeft, ClipboardCheck, MessageSquare, Search, X } from 'lucide-react'
 import CalendarPicker from '@/components/CalendarPicker'
 import CustomSelect from '@/components/CustomSelect'
+import AutoSaveIndicator from '@/components/AutoSaveIndicator'
+import ParentContactModal from '@/components/ParentContactModal'
+import StudentAvatar from '@/components/StudentAvatar'
 import { AttendanceStatus, Classroom } from '@/types'
-import { getAttendance, getClassrooms, saveAttendanceRecord } from '@/lib/client-data'
+import { getAttendance, getAttendanceDates, getClassrooms, saveAttendanceRecord } from '@/lib/client-data'
+import { useAutoSave } from '@/lib/hooks/useAutoSave'
+import { useBeforeUnloadWarning } from '@/lib/hooks/useBeforeUnloadWarning'
 
-const STATUS_OPTIONS: AttendanceStatus[] = ['มา', 'ขาด', 'ลา', 'สาย']
+const STATUS_OPTIONS: AttendanceStatus[] = ['มา', 'ขาด', 'ลาป่วย', 'ลากิจ']
 
 const STATUS_STYLES: Record<AttendanceStatus, { active: string; icon: string }> = {
   มา: { active: 'bg-emerald-500 text-white shadow-emerald-500/25', icon: 'bg-emerald-50 text-emerald-600' },
   ขาด: { active: 'bg-red-500 text-white shadow-red-500/25', icon: 'bg-red-50 text-red-600' },
-  ลา: { active: 'bg-amber-500 text-white shadow-amber-500/25', icon: 'bg-amber-50 text-amber-600' },
-  สาย: { active: 'bg-sky-500 text-white shadow-sky-500/25', icon: 'bg-sky-50 text-sky-600' },
+  ลาป่วย: { active: 'bg-amber-500 text-white shadow-amber-500/25', icon: 'bg-amber-50 text-amber-600' },
+  ลากิจ: { active: 'bg-sky-500 text-white shadow-sky-500/25', icon: 'bg-sky-50 text-sky-600' },
 }
 
 function AttendancePageContent() {
@@ -26,34 +31,50 @@ function AttendancePageContent() {
   const [rows, setRows] = useState<any[]>([])
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [search, setSearch] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [toast, setToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [markedDates, setMarkedDates] = useState<Set<string>>(new Set())
+  // flag กัน auto-save ยิงตอนที่เรากำลังโหลดข้อมูลใหม่จาก DB (เปลี่ยนห้อง/วันที่)
+  const [isLoading, setIsLoading] = useState(true)
+  const [contactStudent, setContactStudent] = useState<any | null>(null)
 
   const activeClassroomId = classroomFromUrl ? Number(classroomFromUrl) : null
   const activeClassroom = classrooms.find((item) => item.id === activeClassroomId) ?? null
 
-  async function refreshData() {
-    const classroomRows = await getClassrooms()
-    setClassrooms(classroomRows)
+  // useCallback เพื่อให้ identity คงที่ — ปลอดภัยเมื่อใช้ใน effect deps + ส่งให้ child
+  const refreshData = useCallback(async () => {
+    setIsLoading(true)
+    try {
+      const classroomRows = await getClassrooms()
+      setClassrooms(classroomRows)
 
-    if (!activeClassroomId) {
-      setRows([])
-      return
+      if (!activeClassroomId) {
+        setRows([])
+        return
+      }
+
+      const attendanceRows = await getAttendance(date, activeClassroomId)
+      setRows(attendanceRows)
+    } finally {
+      setIsLoading(false)
     }
+  }, [activeClassroomId, date])
 
-    const attendanceRows = await getAttendance(date, activeClassroomId)
-    setRows(attendanceRows)
-  }
+  const fetchMarkedDates = useCallback(
+    async (yearMonth?: string) => {
+      if (!activeClassroomId) {
+        setMarkedDates(new Set())
+        return
+      }
+      const ym = yearMonth || date.slice(0, 7)
+      const dates = await getAttendanceDates(activeClassroomId, ym)
+      setMarkedDates(new Set(dates))
+    },
+    [activeClassroomId, date]
+  )
 
   useEffect(() => {
     refreshData()
-  }, [classroomFromUrl, date])
-
-  useEffect(() => {
-    if (!toast) return
-    const timer = setTimeout(() => setToast(null), 3000)
-    return () => clearTimeout(timer)
-  }, [toast])
+    fetchMarkedDates()
+  }, [refreshData, fetchMarkedDates])
 
   const filteredRows = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -80,30 +101,39 @@ function AttendancePageContent() {
     setRows((current) => current.map((item) => ({ ...item, status })))
   }
 
-  async function handleSave() {
-    if (!activeClassroomId) {
-      return
-    }
+  // ─── Auto-save ────────────────────────────────────────────
+  // บันทึกอัตโนมัติทุกครั้งที่ครูเปลี่ยนสถานะนักเรียนหรือหมายเหตุ (debounce 600ms)
+  const saveAttendance = useCallback(
+    async (currentRows: any[]) => {
+      if (!activeClassroomId || currentRows.length === 0) return
 
-    setSaving(true)
-
-    try {
-      const attendance = rows.reduce<Record<number, { status: AttendanceStatus; note?: string }>>((acc, row) => {
-        acc[row.id] = {
-          status: row.status,
-          note: row.note || '',
-        }
-        return acc
-      }, {})
+      const attendance = currentRows.reduce<Record<number, { status: AttendanceStatus; note?: string }>>(
+        (acc, row) => {
+          acc[row.id] = {
+            status: row.status,
+            note: row.note || '',
+          }
+          return acc
+        },
+        {}
+      )
 
       await saveAttendanceRecord(date, activeClassroomId, attendance)
-      setToast({ type: 'success', text: 'บันทึกข้อมูลเช็คชื่อเรียบร้อยแล้ว' })
-    } catch {
-      setToast({ type: 'error', text: 'เกิดข้อผิดพลาดในการบันทึก' })
-    } finally {
-      setSaving(false)
-    }
-  }
+    },
+    [date, activeClassroomId]
+  )
+
+  const { status: saveStatus, lastSavedAt, hasPendingChanges } = useAutoSave(rows, saveAttendance, {
+    debounceMs: 600,
+    enabled: !!activeClassroomId && !isLoading && rows.length > 0,
+    onSaved: () => {
+      // อัปเดตจุดสีบนปฏิทินให้รู้ว่าวันนี้ได้เช็คไปแล้ว
+      fetchMarkedDates()
+    },
+  })
+
+  // เตือนก่อนปิดหน้า ถ้ายังมีการเช็คชื่อที่รอบันทึก
+  useBeforeUnloadWarning(hasPendingChanges)
 
   return (
     <div className="mx-auto max-w-7xl animate-fade-in">
@@ -148,17 +178,7 @@ function AttendancePageContent() {
               className="min-w-[180px]"
             />
 
-            <CalendarPicker value={date} onChange={setDate} compact />
-
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saving || !activeClassroomId}
-              className="btn-press inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--success)] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-50"
-            >
-              <Save size={16} />
-              {saving ? 'กำลังบันทึก...' : 'บันทึก'}
-            </button>
+            <CalendarPicker value={date} onChange={setDate} compact markedDates={markedDates} onMonthChange={fetchMarkedDates} />
           </div>
         </div>
 
@@ -245,11 +265,42 @@ function AttendancePageContent() {
                   </td>
                 </tr>
               ) : (
-                filteredRows.map((row) => (
+                filteredRows.map((row) => {
+                  const isAbsent = row.status === 'ขาด' || row.status === 'ลาป่วย' || row.status === 'ลากิจ'
+                  return (
                   <tr key={row.id} className="table-row-hover border-b border-slate-50">
                     <td className="px-4 py-3.5 text-sm text-slate-600">{row.student_number || row.student_id}</td>
                     <td className="px-4 py-3.5 text-sm font-medium text-slate-900">
-                      {[row.title, row.first_name, row.last_name].filter(Boolean).join(' ')}
+                      <div className="flex items-center gap-2.5">
+                        <StudentAvatar
+                          photoPath={row.photo_path}
+                          name={`${row.first_name} ${row.last_name}`}
+                          size={32}
+                        />
+                        <span>{[row.title, row.first_name, row.last_name].filter(Boolean).join(' ')}</span>
+                        {isAbsent && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setContactStudent({
+                                id: row.id,
+                                title: row.title,
+                                first_name: row.first_name,
+                                last_name: row.last_name,
+                                classroom_name: activeClassroom?.name || '',
+                                guardian_phone: row.guardian_phone,
+                                _date: date,
+                                _status: row.status,
+                              })
+                            }
+                            title="แจ้งผู้ปกครอง"
+                            className="btn-press inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 transition hover:bg-emerald-100"
+                          >
+                            <MessageSquare size={11} />
+                            แจ้งผู้ปกครอง
+                          </button>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3.5">
                       <div className="flex flex-wrap gap-1.5">
@@ -257,10 +308,20 @@ function AttendancePageContent() {
                           <button
                             key={status}
                             type="button"
-                            onClick={() =>
+                            // กดสถานะเดิมที่เลือกอยู่อีกครั้ง = "ยกเลิกการกด" → กลับเป็น 'มา' (default)
+                            // กดสถานะใหม่ = เปลี่ยนเป็นสถานะนั้น
+                            onClick={() => {
+                              const nextStatus: AttendanceStatus = row.status === status ? 'มา' : status
                               setRows((current) =>
-                                current.map((item) => (item.id === row.id ? { ...item, status } : item))
+                                current.map((item) =>
+                                  item.id === row.id ? { ...item, status: nextStatus } : item
+                                )
                               )
+                            }}
+                            title={
+                              row.status === status
+                                ? 'กดอีกครั้งเพื่อยกเลิก (กลับเป็น "มา")'
+                                : `กดเพื่อตั้งเป็น "${status}"`
                             }
                             className={`status-pill rounded-lg px-3 py-1.5 text-xs font-semibold shadow-sm ${
                               row.status === status
@@ -286,26 +347,30 @@ function AttendancePageContent() {
                       />
                     </td>
                   </tr>
-                ))
+                  )
+                })
               )}
             </tbody>
           </table>
         </div>
       </section>
 
-      {/* Toast Notification */}
-      {toast && (
-        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2">
-          <div className={`toast-enter flex items-center gap-2.5 rounded-2xl px-5 py-3.5 text-sm font-medium shadow-lg ${
-            toast.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'
-          }`}>
-            <CheckCircle2 size={18} />
-            <span>{toast.text}</span>
-            <button type="button" onClick={() => setToast(null)} className="ml-2 rounded-lg p-0.5 transition hover:bg-white/20">
-              <X size={14} />
-            </button>
-          </div>
-        </div>
+      {/* Auto-save indicator (มุมล่างขวา) */}
+      <AutoSaveIndicator
+        status={saveStatus}
+        lastSavedAt={lastSavedAt}
+        hidden={!activeClassroomId}
+      />
+
+      {/* Parent contact modal (เมื่อกด "แจ้งผู้ปกครอง" ในแถวนักเรียนที่ขาด) */}
+      {contactStudent && (
+        <ParentContactModal
+          isOpen={!!contactStudent}
+          onClose={() => setContactStudent(null)}
+          student={contactStudent}
+          defaultTemplate="absent"
+          defaultContext={{ date: contactStudent._date }}
+        />
       )}
     </div>
   )

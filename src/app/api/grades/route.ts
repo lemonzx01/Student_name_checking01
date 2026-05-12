@@ -20,27 +20,56 @@ export async function GET(request: Request) {
   }
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json()
     const { classroom, semester, year, grades } = body
 
-    if (!classroom) {
-      return NextResponse.json({ error: 'Missing classroom' }, { status: 400 })
+    const classroomId = Number(classroom)
+    if (!classroom || !Number.isFinite(classroomId)) {
+      return NextResponse.json({ error: 'Missing or invalid classroom' }, { status: 400 })
     }
 
-    const entries = Object.entries(grades || {}).flatMap(([studentId, subjects]: [string, any]) =>
-      Object.entries(subjects).map(([subjectCode, score]: [string, any]) => ({
-        student_id: Number(studentId),
-        subject_code: subjectCode,
-        score: Number(score),
-        classroom_id: Number(classroom),
-        semester: Number(semester),
-        academic_year: year
-      }))
-    ).filter(e => e.score !== null && e.score !== undefined && !isNaN(e.score))
+    const semesterNum = Number(semester)
+    if (semester === undefined || semester === null || !Number.isFinite(semesterNum)) {
+      return NextResponse.json({ error: 'Missing or invalid semester' }, { status: 400 })
+    }
 
-    saveGrades(Number(classroom), Number(semester), year, entries)
+    if (typeof year !== 'string' || year.trim() === '') {
+      return NextResponse.json({ error: 'Missing or invalid year' }, { status: 400 })
+    }
+
+    if (!isPlainObject(grades)) {
+      return NextResponse.json({ error: 'Invalid grades payload' }, { status: 400 })
+    }
+
+    // grades format: { [studentId]: { [subjectCode]: { midterm: number, final: number } } }
+    const entries = Object.entries(grades).flatMap(([studentId, subjects]) => {
+      if (!isPlainObject(subjects)) return []
+      const sid = Number(studentId)
+      if (!Number.isFinite(sid)) return []
+      return Object.entries(subjects).map(([subjectCode, val]) => {
+        const v = isPlainObject(val) ? val : {}
+        const midterm = Number((v as any).midterm ?? (v as any).midterm_score ?? 0) || 0
+        const final_ = Number((v as any).final ?? (v as any).final_score ?? 0) || 0
+        return {
+          student_id: sid,
+          subject_code: subjectCode,
+          score: midterm + final_,
+          midterm_score: midterm,
+          final_score: final_,
+          classroom_id: classroomId,
+          semester: semesterNum,
+          academic_year: year,
+        }
+      })
+    })
+
+    saveGrades(classroomId, semesterNum, year, entries)
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('[API] POST /grades error:', error)

@@ -18,6 +18,7 @@ import {
 import { type Classroom, type Student, DEFAULT_SUBJECTS, calculateGrade } from '@/types/index'
 import CalendarPicker from '@/components/CalendarPicker'
 import CustomSelect from '@/components/CustomSelect'
+import { useDialog } from '@/lib/hooks/useConfirm'
 const loadThaiFont = () => import('@/lib/thai-font').then((m) => m.NotoSansThai)
 
 // Lazy loaders
@@ -93,6 +94,7 @@ function ExportPageContent() {
   const [gradeSemester, setGradeSemester] = useState(1)
   const [gradeYear, setGradeYear] = useState(String(new Date().getFullYear() + 543))
   const [toast, setToast] = useState<string | null>(null)
+  const { alert } = useDialog()
 
   const showToast = useCallback((message: string) => {
     setToast(message)
@@ -142,7 +144,7 @@ function ExportPageContent() {
     const workbook = XLSX.utils.book_new()
 
     // Sheet 1: สรุปเช็คชื่อ
-    const attHeaders = ['#', 'รหัส', 'ชื่อ-นามสกุล', 'มา', 'ขาด', 'ลา', 'รวมวัน']
+    const attHeaders = ['#', 'รหัส', 'ชื่อ-นามสกุล', 'มา', 'ขาด', 'ลาป่วย', 'ลากิจ', 'รวมวัน']
     const attRows: (string | number)[][] = []
     students.forEach((student: Student, index: number) => {
       const studentAtt = attendance.filter((a: AttendanceEntry) => a.student_id === student.id)
@@ -150,12 +152,13 @@ function ExportPageContent() {
         index + 1, student.student_id, `${student.first_name} ${student.last_name}`,
         studentAtt.filter((a: AttendanceEntry) => a.status === 'มา').length,
         studentAtt.filter((a: AttendanceEntry) => a.status === 'ขาด').length,
-        studentAtt.filter((a: AttendanceEntry) => a.status === 'ลา').length,
+        studentAtt.filter((a: AttendanceEntry) => a.status === 'ลาป่วย').length,
+        studentAtt.filter((a: AttendanceEntry) => a.status === 'ลากิจ').length,
         attendanceDates.length,
       ])
     })
     const wsAtt = XLSX.utils.aoa_to_sheet([attHeaders, ...attRows])
-    wsAtt['!cols'] = [{ wch: 5 }, { wch: 10 }, { wch: 25 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 10 }]
+    wsAtt['!cols'] = [{ wch: 5 }, { wch: 10 }, { wch: 25 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 10 }]
     XLSX.utils.book_append_sheet(workbook, wsAtt, 'สรุปเช็คชื่อ')
 
     const fileName = `เช็คชื่อ_${currentClassroomName || selectedClassroom}_${startDate}_${endDate}.xlsx`
@@ -224,23 +227,35 @@ function ExportPageContent() {
   }
 
   const fetchGradeData = async () => {
-    const res = await fetch(
-      `/api/grades?classroom=${selectedClassroom}&semester=${gradeSemester}&year=${gradeYear}`
-    )
-    if (!res.ok) throw new Error('Failed to fetch grade data')
-    const rows = await res.json() as { id: number; student_id: string; first_name: string; last_name: string; subject: string; score: number }[]
+    // Fetch students and grades separately, then merge
+    const [studentsRes, gradesRes] = await Promise.all([
+      fetch(`/api/students?classroom=${selectedClassroom}`),
+      fetch(`/api/grades?classroom=${selectedClassroom}&semester=${gradeSemester}&year=${gradeYear}`),
+    ])
+    if (!studentsRes.ok) throw new Error('Failed to fetch students')
+    if (!gradesRes.ok) throw new Error('Failed to fetch grade data')
 
-    // Group by student
-    const studentMap = new Map<number, { id: number; student_id: string; first_name: string; last_name: string; scores: Record<string, number> }>()
-    rows.forEach((row) => {
-      if (!studentMap.has(row.id)) {
-        studentMap.set(row.id, { id: row.id, student_id: row.student_id, first_name: row.first_name, last_name: row.last_name, scores: {} })
+    const students = await studentsRes.json() as Student[]
+    const gradeRows = await gradesRes.json() as { student_id: number; subject_code: string; score: number }[]
+
+    // Build grade lookup: student_id -> { subject_code: score }
+    const gradeMap = new Map<number, Record<string, number>>()
+    gradeRows.forEach((row) => {
+      if (!gradeMap.has(row.student_id)) {
+        gradeMap.set(row.student_id, {})
       }
-      if (row.subject && row.score !== null) {
-        studentMap.get(row.id)!.scores[row.subject] = row.score
+      if (row.subject_code && row.score !== null) {
+        gradeMap.get(row.student_id)![row.subject_code] = row.score
       }
     })
-    return Array.from(studentMap.values())
+
+    return students.map((s) => ({
+      id: s.id,
+      student_id: s.student_id,
+      first_name: s.first_name,
+      last_name: s.last_name,
+      scores: gradeMap.get(s.id) || {},
+    }))
   }
 
   const exportGradesExcel = async () => {
@@ -296,7 +311,7 @@ function ExportPageContent() {
     doc.text(`ช่วงวันที่: ${formatDateThai(startDate)} - ${formatDateThai(endDate)}`, 14, 22)
 
     // Summary table
-    const tableHeaders = [['#', 'รหัส', 'ชื่อ-นามสกุล', 'มา', 'ขาด', 'ลา', 'รวมวัน']]
+    const tableHeaders = [['#', 'รหัส', 'ชื่อ-นามสกุล', 'มา', 'ขาด', 'ลาป่วย', 'ลากิจ', 'รวมวัน']]
     const tableRows = students.map((student: Student, index: number) => {
       const studentAtt = attendance.filter((a: AttendanceEntry) => a.student_id === student.id)
       return [
@@ -305,7 +320,8 @@ function ExportPageContent() {
         `${student.first_name} ${student.last_name}`,
         studentAtt.filter((a: AttendanceEntry) => a.status === 'มา').length,
         studentAtt.filter((a: AttendanceEntry) => a.status === 'ขาด').length,
-        studentAtt.filter((a: AttendanceEntry) => a.status === 'ลา').length,
+        studentAtt.filter((a: AttendanceEntry) => a.status === 'ลาป่วย').length,
+        studentAtt.filter((a: AttendanceEntry) => a.status === 'ลากิจ').length,
         attendanceDates.length,
       ]
     })
@@ -321,10 +337,11 @@ function ExportPageContent() {
         0: { halign: 'center', cellWidth: 12 },
         1: { halign: 'center', cellWidth: 22 },
         2: { halign: 'left', cellWidth: 'auto' },
-        3: { halign: 'center', cellWidth: 22 },
-        4: { halign: 'center', cellWidth: 22 },
-        5: { halign: 'center', cellWidth: 22 },
-        6: { halign: 'center', cellWidth: 25 },
+        3: { halign: 'center', cellWidth: 18 },
+        4: { halign: 'center', cellWidth: 18 },
+        5: { halign: 'center', cellWidth: 20 },
+        6: { halign: 'center', cellWidth: 20 },
+        7: { halign: 'center', cellWidth: 22 },
       },
     })
 
@@ -454,7 +471,7 @@ function ExportPageContent() {
       students: Student[]; attendance: AttendanceEntry[]; attendanceDates: string[]
     }
 
-    const headers = ['ลำดับ', 'รหัส', 'ชื่อ-นามสกุล', 'มา', 'ขาด', 'ลา', 'รวมวัน']
+    const headers = ['ลำดับ', 'รหัส', 'ชื่อ-นามสกุล', 'มา', 'ขาด', 'ลาป่วย', 'ลากิจ', 'รวมวัน']
     const rows = students.map((student: Student, index: number) => {
       const studentAtt = attendance.filter((a: AttendanceEntry) => a.student_id === student.id)
       return [
@@ -463,7 +480,8 @@ function ExportPageContent() {
         `${student.first_name} ${student.last_name}`,
         studentAtt.filter((a: AttendanceEntry) => a.status === 'มา').length,
         studentAtt.filter((a: AttendanceEntry) => a.status === 'ขาด').length,
-        studentAtt.filter((a: AttendanceEntry) => a.status === 'ลา').length,
+        studentAtt.filter((a: AttendanceEntry) => a.status === 'ลาป่วย').length,
+        studentAtt.filter((a: AttendanceEntry) => a.status === 'ลากิจ').length,
         attendanceDates.length,
       ].map(v => csvEscape(String(v))).join(',')
     })
@@ -654,7 +672,11 @@ function ExportPageContent() {
       showToast(`ดาวน์โหลด${names[type] || ''}สำเร็จแล้ว!`)
     } catch (error) {
       console.error('Export error:', error)
-      alert('เกิดข้อผิดพลาดในการส่งออก')
+      await alert({
+        title: 'ส่งออกไม่สำเร็จ',
+        message: 'เกิดข้อผิดพลาดในการส่งออก — ลองใหม่อีกครั้ง',
+        variant: 'error',
+      })
     } finally {
       setExporting(null)
     }
@@ -665,6 +687,7 @@ function ExportPageContent() {
     await handleExport('attendance')
     await handleExport('health')
     await handleExport('weight_height')
+    await handleExport('grades')
   }
 
   const formatIcon = {
@@ -679,8 +702,8 @@ function ExportPageContent() {
     <div>
       {/* Toast Notification */}
       {toast && (
-        <div className="fixed top-6 right-6 z-[100] animate-in slide-in-from-top-2 fade-in duration-300">
-          <div className="flex items-center gap-3 bg-green-500 text-white px-5 py-3 rounded-xl shadow-lg">
+        <div className="fixed top-6 right-6 z-[100]">
+          <div className="toast-enter flex items-center gap-3 bg-emerald-600 text-white px-5 py-3 rounded-xl shadow-[var(--shadow-lg)]">
             <CheckCircle2 size={20} />
             <span className="font-medium text-sm">{toast}</span>
           </div>
@@ -688,23 +711,19 @@ function ExportPageContent() {
       )}
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-text-primary flex items-center gap-2">
-          <File className="text-primary" size={28} />
-          ส่งออกเอกสาร
-        </h1>
-        <p className="text-text-secondary mt-1">
-          ส่งออกข้อมูลเช็คชื่อ, สุขภาพ และน้ำหนัก/ส่วนสูง เป็น Excel, PDF หรือ CSV
-        </p>
+        <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-600">
+          <File size={13} />
+          Export Manager
+        </div>
+        <h1 className="text-2xl font-bold text-slate-900 md:text-3xl">ส่งออกเอกสาร</h1>
+        <p className="text-sm text-slate-500 mt-1">เลือกห้อง ช่วงเวลา และรูปแบบไฟล์ที่ต้องการ</p>
       </div>
 
       {/* Settings Card */}
-      <div className="bg-surface rounded-xl border border-border p-6 mb-6">
-        <h2 className="text-lg font-semibold text-text-primary mb-4">ตั้งค่าการส่งออก</h2>
-
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 mb-6 shadow-sm">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-          {/* Classroom */}
           <div>
-            <label className="block text-sm font-medium text-text-secondary mb-2">ห้องเรียน</label>
+            <label className="block text-xs font-semibold text-slate-500 mb-1.5">ห้องเรียน</label>
             <CustomSelect
               value={selectedClassroom ?? ''}
               onChange={(v) => {
@@ -723,35 +742,29 @@ function ExportPageContent() {
               placeholder="เลือกห้องเรียน"
             />
           </div>
-
-          {/* Start Date */}
           <div>
-            <label className="block text-sm font-medium text-text-secondary mb-2">วันที่เริ่ม</label>
+            <label className="block text-xs font-semibold text-slate-500 mb-1.5">วันที่เริ่ม</label>
             <CalendarPicker value={startDate} onChange={setStartDate} compact />
           </div>
-
-          {/* End Date */}
           <div>
-            <label className="block text-sm font-medium text-text-secondary mb-2">วันที่สิ้นสุด</label>
+            <label className="block text-xs font-semibold text-slate-500 mb-1.5">วันที่สิ้นสุด</label>
             <CalendarPicker value={endDate} onChange={setEndDate} compact />
           </div>
         </div>
 
-        {/* Format Selector - separate row */}
+        {/* Format Selector */}
         <div>
-          <label className="block text-sm font-medium text-text-secondary mb-2">รูปแบบไฟล์</label>
-          <div className="flex gap-2 relative z-30">
+          <label className="block text-xs font-semibold text-slate-500 mb-1.5">รูปแบบไฟล์</label>
+          <div className="inline-flex items-center rounded-xl bg-slate-100 p-1 relative z-30">
             {(['excel', 'pdf', 'csv'] as ExportFormat[]).map((fmt) => (
               <button
                 type="button"
                 key={fmt}
                 onClick={() => { setSelectedFormat(fmt); setExportedFiles([]) }}
-                className={`flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${
                   selectedFormat === fmt
-                    ? fmt === 'excel' ? 'bg-green-500 text-white shadow-md ring-2 ring-green-300'
-                      : fmt === 'pdf' ? 'bg-red-500 text-white shadow-md ring-2 ring-red-300'
-                      : 'bg-blue-500 text-white shadow-md ring-2 ring-blue-300'
-                    : 'bg-white text-text-secondary border border-border hover:bg-gray-50 hover:border-gray-300'
+                    ? 'bg-white text-slate-800 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
                 {formatIcon[fmt]}
@@ -763,68 +776,57 @@ function ExportPageContent() {
       </div>
 
       {/* Export Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-6">
-        {/* Card 1: Attendance */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
         <ExportCard
           title="เช็คชื่อ"
           subtitle="Attendance"
-          icon={<ClipboardCheck size={20} className="text-white" />}
-          color="blue"
-          format={selectedFormat}
-          details={[
-            { color: 'bg-blue-500', label: 'สรุปเช็คชื่อ', desc: 'มา/ขาด/ลา ต่อคน' },
-          ]}
+          icon={<ClipboardCheck size={22} />}
+          iconBg="bg-blue-100"
+          iconColor="text-blue-600"
+          borderAccent="stat-blue"
+          desc="สรุปมา / ขาด / ลาป่วย / ลากิจ"
           exporting={exporting === `attendance-${selectedFormat}`}
           exported={exportedFiles.includes(`attendance-${selectedFormat}`)}
           disabled={!selectedClassroom || exporting !== null}
           onExport={() => handleExport('attendance')}
           formatExt={formatExt[selectedFormat]}
         />
-
-        {/* Card 2: Health */}
         <ExportCard
           title="สุขภาพ"
           subtitle="Health"
-          icon={<Heart size={20} className="text-white" />}
-          color="pink"
-          format={selectedFormat}
-          details={[
-            { color: 'bg-pink-500', label: 'สรุปสุขภาพ', desc: 'แปรงฟัน + ดื่มนม ต่อคน' },
-          ]}
+          icon={<Heart size={22} />}
+          iconBg="bg-pink-100"
+          iconColor="text-pink-600"
+          borderAccent="stat-pink"
+          desc="แปรงฟัน + ดื่มนม รายคน"
           exporting={exporting === `health-${selectedFormat}`}
           exported={exportedFiles.includes(`health-${selectedFormat}`)}
           disabled={!selectedClassroom || exporting !== null}
           onExport={() => handleExport('health')}
           formatExt={formatExt[selectedFormat]}
         />
-
-        {/* Card 3: Weight/Height */}
         <ExportCard
           title="น้ำหนัก/ส่วนสูง"
           subtitle="Weight & Height"
-          icon={<Activity size={20} className="text-white" />}
-          color="green"
-          format={selectedFormat}
-          details={[
-            { color: 'bg-green-500', label: 'สรุปน้ำหนัก/ส่วนสูง', desc: 'น้ำหนัก + ส่วนสูง + BMI ต่อคน' },
-          ]}
+          icon={<Activity size={22} />}
+          iconBg="bg-emerald-100"
+          iconColor="text-emerald-600"
+          borderAccent="stat-green"
+          desc="น้ำหนัก + ส่วนสูง + BMI"
           exporting={exporting === `weight_height-${selectedFormat}`}
           exported={exportedFiles.includes(`weight_height-${selectedFormat}`)}
           disabled={!selectedClassroom || exporting !== null}
           onExport={() => handleExport('weight_height')}
           formatExt={formatExt[selectedFormat]}
         />
-
-        {/* Card 4: Grades */}
         <ExportCard
           title="คะแนน/เกรด"
           subtitle="Grades"
-          icon={<BookOpenCheck size={20} className="text-white" />}
-          color="purple"
-          format={selectedFormat}
-          details={[
-            { color: 'bg-purple-500', label: 'สรุปคะแนน/เกรด', desc: `ภาคเรียนที่ ${gradeSemester} ปี ${gradeYear}` },
-          ]}
+          icon={<BookOpenCheck size={22} />}
+          iconBg="bg-violet-100"
+          iconColor="text-violet-600"
+          borderAccent="stat-purple"
+          desc={`คะแนน/เกรด เทอม ${gradeSemester}/${gradeYear}`}
           exporting={exporting === `grades-${selectedFormat}`}
           exported={exportedFiles.includes(`grades-${selectedFormat}`)}
           disabled={!selectedClassroom || exporting !== null}
@@ -834,68 +836,21 @@ function ExportPageContent() {
       </div>
 
       {/* Export All */}
-      <div className="bg-surface rounded-xl border border-border p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="font-semibold text-text-primary">ส่งออกทั้งหมด</h3>
-            <p className="text-sm text-text-secondary mt-1">
-              ดาวน์โหลดทั้ง 3 ไฟล์ (เช็คชื่อ + สุขภาพ + น้ำหนัก/ส่วนสูง) เป็น {selectedFormat.toUpperCase()}
-            </p>
+      <div className="rounded-2xl bg-slate-900 p-5 shadow-[var(--shadow-md)]">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-white">
+            <h3 className="font-bold text-base">ดาวน์โหลดทั้งหมด</h3>
+            <p className="text-xs text-slate-300 mt-0.5">รวม 4 ไฟล์ — เช็คชื่อ, สุขภาพ, น้ำหนัก/ส่วนสูง, คะแนน</p>
           </div>
           <button
             onClick={exportAll}
             disabled={!selectedClassroom || exporting !== null}
-            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-xl font-medium transition-colors disabled:opacity-50"
+            className="btn-press inline-flex items-center justify-center gap-2 rounded-xl bg-white px-6 py-3 text-sm font-bold text-slate-800 shadow-[var(--shadow-sm)] transition hover:bg-slate-100 disabled:opacity-40"
           >
-            {exporting ? (
-              <Loader2 size={20} className="animate-spin" />
-            ) : (
-              <Download size={20} />
-            )}
-            {exporting
-              ? 'กำลังสร้างไฟล์...'
-              : `ดาวน์โหลดทั้ง 3 ไฟล์ (${formatExt[selectedFormat]})${exportedFiles.length >= 3 ? ' ✓' : ''}`}
+            {exporting ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
+            {exporting ? 'กำลังสร้าง...' : `ดาวน์โหลดทั้ง 4 ไฟล์`}
+            {!exporting && exportedFiles.length >= 4 && <CheckCircle2 size={16} className="text-emerald-500" />}
           </button>
-        </div>
-      </div>
-
-      {/* Format Info */}
-      <div className="mt-6 p-4 bg-gray-50 rounded-xl border border-border">
-        <h3 className="text-sm font-medium text-text-secondary mb-3">เปรียบเทียบรูปแบบ</h3>
-        <div className="grid grid-cols-3 gap-4 text-sm">
-          <div className={`p-3 rounded-lg border-2 transition-colors ${selectedFormat === 'excel' ? 'border-green-400 bg-green-50' : 'border-transparent bg-white'}`}>
-            <div className="flex items-center gap-2 mb-2">
-              <FileSpreadsheet size={16} className="text-green-600" />
-              <span className="font-semibold text-green-700">Excel (.xlsx)</span>
-            </div>
-            <ul className="list-disc list-inside space-y-0.5 text-xs text-text-secondary">
-              <li>แยก Sheet ตามหมวด</li>
-              <li>แก้ไขข้อมูลได้</li>
-              <li>เหมาะกับข้อมูลละเอียด</li>
-            </ul>
-          </div>
-          <div className={`p-3 rounded-lg border-2 transition-colors ${selectedFormat === 'pdf' ? 'border-red-400 bg-red-50' : 'border-transparent bg-white'}`}>
-            <div className="flex items-center gap-2 mb-2">
-              <FileText size={16} className="text-red-600" />
-              <span className="font-semibold text-red-700">PDF (.pdf)</span>
-            </div>
-            <ul className="list-disc list-inside space-y-0.5 text-xs text-text-secondary">
-              <li>พร้อมพิมพ์ทันที</li>
-              <li>รูปแบบสวยงาม</li>
-              <li>เหมาะกับรายงานสรุป</li>
-            </ul>
-          </div>
-          <div className={`p-3 rounded-lg border-2 transition-colors ${selectedFormat === 'csv' ? 'border-blue-400 bg-blue-50' : 'border-transparent bg-white'}`}>
-            <div className="flex items-center gap-2 mb-2">
-              <FileDown size={16} className="text-blue-600" />
-              <span className="font-semibold text-blue-700">CSV (.csv)</span>
-            </div>
-            <ul className="list-disc list-inside space-y-0.5 text-xs text-text-secondary">
-              <li>ไฟล์เล็ก เปิดได้ทุกโปรแกรม</li>
-              <li>นำเข้าระบบอื่นได้</li>
-              <li>เหมาะกับข้อมูลดิบ</li>
-            </ul>
-          </div>
         </div>
       </div>
     </div>
@@ -906,64 +861,56 @@ function ExportPageContent() {
 // ExportCard Component
 // ============================================================
 function ExportCard({
-  title, subtitle, icon, color, format, details, exporting, exported, disabled, onExport, formatExt,
+  title, subtitle, icon, iconBg, iconColor, borderAccent, desc, exporting, exported, disabled, onExport, formatExt,
 }: {
   title: string
   subtitle: string
   icon: React.ReactNode
-  color: 'blue' | 'pink' | 'green' | 'purple'
-  format: ExportFormat
-  details: { color: string; label: string; desc: string }[]
+  iconBg: string
+  iconColor: string
+  borderAccent: string
+  desc: string
   exporting: boolean
   exported: boolean
   disabled: boolean
   onExport: () => void
   formatExt: string
 }) {
-  const colorMap = {
-    blue: { header: 'bg-blue-50', icon: 'bg-blue-500', btn: 'bg-blue-500 hover:bg-blue-600' },
-    pink: { header: 'bg-pink-50', icon: 'bg-pink-500', btn: 'bg-pink-500 hover:bg-pink-600' },
-    green: { header: 'bg-green-50', icon: 'bg-green-500', btn: 'bg-green-500 hover:bg-green-600' },
-    purple: { header: 'bg-purple-50', icon: 'bg-purple-500', btn: 'bg-purple-500 hover:bg-purple-600' },
-  }
-  const bgHeader = colorMap[color].header
-  const bgIcon = colorMap[color].icon
-  const btnBg = colorMap[color].btn
-
   return (
-    <div className="bg-surface rounded-xl border border-border overflow-hidden">
-      <div className={`${bgHeader} px-6 py-4 border-b border-border`}>
+    <div className={`card-hover rounded-2xl overflow-hidden bg-white border border-[var(--line)] shadow-[var(--shadow-sm)] flex flex-col h-full ${borderAccent}`}>
+      <div className="px-5 py-5">
         <div className="flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-lg ${bgIcon} flex items-center justify-center`}>{icon}</div>
+          <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${iconBg} ${iconColor}`}>
+            {icon}
+          </div>
           <div>
-            <h3 className="font-semibold text-text-primary">ไฟล์{title}</h3>
-            <p className="text-xs text-text-secondary">{subtitle} {formatExt}</p>
+            <h3 className="font-bold text-base leading-tight text-slate-900">{title}</h3>
+            <p className="text-[11px] text-[var(--muted)] font-medium">{subtitle} {formatExt}</p>
           </div>
         </div>
       </div>
-      <div className="p-6">
-        <div className="space-y-2 mb-4 text-sm text-text-secondary">
-          {details.map((d, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${d.color}`}></div>
-              <span>
-                {format === 'excel' ? `Sheet ${i + 1}: ` : ''}
-                <strong className="text-text-primary">{d.label}</strong> — {d.desc}
-              </span>
-            </div>
-          ))}
-        </div>
+      <div className="px-5 pb-5 flex flex-col flex-1">
+        <p className="text-sm text-[var(--muted)] mb-4 flex-1">{desc}</p>
         <button
           onClick={onExport}
           disabled={disabled}
-          className={`w-full flex items-center justify-center gap-2 ${btnBg} text-white px-4 py-2.5 rounded-xl font-medium transition-colors disabled:opacity-50`}
+          className={`btn-press w-full flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-all border
+            ${exported
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              : disabled
+                ? 'bg-slate-50 text-slate-400 border-[var(--line)]'
+                : 'bg-[var(--primary)] text-white border-[var(--primary)] hover:bg-[var(--primary-strong)]'
+            }
+            disabled:cursor-not-allowed`}
         >
           {exporting ? (
-            <Loader2 size={18} className="animate-spin" />
+            <Loader2 size={16} className="animate-spin" />
+          ) : exported ? (
+            <CheckCircle2 size={16} />
           ) : (
-            <Download size={18} />
+            <Download size={16} />
           )}
-          {exporting ? 'กำลังสร้างไฟล์...' : `ดาวน์โหลด${title} (${formatExt})${exported ? ' ✓' : ''}`}
+          {exporting ? 'กำลังสร้างไฟล์...' : exported ? 'ดาวน์โหลดแล้ว' : `ดาวน์โหลด ${formatExt}`}
         </button>
       </div>
     </div>
