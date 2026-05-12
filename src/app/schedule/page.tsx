@@ -8,6 +8,7 @@ import {
   CalendarDays,
   Check,
   CheckCircle,
+  ChevronDown,
   ChevronLeft,
   Copy,
   Eraser,
@@ -78,8 +79,8 @@ interface Slot {
 type ScheduleMap = Record<string, Slot>
 type AllSchedules = Record<number, ScheduleMap>
 
-// ขอบเขตตรวจคาบซ้ำ: ทุกชั้น / เลือกเอง
-type ClashScope = 'all' | 'custom'
+// ขอบเขตตรวจคาบซ้ำ: ระดับชั้นเดียวกัน / เลือกเอง
+type ClashScope = 'grade' | 'custom'
 
 function getSubjectColor(code: string): string {
   return SUBJECTS.find((s) => s.code === code)?.color || '#64748B'
@@ -97,10 +98,18 @@ function parseGradeNum(level: string | null | undefined): number | null {
   return null
 }
 
-function isInScope(classroom: Classroom, scope: ClashScope, custom: Set<number>): boolean {
-  if (scope === 'all') return true
+function isInScope(
+  classroom: Classroom,
+  scope: ClashScope,
+  custom: Set<number>,
+  grade: number | null,
+): boolean {
+  if (scope === 'grade') {
+    if (grade == null) return false
+    return parseGradeNum(classroom.level) === grade
+  }
   if (scope === 'custom') return custom.has(classroom.id)
-  return true
+  return false
 }
 
 // ─── Component ───────────────────────────────────────────────
@@ -137,8 +146,10 @@ function SchedulePageContent() {
   const [undoEntry, setUndoEntry] = useState<UndoEntry | null>(null)
 
   // ── ขอบเขตตรวจคาบซ้ำ ──
-  const [clashScope, setClashScope] = useState<ClashScope>('all')
+  const [clashScope, setClashScope] = useState<ClashScope>('grade')
   const [customScope, setCustomScope] = useState<Set<number>>(new Set())
+  const [gradeScope, setGradeScope] = useState<number | null>(null)
+  const [showScopeSettings, setShowScopeSettings] = useState(false)
 
   const selectedClassroom = classrooms.find((c) => c.id === selectedId) || null
   const currentSchedule = selectedId ? allSchedules[selectedId] || {} : {}
@@ -154,6 +165,15 @@ function SchedulePageContent() {
       setSelectedId(classrooms[0].id)
     }
   }, [classrooms, selectedId])
+
+  // Auto-set gradeScope จากห้องที่กำลังดูอยู่ — ครูไม่ต้องเลือกเอง
+  useEffect(() => {
+    if (clashScope !== 'grade') return
+    if (gradeScope != null) return
+    if (!selectedClassroom) return
+    const g = parseGradeNum(selectedClassroom.level)
+    if (g) setGradeScope(g)
+  }, [clashScope, gradeScope, selectedClassroom])
 
   useEffect(() => {
     if (!toast) return
@@ -176,12 +196,17 @@ function SchedulePageContent() {
     if (typeof window === 'undefined') return
     try {
       const s = localStorage.getItem('clashScope')
-      // รองรับ legacy values 'p13'/'p46' จากเวอร์ชันก่อน → fallback เป็น 'all'
-      if (s === 'all' || s === 'custom') setClashScope(s)
+      // legacy 'all' (และค่าอื่น) → fallback เป็น 'grade'
+      if (s === 'custom' || s === 'grade') setClashScope(s)
       const raw = localStorage.getItem('clashScopeCustom')
       if (raw) {
         const ids = JSON.parse(raw) as number[]
         if (Array.isArray(ids)) setCustomScope(new Set(ids))
+      }
+      const g = localStorage.getItem('clashScopeGrade')
+      if (g) {
+        const n = Number(g)
+        if (Number.isFinite(n) && n >= 1 && n <= 6) setGradeScope(n)
       }
     } catch {
       /* ignore */
@@ -194,10 +219,11 @@ function SchedulePageContent() {
     try {
       localStorage.setItem('clashScope', clashScope)
       localStorage.setItem('clashScopeCustom', JSON.stringify(Array.from(customScope)))
+      localStorage.setItem('clashScopeGrade', gradeScope == null ? '' : String(gradeScope))
     } catch {
       /* ignore */
     }
-  }, [clashScope, customScope])
+  }, [clashScope, customScope, gradeScope])
 
   // ── Data fetching ──
   // ใช้ useCallback เพื่อให้ identity คงที่ ใช้เป็น retry ได้โดยไม่กลัว stale closure
@@ -537,10 +563,10 @@ function SchedulePageContent() {
   const scopedClassroomIds = useMemo(() => {
     const s = new Set<number>()
     for (const c of classrooms) {
-      if (isInScope(c, clashScope, customScope)) s.add(c.id)
+      if (isInScope(c, clashScope, customScope, gradeScope)) s.add(c.id)
     }
     return s
-  }, [classrooms, clashScope, customScope])
+  }, [classrooms, clashScope, customScope, gradeScope])
 
   // ── Schedules ที่ filter ตามขอบเขต ──
   const scopedSchedules = useMemo(() => {
@@ -796,61 +822,123 @@ function SchedulePageContent() {
         >
           {/* ── ขอบเขตตรวจคาบซ้ำ (Clash Scope) ── */}
           <div className="mb-3 border-b border-slate-100 pb-3">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="mr-1 inline-flex items-center gap-1 text-xs font-semibold text-[var(--muted)]">
+            {/* summary + toggle */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1 text-xs text-[var(--muted)]">
                 <Filter size={12} />
-                ตรวจคาบซ้ำระหว่าง
+                {clashScope === 'grade'
+                  ? gradeScope
+                    ? `ตรวจคาบซ้ำกับห้องระดับเดียวกัน (ป.${gradeScope} · ${scopedClassroomIds.size} ห้อง)`
+                    : 'ตรวจคาบซ้ำกับห้องระดับเดียวกัน'
+                  : `ตรวจคาบซ้ำกับ ${scopedClassroomIds.size} ห้องที่เลือก`}
               </span>
-              <ScopeButton
-                label="ทุกชั้น"
-                active={clashScope === 'all'}
-                onClick={() => setClashScope('all')}
-              />
-              <ScopeButton
-                label="เลือกเอง"
-                active={clashScope === 'custom'}
-                onClick={() => {
-                  // ครั้งแรกที่เลือก custom ให้ pre-select ห้องปัจจุบัน
-                  if (clashScope !== 'custom' && customScope.size === 0 && selectedId) {
-                    setCustomScope(new Set([selectedId]))
-                  }
-                  setClashScope('custom')
-                }}
-              />
-              <span className="ml-auto text-[11px] text-[var(--muted)]">
-                ตรวจ {scopedClassroomIds.size} / {classrooms.length} ห้อง
-              </span>
+              <button
+                type="button"
+                onClick={() => setShowScopeSettings((v) => !v)}
+                className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold text-slate-500 transition hover:bg-slate-50 hover:text-slate-700"
+              >
+                ตั้งค่าขั้นสูง
+                <ChevronDown
+                  size={12}
+                  className={`transition-transform ${showScopeSettings ? 'rotate-180' : ''}`}
+                />
+              </button>
             </div>
 
-            {/* custom mode: checkboxes per classroom */}
-            {clashScope === 'custom' && (
-              <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                <span className="mr-1 text-[11px] text-[var(--muted)]">เลือกห้องที่จะตรวจ:</span>
-                {classrooms.map((c) => {
-                  const checked = customScope.has(c.id)
-                  return (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onClick={() => {
-                        setCustomScope((prev) => {
-                          const next = new Set(prev)
-                          if (next.has(c.id)) next.delete(c.id)
-                          else next.add(c.id)
-                          return next
-                        })
-                      }}
-                      className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold transition ${
-                        checked
-                          ? 'border-blue-300 bg-blue-50 text-blue-700'
-                          : 'border-[var(--line)] bg-white text-slate-500 hover:border-blue-200'
-                      }`}
-                    >
-                      {checked && <Check size={10} strokeWidth={3} />}
-                      {c.name}
-                    </button>
-                  )
-                })}
+            {/* expanded controls */}
+            {showScopeSettings && (
+              <div className="mt-3 rounded-lg bg-slate-50 p-3">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="mr-1 text-[11px] font-semibold text-[var(--muted)]">รูปแบบ</span>
+                  <ScopeButton
+                    label="ระดับชั้น"
+                    active={clashScope === 'grade'}
+                    onClick={() => {
+                      if (gradeScope == null && selectedClassroom) {
+                        const g = parseGradeNum(selectedClassroom.level)
+                        if (g) setGradeScope(g)
+                      }
+                      setClashScope('grade')
+                    }}
+                  />
+                  <ScopeButton
+                    label="เลือกเอง"
+                    active={clashScope === 'custom'}
+                    onClick={() => {
+                      if (clashScope !== 'custom' && customScope.size === 0 && selectedId) {
+                        setCustomScope(new Set([selectedId]))
+                      }
+                      setClashScope('custom')
+                    }}
+                  />
+                </div>
+
+                {/* custom mode: checkboxes per classroom */}
+                {clashScope === 'custom' && (
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <span className="mr-1 text-[11px] text-[var(--muted)]">เลือกห้องที่จะตรวจ:</span>
+                    {classrooms.map((c) => {
+                      const checked = customScope.has(c.id)
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => {
+                            setCustomScope((prev) => {
+                              const next = new Set(prev)
+                              if (next.has(c.id)) next.delete(c.id)
+                              else next.add(c.id)
+                              return next
+                            })
+                          }}
+                          className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold transition ${
+                            checked
+                              ? 'border-blue-300 bg-blue-50 text-blue-700'
+                              : 'border-[var(--line)] bg-white text-slate-500 hover:border-blue-200'
+                          }`}
+                        >
+                          {checked && <Check size={10} strokeWidth={3} />}
+                          {c.name}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+
+                {/* grade mode: เลือกระดับชั้น 1-6 */}
+                {clashScope === 'grade' && (
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <span className="mr-1 text-[11px] text-[var(--muted)]">เลือกระดับชั้น:</span>
+                    {[1, 2, 3, 4, 5, 6].map((g) => {
+                      const active = gradeScope === g
+                      const count = classrooms.filter((c) => parseGradeNum(c.level) === g).length
+                      const disabled = count === 0
+                      return (
+                        <button
+                          key={g}
+                          type="button"
+                          disabled={disabled}
+                          onClick={() => setGradeScope(g)}
+                          className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold transition ${
+                            active
+                              ? 'border-blue-300 bg-blue-50 text-blue-700'
+                              : disabled
+                              ? 'border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed'
+                              : 'border-[var(--line)] bg-white text-slate-500 hover:border-blue-200'
+                          }`}
+                          title={disabled ? 'ไม่มีห้องในระดับนี้' : `${count} ห้อง`}
+                        >
+                          ป.{g}
+                          <span className="text-[9px] opacity-70">({count})</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+
+                <p className="mt-2 text-[10px] text-[var(--muted)]">
+                  💡 default ตรวจกับห้องระดับเดียวกันอัตโนมัติ — เปลี่ยนเป็น "เลือกเอง" เฉพาะตอนที่ต้องการตรวจข้ามระดับ
+                </p>
               </div>
             )}
           </div>
@@ -1182,15 +1270,7 @@ function SchedulePageContent() {
                   <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
                   <div>
                     ห้องนี้<span className="font-semibold">ไม่อยู่ในขอบเขตตรวจ</span> —
-                    ถ้าต้องการตรวจคาบซ้ำของห้องนี้ กด{' '}
-                    <button
-                      type="button"
-                      onClick={() => setClashScope('all')}
-                      className="font-semibold text-amber-900 underline hover:text-amber-700"
-                    >
-                      "ทุกชั้น"
-                    </button>
-                    {' '}ด้านบน
+                    ปรับขอบเขต "ตรวจคาบซ้ำระหว่าง" ด้านบนให้ครอบคลุมห้องนี้
                   </div>
                 </div>
               </div>
@@ -1199,11 +1279,7 @@ function SchedulePageContent() {
               clashes={clashes}
               currentClassroomId={selectedId}
               onJumpTo={handleJumpToClash}
-              scopeLabel={
-                clashScope === 'all'
-                  ? undefined
-                  : `เฉพาะ ${scopedClassroomIds.size} ห้อง`
-              }
+              scopeLabel={`เฉพาะ ${scopedClassroomIds.size} ห้อง`}
             />
             <ScheduleHoursCounter
               schedule={currentSchedule}
