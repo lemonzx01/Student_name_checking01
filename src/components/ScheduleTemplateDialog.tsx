@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Sparkles, X, Check, AlertTriangle, Minus, Plus, Users } from 'lucide-react'
+import { Sparkles, X, AlertTriangle, Minus, Plus, Users, Star } from 'lucide-react'
 import {
   TEMPLATE_SUBJECT_NAMES,
   generateScheduleFromHours,
@@ -235,23 +235,23 @@ export default function ScheduleTemplateDialog({
                       key={c.id}
                       type="button"
                       onClick={() => toggleClassroom(c.id)}
-                      className={`btn-press inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition ${
+                      className={`btn-press inline-flex min-w-[64px] items-center justify-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
                         checked
-                          ? 'border-[var(--primary)] bg-[var(--primary)] text-white shadow-sm'
-                          : 'border-[var(--line)] bg-[var(--surface)] text-[var(--text-soft)] hover:border-[var(--line-strong)]'
+                          ? 'bg-[var(--primary)] text-white shadow-sm'
+                          : 'bg-[var(--surface)] text-[var(--text-soft)] hover:bg-[var(--surface-muted)]'
                       }`}
-                      title={isCurrent ? 'ห้องที่กำลังแก้อยู่' : c.level}
+                      title={isCurrent ? `${c.name} — ห้องที่กำลังแก้อยู่` : c.level}
                     >
-                      {checked && <Check size={11} strokeWidth={3} />}
                       {c.name}
                       {isCurrent && (
-                        <span
-                          className={`rounded-full px-1 py-0.5 text-[9px] font-bold ${
-                            checked ? 'bg-white/20' : 'bg-[var(--primary-soft)] text-[var(--primary-strong)]'
+                        <Star
+                          size={10}
+                          strokeWidth={2.5}
+                          className={`flex-shrink-0 ${
+                            checked ? 'fill-white text-white' : 'fill-[var(--accent)] text-[var(--accent)]'
                           }`}
-                        >
-                          ปัจจุบัน
-                        </span>
+                          aria-label="ห้องที่กำลังแก้อยู่"
+                        />
                       )}
                     </button>
                   )
