@@ -153,7 +153,7 @@ export default function CreateClassroomModal({
                   type="button"
                   onClick={() => setColor(c.value)}
                   className={`group relative flex h-9 w-9 items-center justify-center rounded-xl ${c.bg} transition-all hover:scale-110 ${
-                    color === c.value ? 'ring-2 ring-offset-2 ring-[var(--line-strong)] scale-110' : ''
+                    color === c.value ? 'ring-2 ring-offset-2 ring-[var(--text)] ring-offset-[var(--surface)] scale-110' : ''
                   }`}
                   title={c.label}
                 >
