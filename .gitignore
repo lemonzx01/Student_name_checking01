@@ -9,6 +9,12 @@ out/
 *.db-wal
 *.db-shm
 
+# auto-backup files
+backups/
+
+# claude code local settings
+.claude/
+
 # misc
 .DS_Store
 Thumbs.db
