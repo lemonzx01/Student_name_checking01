@@ -18,6 +18,8 @@ import {
 import { type Classroom, type Student, DEFAULT_SUBJECTS, calculateGrade } from '@/types/index'
 import CalendarPicker from '@/components/CalendarPicker'
 import CustomSelect from '@/components/CustomSelect'
+import PageHeader from '@/components/PageHeader'
+import { TONE, type Tone } from '@/lib/constants/colors'
 import { useDialog } from '@/lib/hooks/useConfirm'
 const loadThaiFont = () => import('@/lib/thai-font').then((m) => m.NotoSansThai)
 
@@ -713,27 +715,26 @@ function ExportPageContent() {
       {/* Toast Notification */}
       {toast && (
         <div className="fixed top-6 right-6 z-[100]">
-          <div className="toast-enter flex items-center gap-3 bg-emerald-600 text-white px-5 py-3 rounded-xl shadow-[var(--shadow-lg)]">
+          <div className="toast-enter flex items-center gap-3 rounded-[var(--radius-lg)] bg-[var(--success)] px-5 py-3 text-white shadow-[var(--shadow-lg)]">
             <CheckCircle2 size={20} />
             <span className="font-medium text-sm">{toast}</span>
           </div>
         </div>
       )}
-      {/* Header */}
-      <div className="mb-6">
-        <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-600">
-          <File size={13} />
-          Export Manager
-        </div>
-        <h1 className="text-2xl font-bold text-slate-900 md:text-3xl">ส่งออกเอกสาร</h1>
-        <p className="text-sm text-slate-500 mt-1">เลือกห้อง ช่วงเวลา และรูปแบบไฟล์ที่ต้องการ</p>
-      </div>
+
+      <PageHeader
+        icon={File}
+        badge="Export Manager"
+        tone="info"
+        title="ส่งออกเอกสาร"
+        subtitle="เลือกห้อง ช่วงเวลา และรูปแบบไฟล์ที่ต้องการ"
+      />
 
       {/* Settings Card */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 mb-6 shadow-sm">
+      <div className="card p-5 mb-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
           <div>
-            <label className="block text-xs font-semibold text-slate-500 mb-1.5">ห้องเรียน</label>
+            <label className="block text-xs font-semibold text-[var(--text-soft)] mb-1.5">ห้องเรียน</label>
             <CustomSelect
               value={selectedClassroom ?? ''}
               onChange={(v) => {
@@ -753,28 +754,28 @@ function ExportPageContent() {
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-500 mb-1.5">วันที่เริ่ม</label>
+            <label className="block text-xs font-semibold text-[var(--text-soft)] mb-1.5">วันที่เริ่ม</label>
             <CalendarPicker value={startDate} onChange={setStartDate} compact />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-500 mb-1.5">วันที่สิ้นสุด</label>
+            <label className="block text-xs font-semibold text-[var(--text-soft)] mb-1.5">วันที่สิ้นสุด</label>
             <CalendarPicker value={endDate} onChange={setEndDate} compact />
           </div>
         </div>
 
         {/* Format Selector */}
         <div>
-          <label className="block text-xs font-semibold text-slate-500 mb-1.5">รูปแบบไฟล์</label>
-          <div className="inline-flex items-center rounded-xl bg-slate-100 p-1 relative z-30">
+          <label className="block text-xs font-semibold text-[var(--text-soft)] mb-1.5">รูปแบบไฟล์</label>
+          <div className="inline-flex items-center rounded-[var(--radius-lg)] bg-[var(--surface-muted)] p-1 relative z-30">
             {(['excel', 'pdf', 'csv'] as ExportFormat[]).map((fmt) => (
               <button
                 type="button"
                 key={fmt}
                 onClick={() => { setSelectedFormat(fmt); setExportedFiles([]) }}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-all ${
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-[var(--radius-md)] text-xs font-semibold transition-all ${
                   selectedFormat === fmt
-                    ? 'bg-white text-slate-800 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-700'
+                    ? 'bg-[var(--surface)] text-[var(--text)] shadow-[var(--shadow-xs)]'
+                    : 'text-[var(--muted)] hover:text-[var(--text)]'
                 }`}
               >
                 {formatIcon[fmt]}
@@ -791,9 +792,7 @@ function ExportPageContent() {
           title="เช็คชื่อ"
           subtitle="Attendance"
           icon={<ClipboardCheck size={22} />}
-          iconBg="bg-blue-100"
-          iconColor="text-blue-600"
-          borderAccent="stat-blue"
+          tone="info"
           desc="สรุปมา / ขาด / ลาป่วย / ลากิจ"
           exporting={exporting === `attendance-${selectedFormat}`}
           exported={exportedFiles.includes(`attendance-${selectedFormat}`)}
@@ -805,9 +804,7 @@ function ExportPageContent() {
           title="สุขภาพ"
           subtitle="Health"
           icon={<Heart size={22} />}
-          iconBg="bg-pink-100"
-          iconColor="text-pink-600"
-          borderAccent="stat-pink"
+          tone="danger"
           desc="แปรงฟัน + ดื่มนม รายคน"
           exporting={exporting === `health-${selectedFormat}`}
           exported={exportedFiles.includes(`health-${selectedFormat}`)}
@@ -819,9 +816,7 @@ function ExportPageContent() {
           title="น้ำหนัก/ส่วนสูง"
           subtitle="Weight & Height"
           icon={<Activity size={22} />}
-          iconBg="bg-emerald-100"
-          iconColor="text-emerald-600"
-          borderAccent="stat-green"
+          tone="ok"
           desc="น้ำหนัก + ส่วนสูง + BMI"
           exporting={exporting === `weight_height-${selectedFormat}`}
           exported={exportedFiles.includes(`weight_height-${selectedFormat}`)}
@@ -833,9 +828,7 @@ function ExportPageContent() {
           title="คะแนน/เกรด"
           subtitle="Grades"
           icon={<BookOpenCheck size={22} />}
-          iconBg="bg-violet-100"
-          iconColor="text-violet-600"
-          borderAccent="stat-purple"
+          tone="accent"
           desc={`คะแนน/เกรด เทอม ${gradeSemester}/${gradeYear}`}
           exporting={exporting === `grades-${selectedFormat}`}
           exported={exportedFiles.includes(`grades-${selectedFormat}`)}
@@ -846,20 +839,20 @@ function ExportPageContent() {
       </div>
 
       {/* Export All */}
-      <div className="rounded-2xl bg-slate-900 p-5 shadow-[var(--shadow-md)]">
+      <div className="rounded-[var(--radius-xl)] border border-[var(--line-strong)] bg-[var(--text)] p-5 shadow-[var(--shadow-md)]">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-white">
+          <div className="text-[var(--surface)]">
             <h3 className="font-bold text-base">ดาวน์โหลดทั้งหมด</h3>
-            <p className="text-xs text-slate-300 mt-0.5">รวม 4 ไฟล์ — เช็คชื่อ, สุขภาพ, น้ำหนัก/ส่วนสูง, คะแนน</p>
+            <p className="text-xs opacity-75 mt-0.5">รวม 4 ไฟล์ — เช็คชื่อ, สุขภาพ, น้ำหนัก/ส่วนสูง, คะแนน</p>
           </div>
           <button
             onClick={exportAll}
             disabled={!selectedClassroom || exporting !== null}
-            className="btn-press inline-flex items-center justify-center gap-2 rounded-xl bg-white px-6 py-3 text-sm font-bold text-slate-800 shadow-[var(--shadow-sm)] transition hover:bg-slate-100 disabled:opacity-40"
+            className="btn btn-secondary btn-lg"
           >
             {exporting ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
             {exporting ? 'กำลังสร้าง...' : `ดาวน์โหลดทั้ง 4 ไฟล์`}
-            {!exporting && exportedFiles.length >= 4 && <CheckCircle2 size={16} className="text-emerald-500" />}
+            {!exporting && exportedFiles.length >= 4 && <CheckCircle2 size={16} className="text-[var(--success)]" />}
           </button>
         </div>
       </div>
@@ -871,14 +864,12 @@ function ExportPageContent() {
 // ExportCard Component
 // ============================================================
 function ExportCard({
-  title, subtitle, icon, iconBg, iconColor, borderAccent, desc, exporting, exported, disabled, onExport, formatExt,
+  title, subtitle, icon, tone, desc, exporting, exported, disabled, onExport, formatExt,
 }: {
   title: string
   subtitle: string
   icon: React.ReactNode
-  iconBg: string
-  iconColor: string
-  borderAccent: string
+  tone: Tone
   desc: string
   exporting: boolean
   exported: boolean
@@ -886,42 +877,36 @@ function ExportCard({
   onExport: () => void
   formatExt: string
 }) {
+  const toneStyles = TONE[tone]
   return (
-    <div className={`card-hover rounded-2xl overflow-hidden bg-white border border-[var(--line)] shadow-[var(--shadow-sm)] flex flex-col h-full ${borderAccent}`}>
+    <div className="card card-interactive flex flex-col h-full overflow-hidden">
       <div className="px-5 py-5">
         <div className="flex items-center gap-3">
-          <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${iconBg} ${iconColor}`}>
+          <div
+            className="flex h-11 w-11 items-center justify-center rounded-[var(--radius-lg)]"
+            style={{ background: toneStyles.bg, color: toneStyles.accent }}
+          >
             {icon}
           </div>
           <div>
-            <h3 className="font-bold text-base leading-tight text-slate-900">{title}</h3>
+            <h3 className="section-title leading-tight">{title}</h3>
             <p className="text-[11px] text-[var(--muted)] font-medium">{subtitle} {formatExt}</p>
           </div>
         </div>
       </div>
       <div className="px-5 pb-5 flex flex-col flex-1">
         <p className="text-sm text-[var(--muted)] mb-4 flex-1">{desc}</p>
-        <button
-          onClick={onExport}
-          disabled={disabled}
-          className={`btn-press w-full flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-all border
-            ${exported
-              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-              : disabled
-                ? 'bg-slate-50 text-slate-400 border-[var(--line)]'
-                : 'bg-[var(--primary)] text-white border-[var(--primary)] hover:bg-[var(--primary-strong)]'
-            }
-            disabled:cursor-not-allowed`}
-        >
-          {exporting ? (
-            <Loader2 size={16} className="animate-spin" />
-          ) : exported ? (
-            <CheckCircle2 size={16} />
-          ) : (
-            <Download size={16} />
-          )}
-          {exporting ? 'กำลังสร้างไฟล์...' : exported ? 'ดาวน์โหลดแล้ว' : `ดาวน์โหลด ${formatExt}`}
-        </button>
+        {exported ? (
+          <button onClick={onExport} disabled={disabled} className="btn w-full" style={{ background: 'var(--success-soft)', color: 'var(--success-strong)', borderColor: 'var(--success-soft)' }}>
+            {exporting ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+            {exporting ? 'กำลังสร้างไฟล์...' : 'ดาวน์โหลดแล้ว'}
+          </button>
+        ) : (
+          <button onClick={onExport} disabled={disabled} className="btn btn-primary w-full">
+            {exporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+            {exporting ? 'กำลังสร้างไฟล์...' : `ดาวน์โหลด ${formatExt}`}
+          </button>
+        )}
       </div>
     </div>
   )

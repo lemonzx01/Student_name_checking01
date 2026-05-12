@@ -14,6 +14,7 @@ import {
 import { Classroom, calculateBmi } from '@/types'
 import CalendarPicker from '@/components/CalendarPicker'
 import AutoSaveIndicator from '@/components/AutoSaveIndicator'
+import PageHeader from '@/components/PageHeader'
 import { useAutoSave } from '@/lib/hooks/useAutoSave'
 import { useBeforeUnloadWarning } from '@/lib/hooks/useBeforeUnloadWarning'
 
@@ -224,20 +225,21 @@ function HealthPageContent() {
     }
   }
 
-  const bmiBadgeClass = (status: string) => {
+  // ใช้ pill tokens แทนการ hardcode สีโดยตรง
+  // ผอม → info, ปกติ → ok, น้ำหนักเกิน → warn, อ้วน/อ้วนมาก → danger
+  const bmiPillClass = (status: string) => {
     switch (status) {
       case 'ผอม':
-        return 'bg-blue-50 text-blue-700 border border-blue-200'
+        return 'pill pill-info'
       case 'ปกติ':
-        return 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+        return 'pill pill-ok'
       case 'น้ำหนักเกิน':
-        return 'bg-amber-50 text-amber-700 border border-amber-200'
+        return 'pill pill-warn'
       case 'อ้วน':
-        return 'bg-orange-50 text-orange-700 border border-orange-200'
       case 'อ้วนมาก':
-        return 'bg-red-50 text-red-700 border border-red-200'
+        return 'pill pill-danger'
       default:
-        return 'bg-slate-50 text-slate-500 border border-slate-200'
+        return 'pill pill-muted'
     }
   }
 
@@ -260,39 +262,32 @@ function HealthPageContent() {
   return (
     <div className="mx-auto max-w-7xl animate-fade-in">
       {/* Header */}
-      <div className="animate-slide-up mb-6 rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-6 shadow-[var(--shadow-sm)]">
-        <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-600">
-          <Activity size={13} />
-          Health Tracking
-        </div>
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900 md:text-3xl">น้ำหนัก / ส่วนสูง</h1>
-            <p className="mt-1 text-sm text-[var(--muted)]">
-              บันทึกและคำนวณค่า BMI{currentClassroomName ? ` • ห้อง ${currentClassroomName}` : ''}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={exportToExcel}
-              disabled={healthRecords.length === 0}
-              className="btn-press inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-[var(--shadow-sm)] transition hover:border-emerald-300 hover:text-emerald-700 disabled:opacity-50"
-            >
-              <FileSpreadsheet size={18} />
-              ส่งออก Excel
-            </button>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        icon={Activity}
+        badge="Health Tracking"
+        tone="ok"
+        title="น้ำหนัก / ส่วนสูง"
+        subtitle={`บันทึกและคำนวณค่า BMI${currentClassroomName ? ` • ห้อง ${currentClassroomName}` : ''}`}
+        actions={
+          <button
+            type="button"
+            onClick={exportToExcel}
+            disabled={healthRecords.length === 0}
+            className="btn btn-secondary btn-sm"
+          >
+            <FileSpreadsheet size={18} />
+            ส่งออก Excel
+          </button>
+        }
+      />
 
       {/* Toast */}
       {toast && (
         <div
-          className={`toast-enter mb-6 flex items-center gap-3 rounded-2xl border px-4 py-3.5 text-sm font-medium ${
+          className={`toast-enter mb-6 flex items-center gap-3 rounded-[var(--radius-lg)] px-4 py-3.5 text-sm font-medium ${
             toast.type === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-              : 'border-red-200 bg-red-50 text-red-700'
+              ? 'bg-[var(--success-soft)] text-[var(--success-strong)]'
+              : 'bg-[var(--danger-soft)] text-[var(--danger-strong)]'
           }`}
         >
           {toast.type === 'success' ? <CheckCircle size={18} /> : <AlertTriangle size={18} />}
@@ -302,8 +297,8 @@ function HealthPageContent() {
 
       {/* Classroom selector — ปุ่มกดเลือกห้อง */}
       {classrooms.length > 0 && (
-        <div className="animate-slide-up mb-4 rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-4 shadow-[var(--shadow-sm)]">
-          <label className="mb-2 block text-xs font-semibold text-slate-700">ห้องเรียน</label>
+        <div className="card animate-slide-up mb-4 p-4">
+          <label className="section-title mb-2 block text-xs">ห้องเรียน</label>
           <div className="flex flex-wrap gap-1.5">
             {classrooms.map((cls) => {
               const isSelected = selectedClassroom === cls.id
@@ -315,7 +310,7 @@ function HealthPageContent() {
                   className={`btn-press inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
                     isSelected
                       ? 'bg-[var(--primary)] text-white shadow-sm'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      : 'bg-[var(--surface-muted)] text-[var(--text-soft)] hover:bg-[var(--surface-soft)]'
                   }`}
                 >
                   {cls.name}
@@ -328,8 +323,8 @@ function HealthPageContent() {
 
       {/* Controls + Stats */}
       <div className="mb-6 grid gap-4 lg:grid-cols-[320px_1fr]">
-        <div className="animate-slide-up rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-5 shadow-[var(--shadow-sm)]">
-          <label className="mb-2 block text-sm font-semibold text-slate-700">วันที่บันทึก</label>
+        <div className="card animate-slide-up p-5">
+          <label className="section-title mb-2 block">วันที่บันทึก</label>
           <CalendarPicker value={selectedDate} onChange={(d) => setSelectedDate(d)} />
           <p className="mt-3 text-xs text-[var(--muted)]">
             ระบบจะจัดเก็บข้อมูลตามวันที่ เพื่อติดตามการเปลี่ยนแปลง
@@ -337,48 +332,48 @@ function HealthPageContent() {
         </div>
 
         <div className="animate-slide-up grid gap-3 sm:grid-cols-3 xl:grid-cols-5">
-          {(['ผอม', 'ปกติ', 'น้ำหนักเกิน', 'อ้วน', 'อ้วนมาก'] as const).map((status) => (
-            <div
-              key={status}
-              className={`rounded-2xl border bg-white p-3 shadow-[var(--shadow-sm)] ${
-                status === 'ผอม'
-                  ? 'stat-blue'
-                  : status === 'ปกติ'
-                    ? 'stat-green'
-                    : status === 'น้ำหนักเกิน'
-                      ? 'stat-amber'
-                      : status === 'อ้วน'
-                        ? 'stat-pink'
-                        : 'stat-red'
-              }`}
-            >
-              <p className="text-[11px] font-medium text-[var(--muted)]">{status}</p>
-              <p className="mt-0.5 text-xl font-bold text-slate-900">
-                {bmiStats.byStatus[status] || 0}
-                <span className="ml-1 text-xs font-normal text-[var(--muted)]">คน</span>
-              </p>
-            </div>
-          ))}
+          {(['ผอม', 'ปกติ', 'น้ำหนักเกิน', 'อ้วน', 'อ้วนมาก'] as const).map((status) => {
+            // map BMI group → tone token (ใช้ accent border-left สื่อสถานะ)
+            const accentVar =
+              status === 'ผอม'
+                ? 'var(--info)'
+                : status === 'ปกติ'
+                  ? 'var(--success)'
+                  : status === 'น้ำหนักเกิน'
+                    ? 'var(--warning)'
+                    : 'var(--danger)'
+            return (
+              <div
+                key={status}
+                className="card p-3"
+                style={{ borderLeft: `3px solid ${accentVar}` }}
+              >
+                <p className="text-[11px] font-medium text-[var(--muted)]">{status}</p>
+                <p className="mt-0.5 text-xl font-bold text-[var(--text)]">
+                  {bmiStats.byStatus[status] || 0}
+                  <span className="ml-1 text-xs font-normal text-[var(--muted)]">คน</span>
+                </p>
+              </div>
+            )
+          })}
         </div>
       </div>
 
       {/* BMI Legend */}
-      <div className="mb-6 rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-4 shadow-[var(--shadow-sm)]">
-        <h3 className="mb-3 text-sm font-semibold text-slate-700">ช่วงค่า BMI</h3>
+      <div className="card mb-6 p-4">
+        <h3 className="section-title mb-3">ช่วงค่า BMI</h3>
         <div className="flex flex-wrap gap-3 text-xs">
-          <LegendBadge color="bg-blue-500" label="ผอม (<18.5)" />
-          <LegendBadge color="bg-emerald-500" label="ปกติ (18.5-22.9)" />
-          <LegendBadge color="bg-amber-500" label="น้ำหนักเกิน (23-24.9)" />
-          <LegendBadge color="bg-orange-500" label="อ้วน (25-29.9)" />
-          <LegendBadge color="bg-red-500" label="อ้วนมาก (≥30)" />
+          <LegendBadge accent="var(--info)" label="ผอม (<18.5)" />
+          <LegendBadge accent="var(--success)" label="ปกติ (18.5-22.9)" />
+          <LegendBadge accent="var(--warning)" label="น้ำหนักเกิน (23-24.9)" />
+          <LegendBadge accent="var(--danger)" label="อ้วน (25-29.9)" />
+          <LegendBadge accent="var(--danger-strong)" label="อ้วนมาก (≥30)" />
         </div>
       </div>
 
       {/* Table */}
       {!selectedClassroom ? (
-        <div className="rounded-[var(--radius-lg)] border-2 border-dashed border-[var(--line)] bg-white px-6 py-16 text-center text-[var(--muted)]">
-          กรุณาเลือกห้องเรียนก่อน
-        </div>
+        <div className="empty-state">กรุณาเลือกห้องเรียนก่อน</div>
       ) : loading ? (
         <div className="grid gap-2">
           {[1, 2, 3, 4, 5].map((i) => (
@@ -386,30 +381,31 @@ function HealthPageContent() {
           ))}
         </div>
       ) : healthRecords.length === 0 ? (
-        <div className="rounded-[var(--radius-lg)] border-2 border-dashed border-[var(--line)] bg-white px-6 py-16 text-center text-[var(--muted)]">
-          ไม่พบข้อมูลนักเรียนในห้องนี้
-        </div>
+        <div className="empty-state">ไม่พบข้อมูลนักเรียนในห้องนี้</div>
       ) : (
-        <div className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--line)] bg-white shadow-[var(--shadow-sm)]">
+        <div className="card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-slate-700">
+              <thead className="bg-[var(--surface-soft)] text-[var(--text)]">
                 <tr>
-                  <th className="w-14 px-3 py-3 text-center font-semibold">#</th>
-                  <th className="px-3 py-3 text-left font-semibold">ชื่อนักเรียน</th>
-                  <th className="w-28 px-3 py-3 text-center font-semibold">น้ำหนัก (กก.)</th>
-                  <th className="w-28 px-3 py-3 text-center font-semibold">ส่วนสูง (ซม.)</th>
-                  <th className="w-20 px-3 py-3 text-center font-semibold">BMI</th>
-                  <th className="w-32 px-3 py-3 text-center font-semibold">สถานะ</th>
-                  <th className="w-24 px-3 py-3 text-center font-semibold">แปรงฟัน</th>
-                  <th className="w-24 px-3 py-3 text-center font-semibold">ดื่มนม</th>
+                  <th className="w-14 px-3 py-3 text-center font-bold">#</th>
+                  <th className="px-3 py-3 text-left font-bold">ชื่อนักเรียน</th>
+                  <th className="w-28 px-3 py-3 text-center font-bold">น้ำหนัก (กก.)</th>
+                  <th className="w-28 px-3 py-3 text-center font-bold">ส่วนสูง (ซม.)</th>
+                  <th className="w-20 px-3 py-3 text-center font-bold">BMI</th>
+                  <th className="w-32 px-3 py-3 text-center font-bold">สถานะ</th>
+                  <th className="w-24 px-3 py-3 text-center font-bold">แปรงฟัน</th>
+                  <th className="w-24 px-3 py-3 text-center font-bold">ดื่มนม</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[var(--line)]">
+              <tbody className="divide-y divide-[var(--line-soft)]">
                 {healthRecords.map((record, index) => (
-                  <tr key={record.student_id} className="transition hover:bg-blue-50/30">
+                  <tr
+                    key={record.student_id}
+                    className="transition hover:bg-[var(--surface-muted)]"
+                  >
                     <td className="px-3 py-2.5 text-center text-[var(--muted)]">{index + 1}</td>
-                    <td className="px-3 py-2.5 font-medium text-slate-900">
+                    <td className="px-3 py-2.5 font-medium text-[var(--text)]">
                       <div className="flex flex-col">
                         <span>{record.student_name}</span>
                         {record.student_code && (
@@ -428,7 +424,8 @@ function HealthPageContent() {
                         placeholder="0"
                         min="0"
                         step="0.1"
-                        className="w-full rounded-lg border border-[var(--line)] bg-white px-2.5 py-1.5 text-center focus:border-[var(--primary)] focus:outline-none focus:ring-2 focus:ring-blue-100"
+                        className="input text-center"
+                        style={{ padding: '6px 10px', fontSize: 13 }}
                       />
                     </td>
                     <td className="px-3 py-2.5">
@@ -442,16 +439,15 @@ function HealthPageContent() {
                         placeholder="0"
                         min="0"
                         step="0.1"
-                        className="w-full rounded-lg border border-[var(--line)] bg-white px-2.5 py-1.5 text-center focus:border-[var(--primary)] focus:outline-none focus:ring-2 focus:ring-blue-100"
+                        className="input text-center"
+                        style={{ padding: '6px 10px', fontSize: 13 }}
                       />
                     </td>
-                    <td className="px-3 py-2.5 text-center font-bold text-slate-900">
+                    <td className="px-3 py-2.5 text-center font-bold text-[var(--text)]">
                       {record.bmi > 0 ? record.bmi.toFixed(1) : '-'}
                     </td>
                     <td className="px-3 py-2.5">
-                      <span
-                        className={`inline-flex items-center justify-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${bmiBadgeClass(record.bmi_status)}`}
-                      >
+                      <span className={bmiPillClass(record.bmi_status)}>
                         {getBmiIcon(record.bmi)}
                         {record.bmi_status || '-'}
                       </span>
@@ -494,10 +490,13 @@ function HealthPageContent() {
   )
 }
 
-function LegendBadge({ color, label }: { color: string; label: string }) {
+function LegendBadge({ accent, label }: { accent: string; label: string }) {
   return (
-    <div className="inline-flex items-center gap-2 rounded-full border border-[var(--line)] bg-white px-2.5 py-1 text-slate-700">
-      <span className={`h-2.5 w-2.5 rounded-full ${color}`} />
+    <div className="inline-flex items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--surface)] px-2.5 py-1 text-[var(--text-soft)]">
+      <span
+        className="h-2.5 w-2.5 rounded-full"
+        style={{ backgroundColor: accent }}
+      />
       {label}
     </div>
   )

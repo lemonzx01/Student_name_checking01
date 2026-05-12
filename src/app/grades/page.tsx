@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import AutoSaveIndicator from '@/components/AutoSaveIndicator'
 import CustomSelect from '@/components/CustomSelect'
+import PageHeader from '@/components/PageHeader'
 import SubjectEditModal from '@/components/SubjectEditModal'
 import { Classroom, Student, calculateGrade } from '@/types/index'
 import { getClassrooms } from '@/lib/client-data'
@@ -334,45 +335,37 @@ function GradesPageContent() {
     }
   }
 
-  const inputClass = 'w-full px-1 py-1 text-center text-sm border border-[var(--line)] rounded-md focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-[var(--primary)]'
+  const inputClass = 'w-full px-1 py-1 text-center text-sm bg-transparent border border-transparent rounded-md text-[var(--text)] placeholder:text-[var(--muted-soft)] focus:outline-none focus:bg-[var(--surface)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-soft)]'
 
   return (
     <div className="mx-auto max-w-7xl animate-fade-in">
       {/* Header */}
-      <div className="animate-slide-up mb-6 rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-6 shadow-[var(--shadow-sm)]">
-        <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-600">
-          <BookOpen size={13} />
-          Grade Records
-        </div>
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900 md:text-3xl">แบบบันทึกผลการเรียน</h1>
-            <p className="mt-1 text-sm text-[var(--muted)]">
-              {activeClassroom ? `ห้อง ${activeClassroom.name} • ` : ''}
-              ปีการศึกษา {academicYear} • รายวิชา {subjectDef.name}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={exportToExcel}
-              disabled={students.length === 0}
-              className="btn-press inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-[var(--shadow-sm)] transition hover:border-emerald-300 hover:text-emerald-700 disabled:opacity-50"
-            >
-              <FileSpreadsheet size={18} />
-              ส่งออก Excel
-            </button>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        icon={BookOpen}
+        badge="การเรียน"
+        tone="brand"
+        title="แบบบันทึกผลการเรียน"
+        subtitle={`${activeClassroom ? `ห้อง ${activeClassroom.name} • ` : ''}ปีการศึกษา ${academicYear} • รายวิชา ${subjectDef.name}`}
+        actions={
+          <button
+            type="button"
+            onClick={exportToExcel}
+            disabled={students.length === 0}
+            className="btn btn-secondary btn-press"
+          >
+            <FileSpreadsheet size={18} />
+            ส่งออก Excel
+          </button>
+        }
+      />
 
       {/* Toast */}
       {toast && (
         <div
           className={`toast-enter mb-6 flex items-center gap-3 rounded-2xl border px-4 py-3.5 text-sm font-medium ${
             toast.type === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-              : 'border-red-200 bg-red-50 text-red-700'
+              ? 'border-[var(--success-soft)] bg-[var(--success-soft)] text-[var(--success-strong)]'
+              : 'border-[var(--danger-soft)] bg-[var(--danger-soft)] text-[var(--danger-strong)]'
           }`}
         >
           {toast.type === 'success' ? <CheckCircle size={18} /> : <AlertTriangle size={18} />}
@@ -464,43 +457,39 @@ function GradesPageContent() {
 
       {/* Table */}
       {!selectedClassroom ? (
-        <div className="rounded-[var(--radius-lg)] border-2 border-dashed border-[var(--line)] bg-white px-6 py-16 text-center text-[var(--muted)]">
-          กรุณาเลือกห้องเรียนก่อน
-        </div>
+        <div className="empty-state">กรุณาเลือกห้องเรียนก่อน</div>
       ) : students.length === 0 ? (
-        <div className="rounded-[var(--radius-lg)] border-2 border-dashed border-[var(--line)] bg-white px-6 py-16 text-center text-[var(--muted)]">
-          ไม่มีนักเรียนในห้องนี้
-        </div>
+        <div className="empty-state">ไม่มีนักเรียนในห้องนี้</div>
       ) : (
-        <div className="animate-slide-up rounded-[var(--radius-lg)] border border-[var(--line)] bg-white shadow-[var(--shadow-sm)] overflow-x-auto" data-grades-table>
+        <div className="animate-slide-up card overflow-x-auto" data-grades-table>
           <table className="w-full min-w-[850px] border-collapse">
             {/* Multi-row header */}
             <thead>
-              <tr className="bg-slate-100">
-                <th rowSpan={3} className="border border-slate-200 px-2 py-1 text-xs text-center w-10">เลขที่</th>
-                <th rowSpan={3} className="border border-slate-200 px-2 py-1 text-xs text-left w-44">ชื่อ-สกุล</th>
-                <th colSpan={3} className="border border-slate-200 px-2 py-1 text-xs text-center bg-blue-50 text-blue-700">คะแนนภาคเรียนที่ 1</th>
-                <th colSpan={3} className="border border-slate-200 px-2 py-1 text-xs text-center bg-emerald-50 text-emerald-700">คะแนนภาคเรียนที่ 2</th>
-                <th rowSpan={2} className="border border-slate-200 px-2 py-1 text-xs text-center bg-amber-50 text-amber-700 w-16">คะแนน<br/>รวม</th>
-                <th rowSpan={2} className="border border-slate-200 px-2 py-1 text-xs text-center bg-violet-50 text-violet-700 w-14">เกรด</th>
+              <tr className="bg-[var(--surface-soft)] text-[var(--text-soft)]">
+                <th rowSpan={3} className="border border-[var(--line-soft)] px-2 py-1 text-xs font-semibold text-center w-10">เลขที่</th>
+                <th rowSpan={3} className="border border-[var(--line-soft)] px-2 py-1 text-xs font-semibold text-left w-44">ชื่อ-สกุล</th>
+                <th colSpan={3} className="border border-[var(--line-soft)] px-2 py-1 text-xs font-semibold text-center text-[var(--primary-strong)]">คะแนนภาคเรียนที่ 1</th>
+                <th colSpan={3} className="border border-[var(--line-soft)] px-2 py-1 text-xs font-semibold text-center text-[var(--success-strong)]">คะแนนภาคเรียนที่ 2</th>
+                <th rowSpan={2} className="border border-[var(--line-soft)] px-2 py-1 text-xs font-semibold text-center text-[var(--accent-strong)] w-16">คะแนน<br/>รวม</th>
+                <th rowSpan={2} className="border border-[var(--line-soft)] px-2 py-1 text-xs font-semibold text-center text-[var(--text)] w-14">เกรด</th>
               </tr>
-              <tr className="bg-slate-50">
-                <th className="border border-slate-200 px-1 py-1 text-[11px] text-center bg-blue-50/50 w-20">ระหว่างเรียน</th>
-                <th className="border border-slate-200 px-1 py-1 text-[11px] text-center bg-blue-50/50 w-16">ปลายภาค</th>
-                <th className="border border-slate-200 px-1 py-1 text-[11px] text-center bg-blue-50/50 w-14">รวม</th>
-                <th className="border border-slate-200 px-1 py-1 text-[11px] text-center bg-emerald-50/50 w-20">ระหว่างเรียน</th>
-                <th className="border border-slate-200 px-1 py-1 text-[11px] text-center bg-emerald-50/50 w-16">ปลายภาค</th>
-                <th className="border border-slate-200 px-1 py-1 text-[11px] text-center bg-emerald-50/50 w-14">รวม</th>
+              <tr className="bg-[var(--surface-soft)] text-[var(--text-soft)]">
+                <th className="border border-[var(--line-soft)] px-1 py-1 text-[11px] font-semibold text-center w-20">ระหว่างเรียน</th>
+                <th className="border border-[var(--line-soft)] px-1 py-1 text-[11px] font-semibold text-center w-16">ปลายภาค</th>
+                <th className="border border-[var(--line-soft)] px-1 py-1 text-[11px] font-semibold text-center w-14">รวม</th>
+                <th className="border border-[var(--line-soft)] px-1 py-1 text-[11px] font-semibold text-center w-20">ระหว่างเรียน</th>
+                <th className="border border-[var(--line-soft)] px-1 py-1 text-[11px] font-semibold text-center w-16">ปลายภาค</th>
+                <th className="border border-[var(--line-soft)] px-1 py-1 text-[11px] font-semibold text-center w-14">รวม</th>
               </tr>
-              <tr className="bg-slate-50">
-                <th className="border border-slate-200 px-1 py-0.5 text-[10px] text-center text-red-500 font-bold">35</th>
-                <th className="border border-slate-200 px-1 py-0.5 text-[10px] text-center text-red-500 font-bold">15</th>
-                <th className="border border-slate-200 px-1 py-0.5 text-[10px] text-center text-red-500 font-bold">50</th>
-                <th className="border border-slate-200 px-1 py-0.5 text-[10px] text-center text-red-500 font-bold">35</th>
-                <th className="border border-slate-200 px-1 py-0.5 text-[10px] text-center text-red-500 font-bold">15</th>
-                <th className="border border-slate-200 px-1 py-0.5 text-[10px] text-center text-red-500 font-bold">50</th>
-                <th className="border border-slate-200 px-1 py-0.5 text-[10px] text-center text-red-500 font-bold">100</th>
-                <th className="border border-slate-200 px-1 py-0.5 text-[10px] text-center"></th>
+              <tr className="bg-[var(--surface-soft)]">
+                <th className="border border-[var(--line-soft)] px-1 py-0.5 text-[10px] text-center text-[var(--muted)] font-semibold">35</th>
+                <th className="border border-[var(--line-soft)] px-1 py-0.5 text-[10px] text-center text-[var(--muted)] font-semibold">15</th>
+                <th className="border border-[var(--line-soft)] px-1 py-0.5 text-[10px] text-center text-[var(--muted)] font-semibold">50</th>
+                <th className="border border-[var(--line-soft)] px-1 py-0.5 text-[10px] text-center text-[var(--muted)] font-semibold">35</th>
+                <th className="border border-[var(--line-soft)] px-1 py-0.5 text-[10px] text-center text-[var(--muted)] font-semibold">15</th>
+                <th className="border border-[var(--line-soft)] px-1 py-0.5 text-[10px] text-center text-[var(--muted)] font-semibold">50</th>
+                <th className="border border-[var(--line-soft)] px-1 py-0.5 text-[10px] text-center text-[var(--muted)] font-semibold">100</th>
+                <th className="border border-[var(--line-soft)] px-1 py-0.5 text-[10px] text-center"></th>
               </tr>
             </thead>
             <tbody>
@@ -513,45 +502,45 @@ function GradesPageContent() {
                 const grade = gt > 0 ? calculateGrade(gt) : null
 
                 return (
-                  <tr key={student.id} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
-                    <td className="border border-slate-200 px-2 py-1 text-center text-xs text-slate-500">{i + 1}</td>
-                    <td className="border border-slate-200 px-2 py-1 text-xs font-medium text-slate-800 whitespace-nowrap">
+                  <tr key={student.id} className="table-row-hover bg-[var(--surface)]">
+                    <td className="border border-[var(--line-soft)] px-2 py-1 text-center text-xs text-[var(--muted)]">{i + 1}</td>
+                    <td className="border border-[var(--line-soft)] px-2 py-1 text-xs font-medium text-[var(--text)] whitespace-nowrap">
                       {[student.title, student.first_name, student.last_name].filter(Boolean).join(' ')}
                     </td>
                     {/* Sem 1 */}
-                    <td className="border border-slate-200 px-0.5 py-0.5">
+                    <td className="border border-[var(--line-soft)] px-0.5 py-0.5">
                       <input type="number" min="0" max="35" value={g1.midterm || ''} placeholder="-"
                         onChange={(e) => updateGrade(1, student.id, selectedSubject, 'midterm', Number(e.target.value) || 0)}
                         className={inputClass} />
                     </td>
-                    <td className="border border-slate-200 px-0.5 py-0.5">
+                    <td className="border border-[var(--line-soft)] px-0.5 py-0.5">
                       <input type="number" min="0" max="15" value={g1.final || ''} placeholder="-"
                         onChange={(e) => updateGrade(1, student.id, selectedSubject, 'final', Number(e.target.value) || 0)}
                         className={inputClass} />
                     </td>
-                    <td className="border border-slate-200 px-1 py-1 text-center text-xs font-semibold bg-blue-50/30">
+                    <td className="border border-[var(--line-soft)] px-1 py-1 text-center text-xs font-semibold text-[var(--primary-strong)]">
                       {t1 > 0 ? t1 : '-'}
                     </td>
                     {/* Sem 2 */}
-                    <td className="border border-slate-200 px-0.5 py-0.5">
+                    <td className="border border-[var(--line-soft)] px-0.5 py-0.5">
                       <input type="number" min="0" max="35" value={g2.midterm || ''} placeholder="-"
                         onChange={(e) => updateGrade(2, student.id, selectedSubject, 'midterm', Number(e.target.value) || 0)}
                         className={inputClass} />
                     </td>
-                    <td className="border border-slate-200 px-0.5 py-0.5">
+                    <td className="border border-[var(--line-soft)] px-0.5 py-0.5">
                       <input type="number" min="0" max="15" value={g2.final || ''} placeholder="-"
                         onChange={(e) => updateGrade(2, student.id, selectedSubject, 'final', Number(e.target.value) || 0)}
                         className={inputClass} />
                     </td>
-                    <td className="border border-slate-200 px-1 py-1 text-center text-xs font-semibold bg-emerald-50/30">
+                    <td className="border border-[var(--line-soft)] px-1 py-1 text-center text-xs font-semibold text-[var(--success-strong)]">
                       {t2 > 0 ? t2 : '-'}
                     </td>
                     {/* Grand total + Grade */}
-                    <td className="border border-slate-200 px-1 py-1 text-center text-xs font-bold bg-amber-50/30">
+                    <td className="border border-[var(--line-soft)] px-1 py-1 text-center text-xs font-bold text-[var(--accent-strong)]">
                       {gt > 0 ? gt : '-'}
                     </td>
-                    <td className={`border border-slate-200 px-1 py-1 text-center text-xs font-bold ${
-                      grade !== null && Number(grade) >= 2 ? 'text-emerald-600' : grade !== null ? 'text-red-500' : 'text-slate-400'
+                    <td className={`border border-[var(--line-soft)] px-1 py-1 text-center text-xs font-bold ${
+                      grade !== null && Number(grade) >= 2 ? 'text-[var(--success-strong)]' : grade !== null ? 'text-[var(--danger-strong)]' : 'text-[var(--muted-soft)]'
                     }`}>
                       {grade ?? '-'}
                     </td>
@@ -560,57 +549,57 @@ function GradesPageContent() {
               })}
 
               {/* Summary: รวม */}
-              <tr className="bg-slate-100 font-semibold">
-                <td colSpan={2} className="border border-slate-200 px-2 py-1.5 text-xs text-center">รวม</td>
-                <td className="border border-slate-200 px-1 py-1 text-center text-xs text-blue-700">
+              <tr className="bg-[var(--surface-muted)] font-semibold">
+                <td colSpan={2} className="border border-[var(--line-soft)] px-2 py-1.5 text-xs text-center text-[var(--text)]">รวม</td>
+                <td className="border border-[var(--line-soft)] px-1 py-1 text-center text-xs text-[var(--primary-strong)]">
                   {colSum(s => getSemGrade(sem1, s.id, selectedSubject).midterm)}
                 </td>
-                <td className="border border-slate-200 px-1 py-1 text-center text-xs text-blue-700">
+                <td className="border border-[var(--line-soft)] px-1 py-1 text-center text-xs text-[var(--primary-strong)]">
                   {colSum(s => getSemGrade(sem1, s.id, selectedSubject).final)}
                 </td>
-                <td className="border border-slate-200 px-1 py-1 text-center text-xs text-blue-700">
+                <td className="border border-[var(--line-soft)] px-1 py-1 text-center text-xs text-[var(--primary-strong)]">
                   {colSum(s => semTotal(getSemGrade(sem1, s.id, selectedSubject)))}
                 </td>
-                <td className="border border-slate-200 px-1 py-1 text-center text-xs text-emerald-700">
+                <td className="border border-[var(--line-soft)] px-1 py-1 text-center text-xs text-[var(--success-strong)]">
                   {colSum(s => getSemGrade(sem2, s.id, selectedSubject).midterm)}
                 </td>
-                <td className="border border-slate-200 px-1 py-1 text-center text-xs text-emerald-700">
+                <td className="border border-[var(--line-soft)] px-1 py-1 text-center text-xs text-[var(--success-strong)]">
                   {colSum(s => getSemGrade(sem2, s.id, selectedSubject).final)}
                 </td>
-                <td className="border border-slate-200 px-1 py-1 text-center text-xs text-emerald-700">
+                <td className="border border-[var(--line-soft)] px-1 py-1 text-center text-xs text-[var(--success-strong)]">
                   {colSum(s => semTotal(getSemGrade(sem2, s.id, selectedSubject)))}
                 </td>
-                <td className="border border-slate-200 px-1 py-1 text-center text-xs text-amber-700">
+                <td className="border border-[var(--line-soft)] px-1 py-1 text-center text-xs text-[var(--accent-strong)]">
                   {colSum(s => grandTotal(getSemGrade(sem1, s.id, selectedSubject), getSemGrade(sem2, s.id, selectedSubject)))}
                 </td>
-                <td className="border border-slate-200"></td>
+                <td className="border border-[var(--line-soft)]"></td>
               </tr>
 
               {/* Summary: เฉลี่ย */}
-              <tr className="bg-slate-100 font-semibold">
-                <td colSpan={2} className="border border-slate-200 px-2 py-1.5 text-xs text-center">เฉลี่ย</td>
-                <td className="border border-slate-200 px-1 py-1 text-center text-xs text-blue-700">
+              <tr className="bg-[var(--surface-muted)] font-semibold">
+                <td colSpan={2} className="border border-[var(--line-soft)] px-2 py-1.5 text-xs text-center text-[var(--text)]">เฉลี่ย</td>
+                <td className="border border-[var(--line-soft)] px-1 py-1 text-center text-xs text-[var(--primary-strong)]">
                   {colAvg(s => getSemGrade(sem1, s.id, selectedSubject).midterm).toFixed(2)}
                 </td>
-                <td className="border border-slate-200 px-1 py-1 text-center text-xs text-blue-700">
+                <td className="border border-[var(--line-soft)] px-1 py-1 text-center text-xs text-[var(--primary-strong)]">
                   {colAvg(s => getSemGrade(sem1, s.id, selectedSubject).final).toFixed(2)}
                 </td>
-                <td className="border border-slate-200 px-1 py-1 text-center text-xs text-blue-700">
+                <td className="border border-[var(--line-soft)] px-1 py-1 text-center text-xs text-[var(--primary-strong)]">
                   {colAvg(s => semTotal(getSemGrade(sem1, s.id, selectedSubject))).toFixed(2)}
                 </td>
-                <td className="border border-slate-200 px-1 py-1 text-center text-xs text-emerald-700">
+                <td className="border border-[var(--line-soft)] px-1 py-1 text-center text-xs text-[var(--success-strong)]">
                   {colAvg(s => getSemGrade(sem2, s.id, selectedSubject).midterm).toFixed(2)}
                 </td>
-                <td className="border border-slate-200 px-1 py-1 text-center text-xs text-emerald-700">
+                <td className="border border-[var(--line-soft)] px-1 py-1 text-center text-xs text-[var(--success-strong)]">
                   {colAvg(s => getSemGrade(sem2, s.id, selectedSubject).final).toFixed(2)}
                 </td>
-                <td className="border border-slate-200 px-1 py-1 text-center text-xs text-emerald-700">
+                <td className="border border-[var(--line-soft)] px-1 py-1 text-center text-xs text-[var(--success-strong)]">
                   {colAvg(s => semTotal(getSemGrade(sem2, s.id, selectedSubject))).toFixed(2)}
                 </td>
-                <td className="border border-slate-200 px-1 py-1 text-center text-xs text-amber-700">
+                <td className="border border-[var(--line-soft)] px-1 py-1 text-center text-xs text-[var(--accent-strong)]">
                   {colAvg(s => grandTotal(getSemGrade(sem1, s.id, selectedSubject), getSemGrade(sem2, s.id, selectedSubject))).toFixed(2)}
                 </td>
-                <td className="border border-slate-200"></td>
+                <td className="border border-[var(--line-soft)]"></td>
               </tr>
             </tbody>
           </table>
@@ -618,17 +607,17 @@ function GradesPageContent() {
       )}
 
       {/* Grade Scale */}
-      <div className="animate-slide-up mt-6 rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-5 shadow-[var(--shadow-sm)]">
-        <h3 className="mb-3 text-sm font-semibold text-slate-700">เกณฑ์การคำนวณเกรด (คะแนนรวม 100)</h3>
-        <div className="flex flex-wrap gap-2 text-xs font-medium">
-          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700">80-100 = 4</span>
-          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700">75-79 = 3.5</span>
-          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700">70-74 = 3</span>
-          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700">65-69 = 2.5</span>
-          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700">60-64 = 2</span>
-          <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-amber-700">55-59 = 1.5</span>
-          <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-amber-700">50-54 = 1</span>
-          <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-red-700">ต่ำกว่า 50 = 0</span>
+      <div className="animate-slide-up card mt-6 p-5">
+        <h3 className="section-title mb-3">เกณฑ์การคำนวณเกรด (คะแนนรวม 100)</h3>
+        <div className="flex flex-wrap gap-2">
+          <span className="pill pill-ok">80-100 = 4</span>
+          <span className="pill pill-ok">75-79 = 3.5</span>
+          <span className="pill pill-ok">70-74 = 3</span>
+          <span className="pill pill-ok">65-69 = 2.5</span>
+          <span className="pill pill-ok">60-64 = 2</span>
+          <span className="pill pill-warn">55-59 = 1.5</span>
+          <span className="pill pill-warn">50-54 = 1</span>
+          <span className="pill pill-danger">ต่ำกว่า 50 = 0</span>
         </div>
       </div>
 

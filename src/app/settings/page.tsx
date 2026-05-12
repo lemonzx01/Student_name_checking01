@@ -27,6 +27,7 @@ import { getAllStats, listBackups, restoreBackup, type BackupFile } from '@/lib/
 import { useDialog } from '@/lib/hooks/useConfirm'
 import { useTheme, type FontSize, type ThemeMode } from '@/lib/hooks/useTheme'
 import { disablePin, hashPin, isPinEnabled, getStoredPinHash, setStoredPin } from '@/components/PinGate'
+import PageHeader from '@/components/PageHeader'
 
 const THAI_MONTHS_SHORT = [
   'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
@@ -247,8 +248,8 @@ export default function SettingsPage() {
 
     const details = stats ? (
       <div className="space-y-1">
-        <p className="font-semibold text-slate-800">ข้อมูลทั้งหมดที่จะถูกลบ:</p>
-        <ul className="ml-4 list-disc space-y-0.5 text-slate-600">
+        <p className="font-semibold text-[var(--text)]">ข้อมูลทั้งหมดที่จะถูกลบ:</p>
+        <ul className="ml-4 list-disc space-y-0.5 text-[var(--text-soft)]">
           <li>ห้องเรียน {stats.classroomCount} ห้อง</li>
           <li>นักเรียน {stats.studentCount} คน</li>
           <li>รายการเช็คชื่อ {stats.attendanceCount} รายการ</li>
@@ -256,13 +257,13 @@ export default function SettingsPage() {
           <li>รายการสุขภาพ {stats.healthCount} รายการ</li>
           <li>ช่องตารางสอน {stats.scheduleCount} ช่อง</li>
         </ul>
-        <p className="mt-2 text-xs text-red-700">
+        <p className="mt-2 text-xs text-[var(--danger-strong)]">
           ระบบจะสร้างไฟล์สำรองโดยอัตโนมัติก่อนลบ — กู้คืนได้จากส่วน
           &quot;กู้คืนจากการสำรองอัตโนมัติ&quot; ด้านล่าง
         </p>
       </div>
     ) : (
-      <p className="text-xs text-red-700">
+      <p className="text-xs text-[var(--danger-strong)]">
         ระบบจะสร้างไฟล์สำรองโดยอัตโนมัติก่อนลบ — กู้คืนได้ภายหลัง
       </p>
     )
@@ -299,7 +300,7 @@ export default function SettingsPage() {
       message: (
         <>
           จะกู้คืนข้อมูลทั้งหมดจากไฟล์{' '}
-          <span className="font-mono font-semibold text-slate-900">
+          <span className="font-mono font-semibold text-[var(--text)]">
             {file.fileName}
           </span>{' '}
           ({formatBackupDate(file.date)})
@@ -307,8 +308,8 @@ export default function SettingsPage() {
       ),
       details: (
         <div className="space-y-1.5">
-          <p className="font-semibold text-slate-800">สิ่งที่จะเกิดขึ้น:</p>
-          <ul className="ml-4 list-disc space-y-0.5 text-slate-600">
+          <p className="font-semibold text-[var(--text)]">สิ่งที่จะเกิดขึ้น:</p>
+          <ul className="ml-4 list-disc space-y-0.5 text-[var(--text-soft)]">
             <li>ข้อมูลปัจจุบันจะถูกแทนที่ด้วยข้อมูลจากไฟล์สำรอง</li>
             <li>ระบบจะสำรองข้อมูลปัจจุบันไว้ก่อน (เผื่อกู้คืนผิด)</li>
             <li>แอปจะรีสตาร์ทอัตโนมัติหลังกู้คืนเสร็จ</li>
@@ -355,22 +356,20 @@ export default function SettingsPage() {
   return (
     <div className="mx-auto max-w-5xl animate-fade-in">
       {/* Header */}
-      <div className="animate-slide-up mb-6 rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-6 shadow-[var(--shadow-sm)]">
-        <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-600">
-          <SettingsIcon size={13} />
-          System Settings
-        </div>
-        <h1 className="text-2xl font-bold text-slate-900 md:text-3xl">ตั้งค่า</h1>
-        <p className="mt-1 text-sm text-[var(--muted)]">จัดการข้อมูลและการสำรองข้อมูลของระบบ</p>
-      </div>
+      <PageHeader
+        icon={SettingsIcon}
+        badge="System Settings"
+        title="ตั้งค่า"
+        subtitle="จัดการข้อมูลและการสำรองข้อมูลของระบบ"
+      />
 
       {/* Message */}
       {message && (
         <div
-          className={`toast-enter mb-6 flex items-center gap-3 rounded-2xl border px-4 py-3.5 text-sm font-medium ${
+          className={`toast-enter mb-6 flex items-center gap-3 rounded-[var(--radius)] border px-4 py-3.5 text-sm font-medium ${
             message.type === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-              : 'border-red-200 bg-red-50 text-red-700'
+              ? 'border-[var(--success-soft)] bg-[var(--success-soft)] text-[var(--success-strong)]'
+              : 'border-[var(--danger-soft)] bg-[var(--danger-soft)] text-[var(--danger-strong)]'
           }`}
         >
           {message.type === 'success' ? <CheckCircle size={18} /> : <AlertTriangle size={18} />}
@@ -381,14 +380,14 @@ export default function SettingsPage() {
       {/* Backup / Restore */}
       <div className="grid gap-4 md:grid-cols-2">
         {/* Export */}
-        <div className="animate-slide-up card-hover rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-6 shadow-[var(--shadow-sm)] stat-blue">
+        <div className="card card-hover p-6 stat-blue">
           <div className="mb-4 flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--primary-ghost)] text-[var(--primary)]">
               <Download size={22} />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-900">สำรองข้อมูล</h2>
-              <p className="text-sm text-[var(--muted)]">ดาวน์โหลดข้อมูลทั้งหมดเป็นไฟล์ JSON</p>
+              <h2 className="section-title text-lg">สำรองข้อมูล</h2>
+              <p className="section-subtitle">ดาวน์โหลดข้อมูลทั้งหมดเป็นไฟล์ JSON</p>
             </div>
           </div>
           <p className="mb-4 text-sm text-[var(--muted)]">
@@ -397,7 +396,7 @@ export default function SettingsPage() {
           <button
             onClick={handleExport}
             disabled={exporting}
-            className="btn-press flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-white shadow-[var(--shadow-sm)] transition hover:bg-[var(--primary-strong)] disabled:opacity-50"
+            className="btn btn-primary w-full"
           >
             <Database size={18} />
             {exporting ? 'กำลังสำรอง...' : 'ดาวน์โหลดไฟล์สำรอง'}
@@ -405,21 +404,21 @@ export default function SettingsPage() {
         </div>
 
         {/* Import */}
-        <div className="animate-slide-up card-hover rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-6 shadow-[var(--shadow-sm)] stat-green">
+        <div className="card card-hover p-6 stat-green">
           <div className="mb-4 flex items-center gap-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--success-soft)] text-[var(--success)]">
               <Upload size={22} />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-900">นำเข้าข้อมูล</h2>
-              <p className="text-sm text-[var(--muted)]">อัปโหลดไฟล์ JSON เพื่อกู้คืนข้อมูล</p>
+              <h2 className="section-title text-lg">นำเข้าข้อมูล</h2>
+              <p className="section-subtitle">อัปโหลดไฟล์ JSON เพื่อกู้คืนข้อมูล</p>
             </div>
           </div>
-          <div className="mb-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+          <div className="mb-4 flex items-start gap-2 rounded-[var(--radius)] border border-[var(--warning-soft)] bg-[var(--warning-soft)] px-3 py-2 text-xs font-medium text-[var(--warning-strong)]">
             <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
             <span>การนำเข้าจะแทนที่ข้อมูลเดิมทั้งหมด</span>
           </div>
-          <label className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-[var(--line)] px-4 py-6 text-sm font-medium text-[var(--muted)] transition hover:border-[var(--primary)] hover:bg-blue-50/50 hover:text-[var(--primary)]">
+          <label className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-[var(--radius)] border-2 border-dashed border-[var(--line)] px-4 py-6 text-sm font-medium text-[var(--muted)] transition hover:border-[var(--primary)] hover:bg-[var(--primary-ghost)] hover:text-[var(--primary)]">
             <input
               type="file"
               accept=".json"
@@ -434,15 +433,15 @@ export default function SettingsPage() {
       </div>
 
       {/* Restore from auto-backup */}
-      <div className="animate-slide-up mt-6 rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-6 shadow-[var(--shadow-sm)]">
+      <div className="card mt-6 p-6">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--accent-soft)] text-[var(--accent-strong)]">
               <History size={18} />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-900">กู้คืนจากการสำรองอัตโนมัติ</h2>
-              <p className="text-sm text-[var(--muted)]">
+              <h2 className="section-title text-lg">กู้คืนจากการสำรองอัตโนมัติ</h2>
+              <p className="section-subtitle">
                 ระบบสำรองข้อมูลทุกครั้งที่เปิดแอป + ก่อนลบหรือกู้คืน
               </p>
             </div>
@@ -452,14 +451,14 @@ export default function SettingsPage() {
             onClick={loadBackups}
             disabled={backupsLoading}
             title="รีเฟรชรายการไฟล์สำรอง"
-            className="btn-press inline-flex items-center gap-1.5 rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-blue-300 hover:text-blue-600 disabled:opacity-50"
+            className="btn btn-secondary btn-sm"
           >
             <RefreshCw size={14} className={backupsLoading ? 'animate-spin' : ''} />
             รีเฟรช
           </button>
         </div>
 
-        <div className="mb-3 flex items-start gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-800">
+        <div className="mb-3 flex items-start gap-2 rounded-[var(--radius)] border border-[var(--info-soft)] bg-[var(--info-soft)] px-3 py-2 text-xs font-medium text-[var(--info)]">
           <Info size={14} className="mt-0.5 flex-shrink-0" />
           <span>
             ก่อนกู้คืน ระบบจะสำรองข้อมูลปัจจุบันไว้ก่อนเสมอ —
@@ -483,7 +482,7 @@ export default function SettingsPage() {
             <div className="skeleton h-12 w-full rounded-xl" />
           </div>
         ) : backups.length === 0 ? (
-          <div className="rounded-xl border-2 border-dashed border-[var(--line)] bg-slate-50 px-4 py-8 text-center text-sm text-[var(--muted)]">
+          <div className="rounded-[var(--radius)] border-2 border-dashed border-[var(--line)] bg-[var(--surface-muted)] px-4 py-8 text-center text-sm text-[var(--muted)]">
             ยังไม่มีไฟล์สำรอง — ระบบจะสร้างไฟล์แรกตอนเปิดแอปครั้งต่อไป
           </div>
         ) : (
@@ -491,10 +490,10 @@ export default function SettingsPage() {
             {backups.map((file) => (
               <li
                 key={file.fileName}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--line)] bg-white px-4 py-2.5 transition hover:border-violet-200 hover:bg-violet-50/30"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface)] px-4 py-2.5 transition hover:border-[var(--line-strong)] hover:bg-[var(--surface-muted)]"
               >
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-mono text-xs font-semibold text-slate-700">
+                  <p className="truncate font-mono text-xs font-semibold text-[var(--text-soft)]">
                     {file.fileName}
                   </p>
                   <p className="mt-0.5 text-[11px] text-[var(--muted)]">
@@ -507,7 +506,7 @@ export default function SettingsPage() {
                   onClick={() => handleRestore(file)}
                   disabled={restoring !== null}
                   title="กู้คืนข้อมูลจากไฟล์นี้"
-                  className="btn-press inline-flex items-center gap-1.5 rounded-xl border border-violet-200 bg-white px-3 py-1.5 text-xs font-semibold text-violet-700 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="btn btn-secondary btn-sm"
                 >
                   {restoring === file.fileName ? (
                     <>
@@ -528,14 +527,14 @@ export default function SettingsPage() {
       </div>
 
       {/* Appearance (theme + font size) */}
-      <div className="animate-slide-up mt-6 rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-6 shadow-[var(--shadow-sm)]">
+      <div className="card mt-6 p-6">
         <div className="mb-4 flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--primary-ghost)] text-[var(--primary)]">
             <Palette size={18} />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-slate-900">หน้าตา</h2>
-            <p className="text-sm text-[var(--muted)]">ธีมและขนาดตัวอักษร</p>
+            <h2 className="section-title text-lg">หน้าตา</h2>
+            <p className="section-subtitle">ธีมและขนาดตัวอักษร</p>
           </div>
         </div>
 
@@ -543,7 +542,7 @@ export default function SettingsPage() {
           <>
             {/* Theme mode */}
             <div className="mb-5">
-              <p className="mb-2 text-sm font-semibold text-slate-700">ธีม</p>
+              <p className="mb-2 text-sm font-semibold text-[var(--text-soft)]">ธีม</p>
               <div className="grid gap-2 sm:grid-cols-3">
                 {([
                   { v: 'light', label: 'สว่าง', icon: Sun },
@@ -557,10 +556,10 @@ export default function SettingsPage() {
                       key={opt.v}
                       type="button"
                       onClick={() => setThemeMode(opt.v)}
-                      className={`btn-press flex items-center gap-2.5 rounded-xl border-2 px-4 py-3 text-sm font-semibold transition ${
+                      className={`btn-press flex items-center gap-2.5 rounded-[var(--radius)] border-2 px-4 py-3 text-sm font-semibold transition ${
                         isActive
                           ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary-strong)]'
-                          : 'border-[var(--line)] bg-white text-slate-600 hover:border-blue-200'
+                          : 'border-[var(--line)] bg-[var(--surface)] text-[var(--text-soft)] hover:border-[var(--line-strong)]'
                       }`}
                     >
                       <Icon size={18} />
@@ -573,7 +572,7 @@ export default function SettingsPage() {
 
             {/* Font size */}
             <div>
-              <p className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-700">
+              <p className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-[var(--text-soft)]">
                 <Type size={14} />
                 ขนาดตัวอักษร
               </p>
@@ -589,10 +588,10 @@ export default function SettingsPage() {
                       key={opt.v}
                       type="button"
                       onClick={() => setFontSize(opt.v)}
-                      className={`btn-press flex flex-col items-start gap-1 rounded-xl border-2 px-4 py-3 transition ${
+                      className={`btn-press flex flex-col items-start gap-1 rounded-[var(--radius)] border-2 px-4 py-3 transition ${
                         isActive
                           ? 'border-[var(--primary)] bg-[var(--primary-soft)] text-[var(--primary-strong)]'
-                          : 'border-[var(--line)] bg-white text-slate-600 hover:border-blue-200'
+                          : 'border-[var(--line)] bg-[var(--surface)] text-[var(--text-soft)] hover:border-[var(--line-strong)]'
                       }`}
                     >
                       <span
@@ -614,15 +613,15 @@ export default function SettingsPage() {
       </div>
 
       {/* Security: PIN lock */}
-      <div className="animate-slide-up mt-6 rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-6 shadow-[var(--shadow-sm)]">
+      <div className="card mt-6 p-6">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--warning-soft)] text-[var(--warning)]">
               <ShieldCheck size={18} />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-900">ความปลอดภัย</h2>
-              <p className="text-sm text-[var(--muted)]">PIN ล็อกเปิดแอป (4-6 หลัก)</p>
+              <h2 className="section-title text-lg">ความปลอดภัย</h2>
+              <p className="section-subtitle">PIN ล็อกเปิดแอป (4-6 หลัก)</p>
             </div>
           </div>
           <label className="relative inline-flex cursor-pointer items-center">
@@ -642,16 +641,16 @@ export default function SettingsPage() {
               }}
               className="peer sr-only"
             />
-            <div className="h-6 w-11 rounded-full bg-slate-200 transition peer-checked:bg-emerald-500 peer-focus:ring-2 peer-focus:ring-emerald-200" />
+            <div className="h-6 w-11 rounded-full bg-[var(--line-strong)] transition peer-checked:bg-[var(--success)] peer-focus:ring-2 peer-focus:ring-[var(--success-soft)]" />
             <div className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition peer-checked:translate-x-5" />
           </label>
         </div>
 
         {pinForm !== 'idle' && (
-          <div className="space-y-3 rounded-2xl border border-[var(--line)] bg-slate-50 p-4">
+          <div className="space-y-3 rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface-muted)] p-4">
             {pinForm === 'change' && (
               <label className="block">
-                <span className="mb-1 block text-xs font-semibold text-slate-700">PIN ปัจจุบัน</span>
+                <span className="mb-1 block text-xs font-semibold text-[var(--text-soft)]">PIN ปัจจุบัน</span>
                 <input
                   type="password"
                   inputMode="numeric"
@@ -660,14 +659,14 @@ export default function SettingsPage() {
                   onChange={(e) =>
                     setPinCurrent(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))
                   }
-                  className="w-full rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-lg tracking-[0.3em] outline-none focus:border-[var(--primary)]"
+                  className="input text-lg tracking-[0.3em]"
                 />
               </label>
             )}
 
             {pinForm === 'disable' && (
               <label className="block">
-                <span className="mb-1 block text-xs font-semibold text-slate-700">PIN ปัจจุบัน (เพื่อยืนยันปิด)</span>
+                <span className="mb-1 block text-xs font-semibold text-[var(--text-soft)]">PIN ปัจจุบัน (เพื่อยืนยันปิด)</span>
                 <input
                   type="password"
                   inputMode="numeric"
@@ -676,7 +675,7 @@ export default function SettingsPage() {
                   onChange={(e) =>
                     setPinCurrent(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))
                   }
-                  className="w-full rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-lg tracking-[0.3em] outline-none focus:border-[var(--primary)]"
+                  className="input text-lg tracking-[0.3em]"
                 />
               </label>
             )}
@@ -684,7 +683,7 @@ export default function SettingsPage() {
             {(pinForm === 'enable' || pinForm === 'change') && (
               <>
                 <label className="block">
-                  <span className="mb-1 block text-xs font-semibold text-slate-700">PIN ใหม่ (4-6 หลัก)</span>
+                  <span className="mb-1 block text-xs font-semibold text-[var(--text-soft)]">PIN ใหม่ (4-6 หลัก)</span>
                   <input
                     type="password"
                     inputMode="numeric"
@@ -693,11 +692,11 @@ export default function SettingsPage() {
                     onChange={(e) =>
                       setPinNew(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))
                     }
-                    className="w-full rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-lg tracking-[0.3em] outline-none focus:border-[var(--primary)]"
+                    className="input text-lg tracking-[0.3em]"
                   />
                 </label>
                 <label className="block">
-                  <span className="mb-1 block text-xs font-semibold text-slate-700">ยืนยัน PIN ใหม่อีกครั้ง</span>
+                  <span className="mb-1 block text-xs font-semibold text-[var(--text-soft)]">ยืนยัน PIN ใหม่อีกครั้ง</span>
                   <input
                     type="password"
                     inputMode="numeric"
@@ -706,14 +705,15 @@ export default function SettingsPage() {
                     onChange={(e) =>
                       setPinConfirm(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))
                     }
-                    className="w-full rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-lg tracking-[0.3em] outline-none focus:border-[var(--primary)]"
+                    className="input text-lg tracking-[0.3em]"
                   />
                 </label>
               </>
             )}
 
             {pinError && (
-              <p className="rounded-xl bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+              <p className="flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--danger-soft)] px-3 py-2 text-sm font-medium text-[var(--danger-strong)]">
+                <AlertTriangle size={14} />
                 {pinError}
               </p>
             )}
@@ -722,7 +722,7 @@ export default function SettingsPage() {
               <button
                 type="button"
                 onClick={resetPinForm}
-                className="btn-press flex-1 rounded-xl border border-[var(--line)] bg-white px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+                className="btn btn-secondary flex-1"
               >
                 ยกเลิก
               </button>
@@ -730,7 +730,7 @@ export default function SettingsPage() {
                 type="button"
                 onClick={handlePinSubmit}
                 disabled={pinSaving}
-                className="btn-press flex-1 rounded-xl bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[var(--primary-strong)] disabled:opacity-50"
+                className="btn btn-primary flex-1"
               >
                 {pinSaving
                   ? 'กำลังบันทึก...'
@@ -746,7 +746,7 @@ export default function SettingsPage() {
 
         {pinEnabled && pinForm === 'idle' && (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+            <span className="pill pill-ok">
               <Lock size={12} />
               เปิดใช้งานอยู่
             </span>
@@ -759,7 +759,7 @@ export default function SettingsPage() {
                 setPinCurrent('')
                 setPinError('')
               }}
-              className="btn-press inline-flex items-center gap-1.5 rounded-xl border border-[var(--line)] bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+              className="btn btn-secondary btn-sm"
             >
               เปลี่ยน PIN
             </button>
@@ -768,12 +768,12 @@ export default function SettingsPage() {
       </div>
 
       {/* App Info */}
-      <div className="animate-slide-up mt-6 rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-6 shadow-[var(--shadow-sm)]">
+      <div className="card mt-6 p-6">
         <div className="mb-4 flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--surface-muted)] text-[var(--text-soft)]">
             <Info size={18} />
           </div>
-          <h2 className="text-lg font-bold text-slate-900">ข้อมูลโปรแกรม</h2>
+          <h2 className="section-title text-lg">ข้อมูลโปรแกรม</h2>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <InfoRow icon={<GraduationCap size={16} />} label="ระบบจัดการโรงเรียน" value="v1.0" />
@@ -784,22 +784,22 @@ export default function SettingsPage() {
       </div>
 
       {/* Danger Zone */}
-      <div className="animate-slide-up mt-6 rounded-[var(--radius-lg)] border border-red-200 bg-red-50/50 p-6 stat-red">
+      <div className="card mt-6 border-[var(--danger-soft)] bg-[var(--danger-soft)] p-6 stat-red">
         <div className="mb-3 flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-100 text-red-600">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--danger-soft)] text-[var(--danger)]">
             <AlertTriangle size={18} />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-red-700">พื้นที่เสี่ยง</h2>
-            <p className="text-sm text-red-600">การลบข้อมูลจะไม่สามารถกู้คืนได้</p>
+            <h2 className="text-lg font-bold text-[var(--danger-strong)]">พื้นที่เสี่ยง</h2>
+            <p className="text-sm text-[var(--danger)]">การลบข้อมูลจะไม่สามารถกู้คืนได้</p>
           </div>
         </div>
-        <p className="mb-4 text-sm text-red-600">
+        <p className="mb-4 text-sm text-[var(--danger)]">
           กรุณาสำรองข้อมูลก่อนดำเนินการ เพื่อป้องกันการสูญหายของข้อมูล
         </p>
         <button
           onClick={handleDeleteAll}
-          className="btn-press inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[var(--shadow-sm)] transition hover:bg-red-700"
+          className="btn btn-danger"
         >
           <Trash2 size={16} />
           ลบข้อมูลทั้งหมด
@@ -811,13 +811,13 @@ export default function SettingsPage() {
 
 function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
-    <div className="flex items-center gap-3 rounded-xl bg-slate-50 px-3 py-2.5">
-      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-white text-[var(--muted)]">
+    <div className="flex items-center gap-3 rounded-[var(--radius)] bg-[var(--surface-muted)] px-3 py-2.5">
+      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-[var(--surface)] text-[var(--muted)]">
         {icon}
       </div>
       <div className="min-w-0">
         <p className="truncate text-[11px] font-medium text-[var(--muted)]">{label}</p>
-        <p className="truncate text-sm font-semibold text-slate-900">{value}</p>
+        <p className="truncate text-sm font-semibold text-[var(--text)]">{value}</p>
       </div>
     </div>
   )

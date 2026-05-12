@@ -7,19 +7,31 @@ import { ChevronLeft, ClipboardCheck, Search, X } from 'lucide-react'
 import CalendarPicker from '@/components/CalendarPicker'
 import CustomSelect from '@/components/CustomSelect'
 import AutoSaveIndicator from '@/components/AutoSaveIndicator'
+import PageHeader from '@/components/PageHeader'
 import StudentAvatar from '@/components/StudentAvatar'
 import { AttendanceStatus, Classroom } from '@/types'
 import { getAttendance, getAttendanceDates, getClassrooms, saveAttendanceRecord } from '@/lib/client-data'
 import { useAutoSave } from '@/lib/hooks/useAutoSave'
 import { useBeforeUnloadWarning } from '@/lib/hooks/useBeforeUnloadWarning'
+import { ATTENDANCE_STATUS } from '@/lib/constants/colors'
 
 const STATUS_OPTIONS: AttendanceStatus[] = ['มา', 'ขาด', 'ลาป่วย', 'ลากิจ']
 
-const STATUS_STYLES: Record<AttendanceStatus, { active: string; icon: string }> = {
-  มา: { active: 'bg-emerald-500 text-white shadow-emerald-500/25', icon: 'bg-emerald-50 text-emerald-600' },
-  ขาด: { active: 'bg-red-500 text-white shadow-red-500/25', icon: 'bg-red-50 text-red-600' },
-  ลาป่วย: { active: 'bg-amber-500 text-white shadow-amber-500/25', icon: 'bg-amber-50 text-amber-600' },
-  ลากิจ: { active: 'bg-sky-500 text-white shadow-sky-500/25', icon: 'bg-sky-50 text-sky-600' },
+// แผนที่จากค่าภาษาไทยใน type AttendanceStatus → key ใน ATTENDANCE_STATUS (design tokens)
+const STATUS_KEY: Record<AttendanceStatus, keyof typeof ATTENDANCE_STATUS> = {
+  มา: 'present',
+  ขาด: 'absent',
+  ลาป่วย: 'sick',
+  ลากิจ: 'personal',
+}
+
+// helper — คืน style สำหรับปุ่ม status (มา/ขาด/...) ตาม tokens
+function statusButtonStyle(status: AttendanceStatus, active: boolean): React.CSSProperties {
+  const meta = ATTENDANCE_STATUS[STATUS_KEY[status]]
+  if (active) {
+    return { backgroundColor: meta.color, color: '#ffffff' }
+  }
+  return { backgroundColor: meta.bg, color: meta.text }
 }
 
 function AttendancePageContent() {
@@ -137,27 +149,21 @@ function AttendancePageContent() {
     <div className="mx-auto max-w-7xl animate-fade-in">
       {/* Breadcrumb */}
       <div className="mb-4">
-        <Link href="/" className="btn-press inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-medium text-[var(--primary)] transition hover:bg-blue-50">
+        <Link href="/" className="btn-press inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-medium text-[var(--primary)] transition hover:bg-[var(--primary-ghost)]">
           <ChevronLeft size={16} />
           กลับไปหน้าห้องเรียน
         </Link>
       </div>
 
       {/* Header */}
-      <section className="animate-slide-up mb-6 rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-6 shadow-[var(--shadow-sm)]">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-          <div>
-            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-600">
-              <ClipboardCheck size={13} />
-              Attendance Sheet
-            </div>
-            <h1 className="text-2xl font-bold text-slate-900 md:text-3xl">
-              {activeClassroom ? `เช็คชื่อห้อง ${activeClassroom.name}` : 'เช็คชื่อรายวัน'}
-            </h1>
-            <p className="mt-1 text-sm text-[var(--muted)]">เลือกห้องและวันที่ แล้วบันทึกสถานะนักเรียน</p>
-          </div>
-
-          <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:justify-end">
+      <PageHeader
+        icon={ClipboardCheck}
+        badge="เช็คชื่อ"
+        tone="ok"
+        title={activeClassroom ? `เช็คชื่อห้อง ${activeClassroom.name}` : 'เช็คชื่อรายวัน'}
+        subtitle="เลือกห้องและวันที่ แล้วบันทึกสถานะนักเรียน"
+        actions={
+          <>
             <CustomSelect
               value={activeClassroomId ?? ''}
               onChange={(value) => {
@@ -175,42 +181,47 @@ function AttendancePageContent() {
               placeholder="เลือกห้องเรียน"
               className="min-w-[180px]"
             />
-
             <CalendarPicker value={date} onChange={setDate} compact markedDates={markedDates} onMonthChange={fetchMarkedDates} />
-          </div>
-        </div>
+          </>
+        }
+      />
 
-        {/* Stats */}
-        <div className="mt-5 grid gap-3 stagger-children sm:grid-cols-2 md:grid-cols-5">
-          <div className="animate-slide-up flex items-center gap-3 rounded-2xl bg-slate-50 p-3.5 stat-blue">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-100 text-blue-600 text-sm font-bold">
-              {rows.length}
-            </div>
-            <p className="text-xs font-medium text-[var(--muted)]">ทั้งหมด</p>
+      {/* Stats */}
+      <div className="mb-6 grid gap-3 stagger-children sm:grid-cols-2 md:grid-cols-5">
+        <div className="animate-slide-up card flex items-center gap-3 p-3.5 stat-blue">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--primary-ghost)] text-[var(--primary-strong)] text-sm font-bold">
+            {rows.length}
           </div>
-          {STATUS_OPTIONS.map((status) => (
-            <div key={status} className="animate-slide-up flex items-center gap-3 rounded-2xl bg-slate-50 p-3.5">
-              <div className={`flex h-9 w-9 items-center justify-center rounded-lg text-sm font-bold ${STATUS_STYLES[status].icon}`}>
+          <p className="text-xs font-medium text-[var(--muted)]">ทั้งหมด</p>
+        </div>
+        {STATUS_OPTIONS.map((status) => {
+          const meta = ATTENDANCE_STATUS[STATUS_KEY[status]]
+          return (
+            <div key={status} className="animate-slide-up card flex items-center gap-3 p-3.5">
+              <div
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-sm font-bold"
+                style={{ backgroundColor: meta.bg, color: meta.text }}
+              >
                 {counts[status] || 0}
               </div>
               <p className="text-xs font-medium text-[var(--muted)]">{status}</p>
             </div>
-          ))}
-        </div>
-      </section>
+          )
+        })}
+      </div>
 
       {/* Quick Actions + Search */}
       <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div className="flex flex-1 items-center gap-3 rounded-2xl border border-[var(--line)] bg-white px-4 py-2.5 shadow-[var(--shadow-sm)] transition-all focus-within:border-[var(--primary)]">
+        <div className="flex flex-1 items-center gap-3 rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface)] px-4 py-2.5 shadow-[var(--shadow-xs)] transition-all focus-within:border-[var(--primary)] focus-within:ring-2 focus-within:ring-[var(--primary-soft)]">
           <Search size={16} className="flex-shrink-0 text-[var(--muted)]" />
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="ค้นหาจากชื่อ, รหัส หรือเลขที่..."
-            className="w-full border-0 bg-transparent text-sm outline-none"
+            className="w-full border-0 bg-transparent text-sm outline-none placeholder:text-[var(--muted-soft)]"
           />
           {search && (
-            <button type="button" onClick={() => setSearch('')} className="flex-shrink-0 text-slate-400 hover:text-slate-600">
+            <button type="button" onClick={() => setSearch('')} className="flex-shrink-0 text-[var(--muted-soft)] hover:text-[var(--text-soft)]">
               <X size={14} />
             </button>
           )}
@@ -225,7 +236,12 @@ function AttendancePageContent() {
                 key={status}
                 type="button"
                 onClick={() => setAllStatus(status)}
-                className={`btn-press status-pill rounded-lg px-2.5 py-1.5 text-xs font-medium ${STATUS_STYLES[status].icon}`}
+                className="btn-press status-pill rounded-[var(--radius-sm)] text-xs font-semibold"
+                style={{
+                  ...statusButtonStyle(status, false),
+                  minWidth: 60,
+                  padding: '6px 12px',
+                }}
               >
                 {status}
               </button>
@@ -235,11 +251,11 @@ function AttendancePageContent() {
       </div>
 
       {/* Table */}
-      <section className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--line)] bg-white shadow-[var(--shadow-sm)]">
+      <section className="card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full border-separate border-spacing-0">
             <thead>
-              <tr className="bg-slate-50/80 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+              <tr className="bg-[var(--surface-soft)] text-left text-xs font-semibold uppercase tracking-wider text-[var(--text-soft)]">
                 <th className="px-4 py-3.5">เลขที่</th>
                 <th className="px-4 py-3.5">ชื่อ-นามสกุล</th>
                 <th className="px-4 py-3.5">สถานะ</th>
@@ -250,63 +266,68 @@ function AttendancePageContent() {
               {!activeClassroomId ? (
                 <tr>
                   <td colSpan={4} className="px-4 py-16 text-center">
-                    <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
+                    <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--surface-muted)] text-[var(--muted-soft)]">
                       <ClipboardCheck size={20} />
                     </div>
-                    <p className="font-medium text-slate-500">กรุณาเลือกห้องเรียนก่อนเริ่มเช็คชื่อ</p>
+                    <p className="font-medium text-[var(--muted)]">กรุณาเลือกห้องเรียนก่อนเริ่มเช็คชื่อ</p>
                   </td>
                 </tr>
               ) : filteredRows.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="px-4 py-16 text-center">
-                    <p className="font-medium text-slate-500">ไม่พบข้อมูลนักเรียนในห้องนี้</p>
+                    <p className="font-medium text-[var(--muted)]">ไม่พบข้อมูลนักเรียนในห้องนี้</p>
                   </td>
                 </tr>
               ) : (
                 filteredRows.map((row) => {
                   return (
-                  <tr key={row.id} className="table-row-hover border-b border-slate-50">
-                    <td className="px-4 py-3.5 text-sm text-slate-600">{row.student_number || row.student_id}</td>
-                    <td className="px-4 py-3.5 text-sm font-medium text-slate-900">
+                  <tr key={row.id} className="table-row-hover border-b border-[var(--line-soft)]">
+                    <td className="px-4 py-3.5 text-sm text-[var(--muted)]">{row.student_number || row.student_id}</td>
+                    <td className="px-4 py-3.5 text-sm font-medium text-[var(--text)]">
                       <div className="flex items-center gap-2.5">
                         <StudentAvatar
                           photoPath={row.photo_path}
                           name={`${row.first_name} ${row.last_name}`}
-                          size={32}
+                          size={40}
                         />
                         <span>{[row.title, row.first_name, row.last_name].filter(Boolean).join(' ')}</span>
                       </div>
                     </td>
                     <td className="px-4 py-3.5">
                       <div className="flex flex-wrap gap-1.5">
-                        {STATUS_OPTIONS.map((status) => (
-                          <button
-                            key={status}
-                            type="button"
-                            // กดสถานะเดิมที่เลือกอยู่อีกครั้ง = "ยกเลิกการกด" → กลับเป็น 'มา' (default)
-                            // กดสถานะใหม่ = เปลี่ยนเป็นสถานะนั้น
-                            onClick={() => {
-                              const nextStatus: AttendanceStatus = row.status === status ? 'มา' : status
-                              setRows((current) =>
-                                current.map((item) =>
-                                  item.id === row.id ? { ...item, status: nextStatus } : item
+                        {STATUS_OPTIONS.map((status) => {
+                          const active = row.status === status
+                          return (
+                            <button
+                              key={status}
+                              type="button"
+                              // กดสถานะเดิมที่เลือกอยู่อีกครั้ง = "ยกเลิกการกด" → กลับเป็น 'มา' (default)
+                              // กดสถานะใหม่ = เปลี่ยนเป็นสถานะนั้น
+                              onClick={() => {
+                                const nextStatus: AttendanceStatus = row.status === status ? 'มา' : status
+                                setRows((current) =>
+                                  current.map((item) =>
+                                    item.id === row.id ? { ...item, status: nextStatus } : item
+                                  )
                                 )
-                              )
-                            }}
-                            title={
-                              row.status === status
-                                ? 'กดอีกครั้งเพื่อยกเลิก (กลับเป็น "มา")'
-                                : `กดเพื่อตั้งเป็น "${status}"`
-                            }
-                            className={`status-pill rounded-lg px-3 py-1.5 text-xs font-semibold shadow-sm ${
-                              row.status === status
-                                ? STATUS_STYLES[status].active
-                                : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                            }`}
-                          >
-                            {status}
-                          </button>
-                        ))}
+                              }}
+                              title={
+                                active
+                                  ? 'กดอีกครั้งเพื่อยกเลิก (กลับเป็น "มา")'
+                                  : `กดเพื่อตั้งเป็น "${status}"`
+                              }
+                              className="status-pill rounded-[var(--radius-sm)] text-xs font-semibold"
+                              style={{
+                                ...statusButtonStyle(status, active),
+                                minWidth: 60,
+                                padding: '6px 12px',
+                                boxShadow: active ? 'var(--shadow-xs)' : 'none',
+                              }}
+                            >
+                              {status}
+                            </button>
+                          )
+                        })}
                       </div>
                     </td>
                     <td className="px-4 py-3.5">
@@ -318,7 +339,7 @@ function AttendancePageContent() {
                           )
                         }
                         placeholder="หมายเหตุ..."
-                        className="w-full rounded-xl border border-[var(--line)] px-3 py-2 text-sm outline-none transition focus:border-[var(--primary)] focus:ring-0"
+                        className="input"
                       />
                     </td>
                   </tr>

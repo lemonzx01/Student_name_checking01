@@ -17,6 +17,7 @@ import {
   unarchiveClassroomRecord,
 } from '@/lib/client-data'
 import { useDialog } from '@/lib/hooks/useConfirm'
+import PageHeader from '@/components/PageHeader'
 
 function formatDate(iso?: string | null) {
   if (!iso) return '-'
@@ -73,7 +74,7 @@ export default function ArchivePage() {
       title: `ลบห้อง ${c.name} ถาวร?`,
       message: 'จะลบห้องและข้อมูลทั้งหมด — นักเรียน คะแนน เช็คชื่อ สุขภาพ ตารางสอน',
       details: (
-        <p className="text-xs text-red-700">
+        <p className="text-xs text-[var(--danger-strong)]">
           ระบบจะสร้างไฟล์สำรองโดยอัตโนมัติก่อนลบ — กู้คืนได้จากหน้า &quot;ตั้งค่า&quot;
         </p>
       ),
@@ -100,23 +101,20 @@ export default function ArchivePage() {
       <div className="mb-4">
         <Link
           href="/"
-          className="btn-press inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-medium text-[var(--primary)] transition hover:bg-blue-50"
+          className="btn btn-ghost btn-sm"
         >
           <ChevronLeft size={16} />
           กลับหน้าหลัก
         </Link>
       </div>
 
-      <div className="animate-slide-up mb-5 rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-6 shadow-[var(--shadow-sm)]">
-        <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
-          <Archive size={13} />
-          Archived Classrooms
-        </div>
-        <h1 className="text-2xl font-bold text-slate-900 md:text-3xl">ห้องเรียนที่เก็บถาวร</h1>
-        <p className="mt-1 text-sm text-[var(--muted)]">
-          ห้องที่ครูเก็บไว้ตอนสิ้นปี — ข้อมูลเดิมยังครบ นำกลับมาใช้ได้เสมอ
-        </p>
-      </div>
+      <PageHeader
+        icon={Archive}
+        badge="Archived Classrooms"
+        title="ห้องเรียนที่เก็บถาวร"
+        subtitle="ห้องที่ครูเก็บไว้ตอนสิ้นปี — ข้อมูลเดิมยังครบ นำกลับมาใช้ได้เสมอ"
+        tone="warn"
+      />
 
       {loading ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -125,11 +123,11 @@ export default function ArchivePage() {
           ))}
         </div>
       ) : rooms.length === 0 ? (
-        <div className="rounded-[var(--radius-lg)] border-2 border-dashed border-[var(--line)] bg-white px-6 py-16 text-center">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-50 text-amber-500">
+        <div className="empty-state">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-[var(--warning-soft)] text-[var(--warning)]">
             <Archive size={28} />
           </div>
-          <h3 className="text-xl font-bold text-slate-900">ยังไม่มีห้องที่เก็บถาวร</h3>
+          <h3 className="text-xl font-bold text-[var(--text)]">ยังไม่มีห้องที่เก็บถาวร</h3>
           <p className="mx-auto mt-2 max-w-sm text-[15px] text-[var(--muted)]">
             ห้องที่ครูกดเก็บถาวร (ตอนสิ้นปีการศึกษา) จะมาอยู่ที่นี่
           </p>
@@ -141,7 +139,7 @@ export default function ArchivePage() {
             return (
               <div
                 key={c.id}
-                className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--line)] bg-white shadow-[var(--shadow-sm)]"
+                className="card overflow-hidden"
               >
                 <div className={`h-1 ${colorDef.bg}`} />
                 <div className="p-5">
@@ -150,34 +148,34 @@ export default function ArchivePage() {
                       <School size={22} />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <h3 className="truncate text-lg font-bold text-slate-900">{c.name}</h3>
+                      <h3 className="truncate text-lg font-bold text-[var(--text)]">{c.name}</h3>
                       <p className="text-sm text-[var(--muted)]">{c.level}</p>
                     </div>
                   </div>
 
                   <div className="mb-3 grid grid-cols-2 gap-2 text-xs">
-                    <div className="rounded-lg bg-slate-50 px-2.5 py-2">
+                    <div className="rounded-lg bg-[var(--surface-muted)] px-2.5 py-2">
                       <p className="text-[10px] uppercase tracking-wide text-[var(--muted)]">ปีการศึกษา</p>
-                      <p className="font-semibold text-slate-900">{c.academic_year}</p>
+                      <p className="font-semibold text-[var(--text)]">{c.academic_year}</p>
                     </div>
-                    <div className="rounded-lg bg-slate-50 px-2.5 py-2">
+                    <div className="rounded-lg bg-[var(--surface-muted)] px-2.5 py-2">
                       <p className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-[var(--muted)]">
                         <Users size={9} />
                         นักเรียน
                       </p>
-                      <p className="font-semibold text-slate-900">{c.student_count || 0} คน</p>
+                      <p className="font-semibold text-[var(--text)]">{c.student_count || 0} คน</p>
                     </div>
                   </div>
 
                   <p className="mb-3 text-xs text-[var(--muted)]">
-                    เก็บถาวรเมื่อ <span className="font-semibold text-slate-700">{formatDate(c.archived_at)}</span>
+                    เก็บถาวรเมื่อ <span className="font-semibold text-[var(--text-soft)]">{formatDate(c.archived_at)}</span>
                   </p>
 
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
                       onClick={() => handleRestore(c)}
-                      className="btn-press inline-flex items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100"
+                      className="btn btn-secondary btn-sm"
                     >
                       <RotateCcw size={13} />
                       นำกลับมาใช้
@@ -185,7 +183,7 @@ export default function ArchivePage() {
                     <button
                       type="button"
                       onClick={() => handlePurge(c)}
-                      className="btn-press inline-flex items-center justify-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 transition hover:bg-red-100"
+                      className="btn btn-danger-ghost btn-sm"
                     >
                       <Trash2 size={13} />
                       ลบถาวร

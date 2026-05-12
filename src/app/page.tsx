@@ -51,7 +51,7 @@ function QuickAction({ href, icon: Icon, title, desc, color }: QuickActionProps)
   return (
     <Link
       href={href}
-      className="btn-press group flex items-center gap-4 rounded-2xl border border-[var(--line)] bg-white p-5 shadow-[var(--shadow-sm)] transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)]"
+      className="card card-interactive btn-press group flex items-center gap-4 p-5"
     >
       <div
         className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl transition-transform group-hover:scale-110"
@@ -60,7 +60,7 @@ function QuickAction({ href, icon: Icon, title, desc, color }: QuickActionProps)
         <Icon size={28} strokeWidth={2.2} />
       </div>
       <div className="min-w-0">
-        <p className="text-lg font-bold text-slate-900">{title}</p>
+        <p className="text-lg font-bold text-[var(--text)]">{title}</p>
         <p className="mt-0.5 text-[13px] text-[var(--muted)]">{desc}</p>
       </div>
     </Link>
@@ -121,8 +121,8 @@ export default function HomePage() {
 
     const details = (
       <div className="space-y-1">
-        <p className="font-semibold text-slate-800">ข้อมูลที่จะถูกลบทั้งหมด:</p>
-        <ul className="ml-4 list-disc space-y-0.5 text-slate-600">
+        <p className="font-semibold text-[var(--text)]">ข้อมูลที่จะถูกลบทั้งหมด:</p>
+        <ul className="ml-4 list-disc space-y-0.5 text-[var(--muted)]">
           <li>นักเรียน {studentCount} คน</li>
           {stats && (
             <>
@@ -133,7 +133,7 @@ export default function HomePage() {
             </>
           )}
         </ul>
-        <p className="mt-2 text-xs text-red-700">
+        <p className="mt-2 text-xs text-[var(--danger-strong)]">
           ระบบจะสร้างไฟล์สำรองโดยอัตโนมัติก่อนลบ — กู้คืนได้จากหน้า &quot;ตั้งค่า&quot;
         </p>
       </div>
@@ -179,14 +179,14 @@ export default function HomePage() {
   return (
     <div className="mx-auto max-w-7xl animate-fade-in">
       {/* ─── 1. Welcome Hero — ทักทาย + วันที่ + ค้นหา + สถิติย่อ ─── */}
-      <section className="animate-slide-up mb-6 overflow-hidden rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-6 shadow-[var(--shadow-sm)] md:p-8">
+      <section className="animate-slide-up card mb-6 overflow-hidden p-6 md:p-8">
         <div className="grid gap-6 lg:grid-cols-[1.3fr_0.7fr] lg:items-center">
           <div>
-            <p className="text-sm font-medium text-[var(--primary)]">ยินดีต้อนรับ</p>
-            <h1 className="mt-1 text-3xl font-bold leading-tight text-slate-900 md:text-4xl">
+            <span className="pill pill-brand">ยินดีต้อนรับ</span>
+            <h1 className="mt-3 text-3xl font-bold leading-tight text-[var(--text)] md:text-4xl">
               ระบบจัดการนักเรียน
             </h1>
-            <p className="mt-2 text-lg text-slate-600">วันนี้คือ{thaiDate}</p>
+            <p className="mt-2 text-lg text-[var(--text-soft)]">วันนี้คือ{thaiDate}</p>
             <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-[var(--muted)]">
               ดูตารางสอนวันนี้ เช็คชื่อ และเข้าทำงานในห้องเรียนของคุณได้จากเมนูด้านล่าง
             </p>
@@ -195,22 +195,22 @@ export default function HomePage() {
           <div className="space-y-3">
             <GlobalSearch placeholder="พิมพ์ชื่อ หรือรหัสนักเรียน" />
             <div className="grid grid-cols-2 gap-3">
-              <div className="flex items-center gap-3 rounded-xl border border-[var(--line)] bg-white p-4 stat-blue">
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+              <div className="card flex items-center gap-3 p-4">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--primary-ghost)] text-[var(--primary)]">
                   <School size={22} />
                 </div>
                 <div>
                   <p className="text-xs font-medium text-[var(--muted)]">ห้องทั้งหมด</p>
-                  <p className="text-xl font-bold text-slate-900">{classrooms.length}</p>
+                  <p className="text-xl font-bold text-[var(--text)]">{classrooms.length}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-3 rounded-xl border border-[var(--line)] bg-white p-4 stat-green">
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+              <div className="card flex items-center gap-3 p-4">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--success-soft)] text-[var(--success)]">
                   <Users size={22} />
                 </div>
                 <div>
                   <p className="text-xs font-medium text-[var(--muted)]">นักเรียน</p>
-                  <p className="text-xl font-bold text-slate-900">{totalStudents}</p>
+                  <p className="text-xl font-bold text-[var(--text)]">{totalStudents}</p>
                 </div>
               </div>
             </div>
@@ -222,16 +222,14 @@ export default function HomePage() {
       <section className="animate-slide-up mb-6" style={{ animationDelay: '60ms' }}>
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="text-xl font-bold text-slate-900 md:text-2xl">ห้องเรียนทั้งหมด</h2>
+            <h2 className="text-xl font-bold text-[var(--text)] md:text-2xl">ห้องเรียนทั้งหมด</h2>
             <p className="mt-1 text-sm text-[var(--muted)]">
               คลิกที่การ์ดเพื่อเปิดรายชื่อนักเรียนในห้องนั้น
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {classrooms.length > 0 && (
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                {classrooms.length} ห้อง
-              </span>
+              <span className="pill pill-muted">{classrooms.length} ห้อง</span>
             )}
             <button
               type="button"
@@ -239,7 +237,7 @@ export default function HomePage() {
                 setEditingClassroom(null)
                 setModalOpen(true)
               }}
-              className="btn-press inline-flex items-center gap-2 rounded-xl bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-white shadow-[var(--shadow-sm)] transition-all hover:bg-[var(--primary-strong)]"
+              className="btn btn-primary btn-press"
             >
               <Plus size={16} />
               สร้างห้องเรียน
@@ -251,7 +249,7 @@ export default function HomePage() {
         {loading ? (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-5">
+              <div key={i} className="card p-5">
                 <div className="skeleton mb-4 h-12 w-12 rounded-xl" />
                 <div className="skeleton mb-2 h-5 w-2/3" />
                 <div className="skeleton mb-4 h-4 w-1/3" />
@@ -263,11 +261,11 @@ export default function HomePage() {
             ))}
           </div>
         ) : classrooms.length === 0 ? (
-          <div className="rounded-[var(--radius-lg)] border-2 border-dashed border-[var(--line)] bg-white px-6 py-16 text-center">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-50 text-blue-500">
+          <div className="empty-state">
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-[var(--primary-ghost)] text-[var(--primary)]">
               <BookOpen size={30} />
             </div>
-            <h3 className="text-xl font-bold text-slate-900">ยังไม่มีห้องเรียน</h3>
+            <h3 className="text-xl font-bold text-[var(--text)]">ยังไม่มีห้องเรียน</h3>
             <p className="mx-auto mt-2 max-w-sm text-[15px] text-[var(--muted)]">
               เริ่มด้วยการสร้างห้องเรียน หรือ นำเข้ารายชื่อจากไฟล์ Excel ระบบจะสร้างห้องให้อัตโนมัติ
             </p>
@@ -278,7 +276,7 @@ export default function HomePage() {
                   setEditingClassroom(null)
                   setModalOpen(true)
                 }}
-                className="btn-press inline-flex items-center gap-2 rounded-xl bg-[var(--primary)] px-5 py-3 text-[15px] font-semibold text-white transition hover:bg-[var(--primary-strong)]"
+                className="btn btn-primary btn-lg btn-press"
               >
                 <Plus size={18} />
                 สร้างห้องเรียน
@@ -324,7 +322,7 @@ export default function HomePage() {
         <section className="animate-slide-up mb-8" style={{ animationDelay: '140ms' }}>
           <div className="mb-4 flex items-end justify-between">
             <div>
-              <h2 className="text-xl font-bold text-slate-900 md:text-2xl">งานที่ทำบ่อย</h2>
+              <h2 className="text-xl font-bold text-[var(--text)] md:text-2xl">งานที่ทำบ่อย</h2>
               <p className="mt-1 text-sm text-[var(--muted)]">
                 ไปยัง <span className="font-semibold text-[var(--primary)]">{quickClassroom?.name || '—'}</span>
                 {lastClassroomId && quickClassroomId === lastClassroomId ? ' (ห้องล่าสุดที่เปิด)' : ''}

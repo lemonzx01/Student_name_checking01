@@ -31,6 +31,69 @@ interface Props {
   classroomId?: number | null
 }
 
+interface StatCardProps {
+  icon: React.ReactNode
+  label: string
+  value: React.ReactNode
+  iconBg: string
+  iconColor: string
+  valueTruncate?: boolean
+}
+
+function StatCard({ icon, label, value, iconBg, iconColor, valueTruncate }: StatCardProps) {
+  return (
+    <div className="card p-5">
+      <div className="flex items-center gap-3.5">
+        <div
+          className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-[var(--radius-md)]"
+          style={{ background: iconBg, color: iconColor }}
+        >
+          {icon}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-medium text-[var(--muted)]">{label}</p>
+          <p
+            className={`text-3xl font-bold text-[var(--text)] ${
+              valueTruncate ? 'truncate' : ''
+            }`}
+          >
+            {value}
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SectionCard({
+  icon,
+  iconColor,
+  iconBg,
+  title,
+  children,
+}: {
+  icon: React.ReactNode
+  iconColor: string
+  iconBg: string
+  title: string
+  children: React.ReactNode
+}) {
+  return (
+    <section className="card p-5">
+      <div className="mb-4 flex items-center gap-2.5">
+        <div
+          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[var(--radius-sm)]"
+          style={{ background: iconBg, color: iconColor }}
+        >
+          {icon}
+        </div>
+        <h3 className="section-title text-[15px]">{title}</h3>
+      </div>
+      {children}
+    </section>
+  )
+}
+
 export default function DashboardStats({ classroomId }: Props) {
   const [stats, setStats] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
@@ -59,9 +122,10 @@ export default function DashboardStats({ classroomId }: Props) {
 
   if (!classroomId) {
     return (
-      <div className="rounded-[var(--radius-lg)] border border-dashed border-[var(--line)] bg-white px-4 py-10 text-center text-sm text-[var(--muted)]">
-        <p className="font-semibold text-slate-700">ยังไม่ได้เลือกห้องเรียน</p>
-        <p className="mt-1">เลือกห้องเรียนที่{' '}
+      <div className="empty-state">
+        <p className="text-base font-semibold text-[var(--text)]">ยังไม่ได้เลือกห้องเรียน</p>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          เลือกห้องเรียนที่{' '}
           <Link href="/" className="font-semibold text-[var(--primary)] underline">
             หน้าหลัก
           </Link>{' '}
@@ -86,8 +150,8 @@ export default function DashboardStats({ classroomId }: Props) {
 
   if (!stats) {
     return (
-      <div className="rounded-2xl border border-dashed border-[var(--line)] bg-white px-4 py-8 text-center text-sm text-[var(--muted)]">
-        ยังโหลดสถิติไม่ได้ — ลองรีเฟรชหน้าใหม่
+      <div className="empty-state">
+        <p className="text-sm text-[var(--muted)]">ยังโหลดสถิติไม่ได้ — ลองรีเฟรชหน้าใหม่</p>
       </div>
     )
   }
@@ -95,84 +159,68 @@ export default function DashboardStats({ classroomId }: Props) {
   return (
     <div className="space-y-4">
       {/* Header — ห้องที่กำลังดู */}
-      <div className="rounded-[var(--radius-lg)] border border-[var(--line)] bg-white px-4 py-3 shadow-[var(--shadow-sm)] text-sm text-slate-600">
-        กำลังดูข้อมูลของห้อง{' '}
-        <span className="font-semibold text-slate-900">{scopedClassroomName ?? '...'}</span>
+      <div className="card flex items-center gap-2 px-4 py-3 text-sm text-[var(--text-soft)]">
+        <span>กำลังดูข้อมูลของห้อง</span>
+        <span className="font-semibold text-[var(--text)]">{scopedClassroomName ?? '...'}</span>
       </div>
 
       {/* Top stats */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-5 shadow-[var(--shadow-sm)] stat-blue">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-              <School size={22} />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs font-medium text-[var(--muted)]">ห้องเรียน</p>
-              <p className="truncate text-2xl font-bold text-slate-900">
-                {scopedClassroomName || '—'}
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-5 shadow-[var(--shadow-sm)] stat-green">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-              <Users size={22} />
-            </div>
-            <div>
-              <p className="text-xs font-medium text-[var(--muted)]">นักเรียนในห้อง</p>
-              <p className="text-2xl font-bold text-slate-900">{stats.studentCount}</p>
-            </div>
-          </div>
-        </div>
-        <div className="rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-5 shadow-[var(--shadow-sm)] stat-amber">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
-              <Activity size={22} />
-            </div>
-            <div>
-              <p className="text-xs font-medium text-[var(--muted)]">BMI ผิดปกติ</p>
-              <p className="text-2xl font-bold text-slate-900">{stats.bmiAbnormal.length}</p>
-            </div>
-          </div>
-        </div>
-        <div className="rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-5 shadow-[var(--shadow-sm)] stat-purple">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
-              <Award size={22} />
-            </div>
-            <div>
-              <p className="text-xs font-medium text-[var(--muted)]">เกรดเฉลี่ยห้องนี้</p>
-              <p className="text-2xl font-bold text-slate-900">
-                {stats.latestClassroom?.avg_score
-                  ? Number(stats.latestClassroom.avg_score).toFixed(1)
-                  : '—'}
-              </p>
-            </div>
-          </div>
-        </div>
+        <StatCard
+          icon={<School size={22} />}
+          iconBg="var(--primary-ghost)"
+          iconColor="var(--primary-strong)"
+          label="ห้องเรียน"
+          value={scopedClassroomName || '—'}
+          valueTruncate
+        />
+        <StatCard
+          icon={<Users size={22} />}
+          iconBg="var(--success-soft)"
+          iconColor="var(--success-strong)"
+          label="นักเรียนในห้อง"
+          value={stats.studentCount}
+        />
+        <StatCard
+          icon={<Activity size={22} />}
+          iconBg="var(--accent-soft)"
+          iconColor="var(--accent-strong)"
+          label="BMI ผิดปกติ"
+          value={stats.bmiAbnormal.length}
+        />
+        <StatCard
+          icon={<Award size={22} />}
+          iconBg="var(--info-soft)"
+          iconColor="var(--info)"
+          label="เกรดเฉลี่ยห้องนี้"
+          value={
+            stats.latestClassroom?.avg_score
+              ? Number(stats.latestClassroom.avg_score).toFixed(1)
+              : '—'
+          }
+        />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         {/* Top absent */}
-        <section className="rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-5 shadow-[var(--shadow-sm)]">
-          <div className="mb-3 flex items-center gap-2">
-            <TrendingDown size={18} className="text-red-500" />
-            <h3 className="text-base font-bold text-slate-900">ขาดบ่อยสุด 5 อันดับ (30 วัน)</h3>
-          </div>
+        <SectionCard
+          icon={<TrendingDown size={18} />}
+          iconBg="var(--danger-soft)"
+          iconColor="var(--danger-strong)"
+          title="ขาดบ่อยสุด 5 อันดับ (30 วัน)"
+        >
           {stats.topAbsent.length === 0 ? (
-            <p className="rounded-xl bg-slate-50 px-3 py-3 text-sm text-[var(--muted)]">
+            <p className="rounded-[var(--radius-md)] bg-[var(--surface-soft)] px-3 py-3 text-sm text-[var(--muted)]">
               ยังไม่มีข้อมูลขาดเรียนในช่วง 30 วันล่าสุด
             </p>
           ) : (
-            <ul className="space-y-2">
+            <ul className="space-y-1.5">
               {stats.topAbsent.map((s, idx) => (
                 <li
                   key={s.id}
-                  className="flex items-center gap-3 rounded-xl border border-[var(--line)] bg-white px-3 py-2 transition hover:bg-slate-50"
+                  className="flex items-center gap-3 rounded-[var(--radius-md)] px-3 py-2 transition hover:bg-[var(--surface-muted)]"
                 >
-                  <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-red-50 text-xs font-bold text-red-600">
+                  <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-[var(--danger-soft)] text-xs font-bold text-[var(--danger-strong)]">
                     {idx + 1}
                   </span>
                   <StudentAvatar
@@ -181,36 +229,37 @@ export default function DashboardStats({ classroomId }: Props) {
                     size={32}
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-slate-900">
+                    <p className="truncate text-sm font-medium text-[var(--text)]">
                       {[s.title, s.first_name, s.last_name].filter(Boolean).join(' ')}
                     </p>
-                    <p className="text-[11px] text-[var(--muted)]">{s.classroom_name || '-'}</p>
+                    <p className="text-[12px] text-[var(--muted)]">{s.classroom_name || '-'}</p>
                   </div>
-                  <span className="rounded-md bg-red-50 px-2 py-0.5 text-xs font-bold text-red-700">
+                  <span className="pill pill-danger">
                     {s.absent_count} วัน
                   </span>
                 </li>
               ))}
             </ul>
           )}
-        </section>
+        </SectionCard>
 
         {/* BMI abnormal */}
-        <section className="rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-5 shadow-[var(--shadow-sm)]">
-          <div className="mb-3 flex items-center gap-2">
-            <AlertTriangle size={18} className="text-amber-500" />
-            <h3 className="text-base font-bold text-slate-900">BMI ผิดปกติ</h3>
-          </div>
+        <SectionCard
+          icon={<AlertTriangle size={18} />}
+          iconBg="var(--warning-soft)"
+          iconColor="var(--warning-strong)"
+          title="BMI ผิดปกติ"
+        >
           {stats.bmiAbnormal.length === 0 ? (
-            <p className="rounded-xl bg-slate-50 px-3 py-3 text-sm text-[var(--muted)]">
+            <p className="rounded-[var(--radius-md)] bg-[var(--surface-soft)] px-3 py-3 text-sm text-[var(--muted)]">
               ทุกคนมีค่า BMI อยู่ในช่วงปกติ
             </p>
           ) : (
-            <ul className="max-h-72 space-y-2 overflow-y-auto">
+            <ul className="max-h-72 space-y-1.5 overflow-y-auto">
               {stats.bmiAbnormal.map((s) => (
                 <li
                   key={s.id}
-                  className="flex items-center gap-3 rounded-xl border border-[var(--line)] bg-white px-3 py-2"
+                  className="flex items-center gap-3 rounded-[var(--radius-md)] px-3 py-2 transition hover:bg-[var(--surface-muted)]"
                 >
                   <StudentAvatar
                     photoPath={s.photo_path}
@@ -218,16 +267,16 @@ export default function DashboardStats({ classroomId }: Props) {
                     size={32}
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-slate-900">
+                    <p className="truncate text-sm font-medium text-[var(--text)]">
                       {[s.title, s.first_name, s.last_name].filter(Boolean).join(' ')}
                     </p>
-                    <p className="text-[11px] text-[var(--muted)]">{s.classroom_name || '-'}</p>
+                    <p className="text-[12px] text-[var(--muted)]">{s.classroom_name || '-'}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-xs font-bold text-slate-900">{s.bmi}</p>
+                    <p className="text-sm font-bold text-[var(--text)]">{s.bmi}</p>
                     <p
-                      className={`text-[10px] font-semibold ${
-                        s.status === 'ผอม' ? 'text-sky-600' : 'text-amber-600'
+                      className={`text-[11px] font-semibold ${
+                        s.status === 'ผอม' ? 'text-[var(--info)]' : 'text-[var(--warning-strong)]'
                       }`}
                     >
                       {s.status}
@@ -237,36 +286,40 @@ export default function DashboardStats({ classroomId }: Props) {
               ))}
             </ul>
           )}
-        </section>
+        </SectionCard>
 
         {/* Recent students */}
-        <section className="rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-5 shadow-[var(--shadow-sm)]">
-          <div className="mb-3 flex items-center gap-2">
-            <UserPlus size={18} className="text-blue-500" />
-            <h3 className="text-base font-bold text-slate-900">นักเรียนที่เพิ่มล่าสุด</h3>
-          </div>
+        <SectionCard
+          icon={<UserPlus size={18} />}
+          iconBg="var(--primary-ghost)"
+          iconColor="var(--primary-strong)"
+          title="นักเรียนที่เพิ่มล่าสุด"
+        >
           {stats.recentStudents.length === 0 ? (
-            <p className="rounded-xl bg-slate-50 px-3 py-3 text-sm text-[var(--muted)]">
+            <p className="rounded-[var(--radius-md)] bg-[var(--surface-soft)] px-3 py-3 text-sm text-[var(--muted)]">
               ยังไม่มีนักเรียนในระบบ
             </p>
           ) : (
-            <ul className="space-y-2">
+            <ul className="space-y-1.5">
               {stats.recentStudents.slice(0, 5).map((s) => (
-                <li key={s.id} className="flex items-center gap-3 rounded-xl border border-[var(--line)] bg-white px-3 py-2">
+                <li
+                  key={s.id}
+                  className="flex items-center gap-3 rounded-[var(--radius-md)] px-3 py-2 transition hover:bg-[var(--surface-muted)]"
+                >
                   <StudentAvatar
                     photoPath={s.photo_path}
                     name={`${s.first_name} ${s.last_name}`}
                     size={32}
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-slate-900">
+                    <p className="truncate text-sm font-medium text-[var(--text)]">
                       {[s.title, s.first_name, s.last_name].filter(Boolean).join(' ')}
                     </p>
-                    <p className="text-[11px] text-[var(--muted)]">{s.classroom_name || '-'}</p>
+                    <p className="text-[12px] text-[var(--muted)]">{s.classroom_name || '-'}</p>
                   </div>
                   <Link
                     href={`/students?student=${s.id}`}
-                    className="text-[var(--primary)] hover:opacity-80"
+                    className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] text-[var(--primary)] transition hover:bg-[var(--primary-ghost)]"
                   >
                     <ChevronRight size={16} />
                   </Link>
@@ -274,42 +327,43 @@ export default function DashboardStats({ classroomId }: Props) {
               ))}
             </ul>
           )}
-        </section>
+        </SectionCard>
 
         {/* Recent attendance */}
-        <section className="rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-5 shadow-[var(--shadow-sm)]">
-          <div className="mb-3 flex items-center gap-2">
-            <CalendarCheck size={18} className="text-emerald-500" />
-            <h3 className="text-base font-bold text-slate-900">การเช็คชื่อล่าสุด</h3>
-          </div>
+        <SectionCard
+          icon={<CalendarCheck size={18} />}
+          iconBg="var(--success-soft)"
+          iconColor="var(--success-strong)"
+          title="การเช็คชื่อล่าสุด"
+        >
           {stats.recentAttendance.length === 0 ? (
-            <p className="rounded-xl bg-slate-50 px-3 py-3 text-sm text-[var(--muted)]">
+            <p className="rounded-[var(--radius-md)] bg-[var(--surface-soft)] px-3 py-3 text-sm text-[var(--muted)]">
               ยังไม่มีบันทึกการเช็คชื่อ
             </p>
           ) : (
-            <ul className="space-y-2">
+            <ul className="space-y-1.5">
               {stats.recentAttendance.map((a, idx) => (
                 <li
                   key={`${a.date}-${a.classroom_id}-${idx}`}
-                  className="flex items-center justify-between gap-3 rounded-xl border border-[var(--line)] bg-white px-3 py-2"
+                  className="flex items-center justify-between gap-3 rounded-[var(--radius-md)] px-3 py-2 transition hover:bg-[var(--surface-muted)]"
                 >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Clock size={14} className="text-slate-400" />
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Clock size={15} className="flex-shrink-0 text-[var(--muted-soft)]" />
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-slate-900">
+                      <p className="truncate text-sm font-medium text-[var(--text)]">
                         {formatThaiShortDate(a.date)}
                       </p>
-                      <p className="text-[11px] text-[var(--muted)]">{a.classroom_name || '-'}</p>
+                      <p className="text-[12px] text-[var(--muted)]">{a.classroom_name || '-'}</p>
                     </div>
                   </div>
-                  <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700">
+                  <span className="pill pill-ok">
                     {a.count} คน
                   </span>
                 </li>
               ))}
             </ul>
           )}
-        </section>
+        </SectionCard>
       </div>
     </div>
   )

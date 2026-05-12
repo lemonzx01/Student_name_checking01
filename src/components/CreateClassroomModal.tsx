@@ -90,15 +90,15 @@ export default function CreateClassroomModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="modal-overlay absolute inset-0 bg-slate-950/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="modal-content relative w-full max-w-md rounded-[var(--radius-lg)] bg-white p-6 shadow-2xl">
+      <div className="modal-content relative w-full max-w-md rounded-[var(--radius-xl)] bg-[var(--surface)] shadow-[var(--shadow-lg)]">
         {/* Header */}
-        <div className="mb-6 flex items-start justify-between">
+        <div className="flex items-start justify-between gap-3 border-b border-[var(--line-soft)] p-6 pb-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--primary-ghost)] text-[var(--primary)]">
               <School size={20} />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-900">
+              <h2 className="text-lg font-bold text-[var(--text)]">
                 {editingClassroom ? 'แก้ไขห้องเรียน' : 'สร้างห้องเรียน'}
               </h2>
               <p className="text-xs text-[var(--muted)]">ตั้งชื่อห้องและปีการศึกษา</p>
@@ -107,26 +107,27 @@ export default function CreateClassroomModal({
           <button
             type="button"
             onClick={onClose}
-            className="btn-press flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+            className="btn btn-ghost btn-icon"
+            aria-label="ปิด"
           >
             <X size={16} />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4 p-6">
           <label className="block">
-            <span className="mb-1.5 block text-sm font-semibold text-slate-700">ชื่อห้อง</span>
+            <span className="mb-1.5 block text-sm font-medium text-[var(--text-soft)]">ชื่อห้อง</span>
             <input
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder="เช่น ป.4 หรือ ม.1/1"
-              className="w-full rounded-xl border border-[var(--line)] px-4 py-2.5 text-sm outline-none transition focus:border-[var(--primary)] focus:ring-0"
+              className="input"
               autoFocus
             />
           </label>
 
           <div className="block">
-            <span className="mb-1.5 block text-sm font-semibold text-slate-700">ระดับชั้น</span>
+            <span className="mb-1.5 block text-sm font-medium text-[var(--text-soft)]">ระดับชั้น</span>
             <CustomSelect
               value={level}
               onChange={(v) => setLevel(String(v))}
@@ -135,16 +136,16 @@ export default function CreateClassroomModal({
           </div>
 
           <label className="block">
-            <span className="mb-1.5 block text-sm font-semibold text-slate-700">ปีการศึกษา</span>
+            <span className="mb-1.5 block text-sm font-medium text-[var(--text-soft)]">ปีการศึกษา</span>
             <input
               value={academicYear}
               onChange={(event) => setAcademicYear(event.target.value)}
-              className="w-full rounded-xl border border-[var(--line)] px-4 py-2.5 text-sm outline-none transition focus:border-[var(--primary)] focus:ring-0"
+              className="input"
             />
           </label>
 
           <div>
-            <span className="mb-2 block text-sm font-semibold text-slate-700">สีห้องเรียน</span>
+            <span className="mb-2 block text-sm font-medium text-[var(--text-soft)]">สีห้องเรียน</span>
             <div className="flex flex-wrap gap-2">
               {CLASSROOM_COLORS.map((c) => (
                 <button
@@ -152,7 +153,7 @@ export default function CreateClassroomModal({
                   type="button"
                   onClick={() => setColor(c.value)}
                   className={`group relative flex h-9 w-9 items-center justify-center rounded-xl ${c.bg} transition-all hover:scale-110 ${
-                    color === c.value ? 'ring-2 ring-offset-2 ring-slate-400 scale-110' : ''
+                    color === c.value ? 'ring-2 ring-offset-2 ring-[var(--line-strong)] scale-110' : ''
                   }`}
                   title={c.label}
                 >
@@ -166,18 +167,18 @@ export default function CreateClassroomModal({
             </div>
           </div>
 
-          <div className="flex gap-3 pt-3">
+          <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
               onClick={onClose}
-              className="btn-press flex-1 rounded-xl border border-[var(--line)] px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+              className="btn btn-secondary"
             >
               ยกเลิก
             </button>
             <button
               type="submit"
               disabled={saving || !name.trim()}
-              className="btn-press flex-1 rounded-xl bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--primary-strong)] disabled:opacity-50"
+              className="btn btn-primary"
             >
               {saving ? 'กำลังบันทึก...' : editingClassroom ? 'บันทึก' : 'สร้างห้อง'}
             </button>

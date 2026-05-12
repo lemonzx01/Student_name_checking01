@@ -106,13 +106,13 @@ async function resizeImage(file: File): Promise<{ blob: Blob; ext: string }> {
 function FormField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs font-semibold text-slate-600">{label}</span>
+      <span className="mb-1 block text-xs font-semibold text-[var(--text-soft)]">{label}</span>
       {children}
     </label>
   )
 }
 
-const inputClass = 'w-full rounded-xl border border-[var(--line)] px-3 py-2 text-sm outline-none transition focus:border-[var(--primary)] focus:ring-0'
+const inputClass = 'input'
 
 export default function StudentModal({
   isOpen,
@@ -282,16 +282,23 @@ export default function StudentModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 md:pl-[296px]">
       <div className="modal-overlay absolute inset-0 bg-slate-950/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="modal-content relative max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-[var(--radius-lg)] bg-white shadow-2xl">
+      <div className="modal-content relative max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-[var(--radius-xl)] bg-[var(--surface)] shadow-2xl">
         {/* Sticky Header */}
-        <div className="sticky top-0 z-10 border-b border-[var(--line)] bg-white/95 px-6 py-4 backdrop-blur">
+        <div className="sticky top-0 z-10 border-b border-[var(--line)] bg-[var(--surface)] px-6 py-4 backdrop-blur">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3">
-              <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${student ? 'bg-blue-50 text-blue-600' : 'bg-emerald-50 text-emerald-600'}`}>
+              <div
+                className="flex h-10 w-10 items-center justify-center rounded-[var(--radius-md)]"
+                style={
+                  student
+                    ? { background: 'var(--primary-ghost)', color: 'var(--primary-strong)' }
+                    : { background: 'var(--success-soft)', color: 'var(--success-strong)' }
+                }
+              >
                 {student ? <User size={20} /> : <UserPlus size={20} />}
               </div>
               <div>
-                <h2 className="text-lg font-bold text-slate-900">
+                <h2 className="text-lg font-bold text-[var(--text)]">
                   {student ? 'แก้ไขข้อมูลนักเรียน' : 'เพิ่มนักเรียน'}
                 </h2>
                 <p className="text-xs text-[var(--muted)]">กรอกข้อมูลหลักให้ครบ</p>
@@ -300,7 +307,7 @@ export default function StudentModal({
             <button
               type="button"
               onClick={onClose}
-              className="btn-press flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+              className="btn-press flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] text-[var(--muted)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--text)]"
             >
               <X size={16} />
             </button>
@@ -310,16 +317,16 @@ export default function StudentModal({
         <form onSubmit={handleSubmit} className="p-6">
           {/* Section: รูปประจำตัว */}
           <div className="mb-5">
-            <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-800">
-              <div className="h-1.5 w-1.5 rounded-full bg-cyan-500" />
+            <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-[var(--text)]">
+              <div className="h-1.5 w-1.5 rounded-full bg-[var(--info)]" />
               รูปประจำตัว
             </h3>
-            <div className="flex items-center gap-5 rounded-2xl border border-[var(--line)] bg-slate-50 p-4">
+            <div className="flex items-center gap-5 rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface-soft)] p-4">
               <StudentAvatar
                 photoPath={formData.photo_path}
                 name={`${formData.first_name || ''} ${formData.last_name || ''}`.trim() || 'นักเรียน'}
                 size={120}
-                className="border-4 border-white shadow-sm"
+                className="border-4 border-[var(--surface)] shadow-[var(--shadow-sm)]"
               />
               <div className="flex-1 space-y-2">
                 {!student ? (
@@ -333,7 +340,7 @@ export default function StudentModal({
                     </p>
                     <div className="flex flex-wrap gap-2">
                       <label
-                        className={`btn-press inline-flex cursor-pointer items-center gap-1.5 rounded-xl bg-[var(--primary)] px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[var(--primary-strong)] ${
+                        className={`btn btn-primary btn-sm btn-press cursor-pointer ${
                           uploadingPhoto ? 'pointer-events-none opacity-50' : ''
                         }`}
                       >
@@ -356,7 +363,7 @@ export default function StudentModal({
                           type="button"
                           onClick={handlePhotoDelete}
                           disabled={uploadingPhoto}
-                          className="btn-press inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+                          className="btn btn-danger-ghost btn-sm btn-press"
                         >
                           <Trash2 size={14} />
                           ลบรูป
@@ -371,8 +378,8 @@ export default function StudentModal({
 
           {/* Section: รหัสและห้อง */}
           <div className="mb-5">
-            <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-800">
-              <div className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+            <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-[var(--text)]">
+              <div className="h-1.5 w-1.5 rounded-full bg-[var(--primary)]" />
               รหัสและห้องเรียน
             </h3>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -414,8 +421,8 @@ export default function StudentModal({
 
           {/* Section: ข้อมูลส่วนตัว */}
           <div className="mb-5">
-            <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-800">
-              <div className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-[var(--text)]">
+              <div className="h-1.5 w-1.5 rounded-full bg-[var(--success)]" />
               ข้อมูลส่วนตัว
             </h3>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -466,8 +473,8 @@ export default function StudentModal({
 
           {/* Section: ข้อมูลเพิ่มเติม */}
           <div className="mb-5">
-            <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-800">
-              <div className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+            <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-[var(--text)]">
+              <div className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
               ข้อมูลเพิ่มเติม
             </h3>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -527,8 +534,8 @@ export default function StudentModal({
 
           {/* Section: ผู้ปกครอง */}
           <div className="mb-5">
-            <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-800">
-              <div className="h-1.5 w-1.5 rounded-full bg-violet-500" />
+            <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-[var(--text)]">
+              <div className="h-1.5 w-1.5 rounded-full bg-[var(--info)]" />
               ผู้ปกครอง
             </h3>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -602,8 +609,8 @@ export default function StudentModal({
 
           {/* Section: บิดา-มารดา */}
           <div className="mb-5">
-            <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-800">
-              <div className="h-1.5 w-1.5 rounded-full bg-pink-500" />
+            <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-[var(--text)]">
+              <div className="h-1.5 w-1.5 rounded-full bg-[var(--warning)]" />
               บิดา
             </h3>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -643,8 +650,8 @@ export default function StudentModal({
           </div>
 
           <div className="mb-5">
-            <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-800">
-              <div className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+            <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-[var(--text)]">
+              <div className="h-1.5 w-1.5 rounded-full bg-[var(--danger)]" />
               มารดา
             </h3>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -689,14 +696,14 @@ export default function StudentModal({
             <button
               type="button"
               onClick={onClose}
-              className="btn-press flex-1 rounded-xl border border-[var(--line)] px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+              className="btn btn-secondary btn-press flex-1"
             >
               ยกเลิก
             </button>
             <button
               type="submit"
               disabled={saving || !formData.student_id || !formData.first_name || !formData.last_name || !formData.classroom_id}
-              className="btn-press flex-1 rounded-xl bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--primary-strong)] disabled:opacity-50"
+              className="btn btn-primary btn-press flex-1"
             >
               {saving ? 'กำลังบันทึก...' : student ? 'บันทึกข้อมูล' : 'เพิ่มนักเรียน'}
             </button>

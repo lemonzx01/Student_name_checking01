@@ -451,14 +451,14 @@ textarea:focus-visible {
   box-shadow: var(--shadow-lg);
 }
 
-/* Stat card colored left borders */
-.stat-blue { border-left: 3px solid #3b82f6; }
-.stat-green { border-left: 3px solid #22c55e; }
-.stat-amber { border-left: 3px solid #f59e0b; }
-.stat-purple { border-left: 3px solid #8b5cf6; }
-.stat-red { border-left: 3px solid #ef4444; }
-.stat-sky { border-left: 3px solid #0ea5e9; }
-.stat-pink { border-left: 3px solid #ec4899; }
+/* Stat card colored left borders — map to tokens เพื่อให้ dark mode สอดคล้อง */
+.stat-blue   { border-left: 3px solid var(--primary); }
+.stat-green  { border-left: 3px solid var(--success); }
+.stat-amber  { border-left: 3px solid var(--accent); }
+.stat-purple { border-left: 3px solid var(--info); }
+.stat-red    { border-left: 3px solid var(--danger); }
+.stat-sky    { border-left: 3px solid var(--info); }
+.stat-pink   { border-left: 3px solid var(--accent); }
 
 /* Table row hover */
 .table-row-hover {

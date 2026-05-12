@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import StudentAvatar from '@/components/StudentAvatar'
 import CustomSelect from '@/components/CustomSelect'
+import PageHeader from '@/components/PageHeader'
 import { useDialog } from '@/lib/hooks/useConfirm'
 import {
   emptyTrash,
@@ -122,8 +123,8 @@ export default function TrashPage() {
       message: 'การลบนี้จะไม่สามารถกู้คืนได้ — ข้อมูลที่เกี่ยวข้องทั้งหมดจะถูกลบด้วย',
       details: (
         <div className="space-y-1">
-          <p className="font-semibold text-slate-800">ข้อมูลที่จะถูกลบพร้อมกัน:</p>
-          <ul className="ml-4 list-disc space-y-0.5 text-slate-600">
+          <p className="font-semibold text-[var(--text)]">ข้อมูลที่จะถูกลบพร้อมกัน:</p>
+          <ul className="ml-4 list-disc space-y-0.5 text-[var(--text-soft)]">
             <li>บันทึกการเช็คชื่อทั้งหมดของนักเรียนคนนี้</li>
             <li>คะแนนทั้งหมด</li>
             <li>บันทึกสุขภาพ</li>
@@ -159,7 +160,7 @@ export default function TrashPage() {
       title: 'ล้างถังขยะทั้งหมด?',
       message: `จะลบนักเรียนทั้งหมด ${students.length} คน พร้อมข้อมูลที่เกี่ยวข้องถาวร`,
       details: (
-        <p className="text-xs text-red-700">
+        <p className="text-xs text-[var(--danger-strong)]">
           การลบนี้จะไม่สามารถกู้คืนได้ — ระบบมีไฟล์สำรองรายวัน หากต้องการกู้คืน
           สามารถไปที่หน้า &quot;ตั้งค่า&quot; เพื่อใช้ backup ก่อนกดล้าง
         </p>
@@ -188,40 +189,35 @@ export default function TrashPage() {
       <div className="mb-4">
         <Link
           href="/"
-          className="btn-press inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-medium text-[var(--primary)] transition hover:bg-blue-50"
+          className="btn btn-ghost btn-sm"
         >
           <ChevronLeft size={16} />
           กลับหน้าหลัก
         </Link>
       </div>
 
-      <section className="animate-slide-up mb-6 rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-6 shadow-[var(--shadow-sm)]">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
-              <Trash2 size={13} />
-              Recycle Bin
-            </div>
-            <h1 className="text-2xl font-bold text-slate-900 md:text-3xl">ถังขยะ</h1>
-            <p className="mt-1 text-sm text-[var(--muted)]">
-              นักเรียนที่ถูกลบจะอยู่ที่นี่ 30 วัน ก่อนถูกลบถาวรอัตโนมัติ
-            </p>
-          </div>
-          {students.length > 0 && (
+      <PageHeader
+        icon={Trash2}
+        badge="Recycle Bin"
+        title="ถังขยะ"
+        subtitle="นักเรียนที่ถูกลบจะอยู่ที่นี่ 30 วัน ก่อนถูกลบถาวรอัตโนมัติ"
+        tone="warn"
+        actions={
+          students.length > 0 ? (
             <button
               type="button"
               onClick={handleEmptyTrash}
-              className="btn-press inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-red-700"
+              className="btn btn-danger btn-sm"
             >
               <Trash2 size={14} />
               ล้างถังขยะ
             </button>
-          )}
-        </div>
-      </section>
+          ) : null
+        }
+      />
 
       {/* List */}
-      <section className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--line)] bg-white shadow-[var(--shadow-sm)]">
+      <section className="card overflow-hidden">
         {loading ? (
           <div className="space-y-2 p-5">
             <div className="skeleton h-16 w-full rounded-xl" />
@@ -230,23 +226,23 @@ export default function TrashPage() {
           </div>
         ) : students.length === 0 ? (
           <div className="px-6 py-16 text-center">
-            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-500">
+            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-[var(--success-soft)] text-[var(--success)]">
               <Users size={26} />
             </div>
-            <h3 className="text-lg font-bold text-slate-900">ถังขยะว่าง</h3>
+            <h3 className="text-lg font-bold text-[var(--text)]">ถังขยะว่าง</h3>
             <p className="mx-auto mt-1 max-w-sm text-sm text-[var(--muted)]">
               นักเรียนที่ลบจะมาอยู่ที่นี่ก่อนถูกลบถาวร
             </p>
           </div>
         ) : (
-          <ul className="divide-y divide-[var(--line)]">
+          <ul className="divide-y divide-[var(--line-soft)]">
             {students.map((student) => {
               const remaining = daysUntilPurge(student.deleted_at)
               const oldClassExists = classroomExists(student.classroom_id)
               return (
                 <li
                   key={student.id}
-                  className="flex flex-wrap items-center gap-3 px-4 py-3 transition hover:bg-slate-50"
+                  className="flex flex-wrap items-center gap-3 px-4 py-3 transition hover:bg-[var(--surface-muted)]"
                 >
                   <StudentAvatar
                     photoPath={student.photo_path}
@@ -254,14 +250,14 @@ export default function TrashPage() {
                     size={44}
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-slate-900">{displayName(student)}</p>
+                    <p className="text-sm font-medium text-[var(--text)]">{displayName(student)}</p>
                     <p className="text-[11px] text-[var(--muted)]">
                       ห้องเดิม:{' '}
-                      <span className={oldClassExists ? '' : 'text-amber-700 line-through'}>
+                      <span className={oldClassExists ? '' : 'text-[var(--warning-strong)] line-through'}>
                         {student.classroom_name || student.classroom_label || '-'}
                       </span>
                       {!oldClassExists && (
-                        <span className="ml-1 rounded bg-amber-50 px-1 text-amber-700">ห้องถูกลบ</span>
+                        <span className="pill pill-warn ml-1">ห้องถูกลบ</span>
                       )}
                       {' · '}ลบเมื่อ {formatRelative(student.deleted_at)}
                       {remaining !== null && (
@@ -276,7 +272,7 @@ export default function TrashPage() {
                       type="button"
                       onClick={() => handleRestore(student)}
                       disabled={busy === student.id}
-                      className="btn-press inline-flex items-center gap-1.5 rounded-xl border border-emerald-300 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50"
+                      className="btn btn-secondary btn-sm"
                     >
                       <RotateCcw size={13} />
                       กู้คืน
@@ -285,7 +281,7 @@ export default function TrashPage() {
                       type="button"
                       onClick={() => handlePurge(student)}
                       disabled={busy === student.id}
-                      className="btn-press inline-flex items-center gap-1.5 rounded-xl border border-red-300 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-50 disabled:opacity-50"
+                      className="btn btn-danger-ghost btn-sm"
                     >
                       <Trash2 size={13} />
                       ลบถาวร
@@ -305,8 +301,8 @@ export default function TrashPage() {
             className="modal-overlay absolute inset-0 bg-slate-950/40 backdrop-blur-sm"
             onClick={() => setRestoreTarget(null)}
           />
-          <div className="modal-content relative w-full max-w-md rounded-[var(--radius-lg)] bg-white p-6 shadow-2xl">
-            <h3 className="text-lg font-bold text-slate-900">เลือกห้องใหม่</h3>
+          <div className="modal-content relative w-full max-w-md rounded-[var(--radius-xl)] bg-[var(--surface)] p-6 shadow-[var(--shadow-lg)]">
+            <h3 className="text-lg font-bold text-[var(--text)]">เลือกห้องใหม่</h3>
             <p className="mt-1 text-sm text-[var(--muted)]">
               ห้องเดิมของ {displayName(restoreTarget)} ถูกลบไปแล้ว — กรุณาเลือกห้องใหม่
             </p>
@@ -327,7 +323,7 @@ export default function TrashPage() {
               <button
                 type="button"
                 onClick={() => setRestoreTarget(null)}
-                className="btn-press flex-1 rounded-xl border border-[var(--line)] bg-white px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+                className="btn btn-secondary flex-1"
               >
                 ยกเลิก
               </button>
@@ -335,7 +331,7 @@ export default function TrashPage() {
                 type="button"
                 onClick={confirmRestoreNewClassroom}
                 disabled={!restoreClassroom}
-                className="btn-press flex-1 rounded-xl bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[var(--primary-strong)] disabled:opacity-50"
+                className="btn btn-primary flex-1"
               >
                 กู้คืน
               </button>

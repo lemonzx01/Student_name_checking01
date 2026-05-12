@@ -28,6 +28,7 @@ import ScheduleTemplateDialog from '@/components/ScheduleTemplateDialog'
 import ScheduleClashPanel, { Clash } from '@/components/ScheduleClashPanel'
 import AutoSaveIndicator from '@/components/AutoSaveIndicator'
 import UndoToast from '@/components/Toast'
+import PageHeader from '@/components/PageHeader'
 import { useAutoSave } from '@/lib/hooks/useAutoSave'
 import {
   TEMPLATE_SUBJECT_NAMES,
@@ -766,62 +767,49 @@ function SchedulePageContent() {
   }
 
   // ─── Render ───
+  // subtitle string — ใช้ใน PageHeader (PageHeader รับ string, ไม่ใช่ ReactNode)
+  const headerSubtitle = selectedClassroom
+    ? `ห้อง ${selectedClassroom.name} — กรอกแล้ว ${scheduleStats.filled}/${scheduleStats.editable} คาบ`
+    : 'เลือกห้องด้านล่างเพื่อเริ่มจัดตาราง'
+
   return (
     <div className="mx-auto max-w-7xl animate-fade-in">
       {/* Breadcrumb */}
       <div className="mb-3">
         <Link
           href="/"
-          className="btn-press inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-medium text-[var(--primary)] transition hover:bg-blue-50"
+          className="btn btn-ghost btn-sm"
         >
           <ChevronLeft size={16} />
           กลับไปหน้าห้องเรียน
         </Link>
       </div>
 
-      {/* Header — ลดทอนให้สั้น ตัด viewMode / semester / year */}
-      <section className="animate-slide-up mb-4 rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-5 shadow-[var(--shadow-sm)] md:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex items-start gap-3">
-            <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-              <CalendarDays size={22} />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900 md:text-3xl">ตารางสอน</h1>
-              <p className="mt-0.5 text-sm text-[var(--muted)]">
-                {selectedClassroom ? (
-                  <>
-                    ห้อง <span className="font-semibold text-slate-700">{selectedClassroom.name}</span> — กรอกแล้ว{' '}
-                    <span className="font-semibold text-[var(--primary)]">{scheduleStats.filled}</span>
-                    /{scheduleStats.editable} คาบ
-                  </>
-                ) : (
-                  'เลือกห้องด้านล่างเพื่อเริ่มจัดตาราง'
-                )}
-              </p>
-            </div>
-          </div>
-
-          {/* สถานะคาบซ้ำ */}
-          <div className="flex items-center gap-2">
-            {clashes.length > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700">
-                <AlertTriangle size={12} />
-                คาบซ้ำ {clashes.length} จุด
-              </span>
-            )}
-          </div>
-        </div>
-      </section>
+      {/* Header — ใช้ PageHeader shared component */}
+      <PageHeader
+        icon={CalendarDays}
+        badge="Schedule"
+        tone="brand"
+        title="ตารางสอน"
+        subtitle={headerSubtitle}
+        actions={
+          clashes.length > 0 ? (
+            <span className="pill pill-danger">
+              <AlertTriangle size={12} />
+              คาบซ้ำ {clashes.length} จุด
+            </span>
+          ) : undefined
+        }
+      />
 
       {/* Classroom selector + Actions — แยกเป็น section อิสระ */}
       {classrooms.length > 0 && (
         <section
-          className="animate-slide-up mb-4 rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-4 shadow-[var(--shadow-sm)]"
+          className="card animate-slide-up mb-4 p-4"
           style={{ animationDelay: '60ms' }}
         >
           {/* ── ขอบเขตตรวจคาบซ้ำ (Clash Scope) ── */}
-          <div className="mb-3 border-b border-slate-100 pb-3">
+          <div className="mb-3 border-b border-[var(--line-soft)] pb-3">
             {/* summary + toggle */}
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1 text-xs text-[var(--muted)]">
@@ -835,7 +823,7 @@ function SchedulePageContent() {
               <button
                 type="button"
                 onClick={() => setShowScopeSettings((v) => !v)}
-                className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold text-slate-500 transition hover:bg-slate-50 hover:text-slate-700"
+                className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold text-[var(--muted)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--text)]"
               >
                 ตั้งค่าขั้นสูง
                 <ChevronDown
@@ -847,7 +835,7 @@ function SchedulePageContent() {
 
             {/* expanded controls */}
             {showScopeSettings && (
-              <div className="mt-3 rounded-lg bg-slate-50 p-3">
+              <div className="mt-3 rounded-lg bg-[var(--surface-muted)] p-3">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <span className="mr-1 text-[11px] font-semibold text-[var(--muted)]">รูปแบบ</span>
                   <ScopeButton
@@ -893,8 +881,8 @@ function SchedulePageContent() {
                           }}
                           className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold transition ${
                             checked
-                              ? 'border-blue-300 bg-blue-50 text-blue-700'
-                              : 'border-[var(--line)] bg-white text-slate-500 hover:border-blue-200'
+                              ? 'border-[var(--primary)] bg-[var(--primary-ghost)] text-[var(--primary-strong)]'
+                              : 'border-[var(--line)] bg-[var(--surface)] text-[var(--muted)] hover:border-[var(--primary-soft)]'
                           }`}
                         >
                           {checked && <Check size={10} strokeWidth={3} />}
@@ -921,10 +909,10 @@ function SchedulePageContent() {
                           onClick={() => setGradeScope(g)}
                           className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold transition ${
                             active
-                              ? 'border-blue-300 bg-blue-50 text-blue-700'
+                              ? 'border-[var(--primary)] bg-[var(--primary-ghost)] text-[var(--primary-strong)]'
                               : disabled
-                              ? 'border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed'
-                              : 'border-[var(--line)] bg-white text-slate-500 hover:border-blue-200'
+                              ? 'cursor-not-allowed border-[var(--line-soft)] bg-[var(--surface-muted)] text-[var(--muted-soft)]'
+                              : 'border-[var(--line)] bg-[var(--surface)] text-[var(--muted)] hover:border-[var(--primary-soft)]'
                           }`}
                           title={disabled ? 'ไม่มีห้องในระดับนี้' : `${count} ห้อง`}
                         >
@@ -937,7 +925,7 @@ function SchedulePageContent() {
                 )}
 
                 <p className="mt-2 text-[10px] text-[var(--muted)]">
-                  💡 default ตรวจกับห้องระดับเดียวกันอัตโนมัติ — เปลี่ยนเป็น "เลือกเอง" เฉพาะตอนที่ต้องการตรวจข้ามระดับ
+                  default ตรวจกับห้องระดับเดียวกันอัตโนมัติ — เปลี่ยนเป็น &quot;เลือกเอง&quot; เฉพาะตอนที่ต้องการตรวจข้ามระดับ
                 </p>
               </div>
             )}
@@ -959,13 +947,15 @@ function SchedulePageContent() {
                     className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
                       isSelected
                         ? 'bg-[var(--primary)] text-white shadow-sm'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        : 'bg-[var(--surface-muted)] text-[var(--text-soft)] hover:bg-[var(--surface-soft)]'
                     }`}
                   >
                     <span>{cls.name}</span>
                     <span
                       className={`rounded-full px-1.5 py-0.5 text-[10px] ${
-                        isSelected ? 'bg-white/20' : 'bg-white text-slate-500'
+                        isSelected
+                          ? 'bg-white/20'
+                          : 'bg-[var(--surface)] text-[var(--muted)]'
                       }`}
                     >
                       {pct}%
@@ -974,8 +964,8 @@ function SchedulePageContent() {
                       <span
                         className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
                           isSelected
-                            ? 'bg-white text-red-600'
-                            : 'bg-red-100 text-red-700'
+                            ? 'bg-white text-[var(--danger-strong)]'
+                            : 'bg-[var(--danger-soft)] text-[var(--danger-strong)]'
                         }`}
                         title={`ชนกับห้องอื่น ${clashCount} คาบ`}
                       >
@@ -995,7 +985,7 @@ function SchedulePageContent() {
                 onClick={() => setShowTemplateDialog(true)}
                 disabled={!selectedId}
                 title="สร้างตารางสอนอัตโนมัติจาก template"
-                className="btn-press inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 disabled:opacity-50"
+                className="btn btn-brand-ghost btn-sm"
               >
                 <Sparkles size={14} />
                 สร้างอัตโนมัติ
@@ -1005,7 +995,7 @@ function SchedulePageContent() {
                 onClick={() => setShowCopyDialog(true)}
                 disabled={!selectedId || classrooms.length < 2}
                 title="คัดลอกตารางจากห้องอื่น"
-                className="btn-press inline-flex items-center gap-1.5 rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-blue-300 hover:text-blue-600 disabled:opacity-50"
+                className="btn btn-secondary btn-sm"
               >
                 <Copy size={14} />
                 คัดลอก
@@ -1015,7 +1005,7 @@ function SchedulePageContent() {
                 onClick={() => setShowConfirmClear(true)}
                 disabled={!selectedId}
                 title="ล้างตารางห้องนี้ทั้งหมด"
-                className="btn-press inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+                className="btn btn-danger-ghost btn-sm"
               >
                 <Eraser size={14} />
                 ล้าง
@@ -1025,7 +1015,7 @@ function SchedulePageContent() {
                 onClick={exportPDF}
                 disabled={classrooms.length === 0}
                 title="ส่งออกตารางสอนเป็น PDF"
-                className="btn-press inline-flex items-center gap-1.5 rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-emerald-300 hover:text-emerald-700 disabled:opacity-50"
+                className="btn btn-secondary btn-sm"
               >
                 <FileText size={14} />
                 PDF
@@ -1038,10 +1028,10 @@ function SchedulePageContent() {
       {/* Toast */}
       {toast && (
         <div
-          className={`toast-enter mb-4 flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-medium ${
+          className={`toast-enter mb-4 flex items-center gap-3 rounded-[var(--radius-lg)] px-4 py-3 text-sm font-medium ${
             toast.type === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-              : 'border-red-200 bg-red-50 text-red-700'
+              ? 'bg-[var(--success-soft)] text-[var(--success-strong)]'
+              : 'bg-[var(--danger-soft)] text-[var(--danger-strong)]'
           }`}
         >
           {toast.type === 'success' ? <CheckCircle size={18} /> : <AlertTriangle size={18} />}
@@ -1052,9 +1042,9 @@ function SchedulePageContent() {
       {loading ? (
         <div className="skeleton h-96 w-full rounded-[var(--radius-lg)]" />
       ) : !selectedId ? (
-        <div className="rounded-[var(--radius-lg)] border-2 border-dashed border-[var(--line)] bg-white px-6 py-16 text-center text-[var(--muted)]">
+        <div className="empty-state">
           ยังไม่มีห้องเรียน — สร้างห้องใน{' '}
-          <Link href="/" className="font-semibold text-[var(--primary)] underline">
+          <Link href="/" className="ml-1 font-semibold text-[var(--primary)] underline">
             หน้าห้องเรียน
           </Link>
         </div>
@@ -1066,11 +1056,11 @@ function SchedulePageContent() {
           {/* Main grid + Palette */}
           <div className="space-y-4">
             {/* Subject palette (paint mode) */}
-            <section className="rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-4 shadow-[var(--shadow-sm)]">
+            <section className="card p-4">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <Paintbrush size={14} className="text-[var(--muted)]" />
-                  <span className="text-xs font-semibold text-slate-700">โหมดระบาย</span>
+                  <span className="section-title text-xs">โหมดระบาย</span>
                   <span className="hidden text-[11px] text-[var(--muted)] sm:inline">
                     — กดวิชา แล้วคลิกช่องที่ต้องการ
                   </span>
@@ -1079,7 +1069,7 @@ function SchedulePageContent() {
                   <button
                     type="button"
                     onClick={() => setActivePaint(null)}
-                    className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] text-[var(--muted)] hover:bg-slate-100"
+                    className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] text-[var(--muted)] hover:bg-[var(--surface-muted)]"
                   >
                     <X size={12} />
                     ออก (Esc)
@@ -1094,13 +1084,14 @@ function SchedulePageContent() {
                       key={s.code}
                       type="button"
                       onClick={() => setActivePaint(isActive ? null : s)}
-                      className={`inline-flex items-center gap-1.5 rounded-lg border-2 px-2.5 py-1 text-xs font-semibold transition ${
-                        isActive ? 'shadow-md' : 'border-[var(--line)] hover:shadow-sm'
+                      className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition ${
+                        isActive ? 'shadow-md' : 'hover:shadow-sm'
                       }`}
                       style={{
-                        borderColor: isActive ? s.color : undefined,
-                        backgroundColor: isActive ? `${s.color}20` : 'white',
-                        color: isActive ? s.color : '#475569',
+                        borderColor: isActive ? s.color : 'var(--line)',
+                        // soft tint เมื่อ active (alpha ~12%)
+                        backgroundColor: isActive ? `${s.color}1F` : 'var(--surface)',
+                        color: isActive ? s.color : 'var(--text-soft)',
                       }}
                     >
                       <span className="h-2 w-2 rounded-full" style={{ backgroundColor: s.color }} />
@@ -1113,7 +1104,7 @@ function SchedulePageContent() {
             </section>
 
             {/* Grid */}
-            <section className="rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-4 shadow-[var(--shadow-sm)]">
+            <section className="card p-4">
               <div className="overflow-x-auto">
                 <div
                   className="min-w-[800px]"
@@ -1131,9 +1122,9 @@ function SchedulePageContent() {
                     const periodHeader = (
                       <div
                         key={`header-${p}`}
-                        className="rounded-lg border border-[var(--line)] bg-slate-50 px-1.5 py-1.5 text-center"
+                        className="rounded-lg bg-[var(--surface-soft)] px-1.5 py-1.5 text-center"
                       >
-                        <div className="text-xs font-bold text-slate-900">คาบ {p}</div>
+                        <div className="text-xs font-bold text-[var(--text)]">คาบ {p}</div>
                         <div className="text-[9px] text-[var(--muted)]">{PERIOD_TIMES[i]}</div>
                       </div>
                     )
@@ -1142,10 +1133,10 @@ function SchedulePageContent() {
                         periodHeader,
                         <div
                           key="header-lunch"
-                          className="rounded-lg border border-amber-200 bg-amber-50 px-1.5 py-1.5 text-center"
+                          className="rounded-lg bg-[var(--warning-soft)] px-1.5 py-1.5 text-center"
                         >
-                          <div className="text-[11px] font-bold text-amber-700">พัก</div>
-                          <div className="text-[9px] text-amber-600">{LUNCH_TIME}</div>
+                          <div className="text-[11px] font-bold text-[var(--warning-strong)]">พัก</div>
+                          <div className="text-[9px] text-[var(--warning-strong)] opacity-80">{LUNCH_TIME}</div>
                         </div>,
                       ]
                     }
@@ -1157,7 +1148,7 @@ function SchedulePageContent() {
                     const dayNum = dayIdx + 1
                     return (
                       <Fragment key={`day-${dayNum}`}>
-                        <div className="flex items-center justify-center rounded-lg border border-[var(--line)] bg-slate-100 text-sm font-bold text-slate-700">
+                        <div className="flex items-center justify-center rounded-lg bg-[var(--surface-soft)] text-sm font-bold text-[var(--text)]">
                           {day}
                         </div>
 
@@ -1176,10 +1167,10 @@ function SchedulePageContent() {
                           const cellEl = fixed ? (
                             <div
                               key={`cell-${key}`}
-                              className="flex min-h-[72px] flex-col items-center justify-center rounded-lg border-2 border-dashed border-slate-300 bg-slate-50 px-2 py-2 text-center"
+                              className="flex min-h-[72px] flex-col items-center justify-center rounded-lg border-2 border-dashed border-[var(--line-soft)] bg-[var(--surface-muted)] px-2 py-2 text-center"
                             >
-                              <span className="text-xs font-bold text-slate-500">{fixed.code}</span>
-                              <span className="mt-0.5 text-[11px] text-slate-500">{fixed.name}</span>
+                              <span className="text-xs font-bold text-[var(--muted)]">{fixed.code}</span>
+                              <span className="mt-0.5 text-[11px] text-[var(--muted)]">{fixed.name}</span>
                             </div>
                           ) : isEmpty ? (
                             <button
@@ -1188,10 +1179,10 @@ function SchedulePageContent() {
                               onClick={() => handleCellClick(dayNum, p)}
                               onContextMenu={(e) => handleCellRightClick(e, dayNum, p)}
                               title={activePaint ? 'คลิกเพื่อใส่วิชา' : 'คลิกเพื่อเพิ่มวิชา • คลิกขวาเพื่อลบ'}
-                              className={`btn-press flex min-h-[72px] items-center justify-center rounded-lg border-2 border-dashed px-2 py-2 text-xs transition ${
+                              className={`btn-press flex min-h-[72px] items-center justify-center rounded-lg border border-dashed px-2 py-2 text-xs transition ${
                                 activePaint
-                                  ? 'border-[var(--primary)] bg-blue-50/50 text-blue-600 hover:bg-blue-100'
-                                  : 'border-[var(--line)] text-[var(--muted)] hover:border-[var(--primary)] hover:bg-blue-50/50 hover:text-[var(--primary)]'
+                                  ? 'border-[var(--primary)] bg-[var(--primary-ghost)] text-[var(--primary-strong)] hover:bg-[var(--primary-soft)]'
+                                  : 'border-[var(--line-soft)] bg-[var(--surface)] text-[var(--muted)] hover:border-[var(--primary)] hover:bg-[var(--surface-muted)] hover:text-[var(--primary)]'
                               }`}
                             >
                               {activePaint ? `+ ${activePaint.code}` : '+ เพิ่ม'}
@@ -1203,14 +1194,18 @@ function SchedulePageContent() {
                               onClick={() => handleCellClick(dayNum, p)}
                               onContextMenu={(e) => handleCellRightClick(e, dayNum, p)}
                               title={slot && `${slot.subject_name}${slot.room ? ` • ห้อง ${slot.room}` : ''}${clashTitle} • คลิกเพื่อแก้ • คลิกขวาเพื่อลบ`}
-                              className={`btn-press relative flex min-h-[72px] flex-col items-center justify-center rounded-lg border-2 px-1.5 py-1.5 text-center transition hover:shadow-md ${
-                                hasClash ? 'ring-2 ring-red-400 ring-offset-1' : ''
+                              className={`btn-press relative flex min-h-[72px] flex-col items-center justify-center rounded-lg px-1.5 py-1.5 text-center transition hover:shadow-md ${
+                                hasClash ? 'ring-2 ring-[var(--danger)] ring-offset-1' : ''
                               }`}
-                              style={{ borderColor: color, backgroundColor: `${color}15` }}
+                              style={{
+                                // soft tint (alpha 10%) + accent border-left สื่อสีวิชา
+                                backgroundColor: `${color}1A`,
+                                borderLeft: `3px solid ${color}`,
+                              }}
                             >
                               {hasClash && (
                                 <span
-                                  className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-white shadow-md"
+                                  className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--danger)] text-white shadow-md"
                                   title={`ชนกับห้อง ${clashPeers.join(', ')}`}
                                 >
                                   <AlertTriangle size={11} strokeWidth={2.5} />
@@ -1220,7 +1215,7 @@ function SchedulePageContent() {
                                 {slot!.subject_code}
                               </span>
                               {slot!.subject_name && (
-                                <span className="mt-0.5 line-clamp-2 text-[10px] leading-tight text-slate-700">
+                                <span className="mt-0.5 line-clamp-2 text-[10px] leading-tight text-[var(--text-soft)]">
                                   {slot!.subject_name}
                                 </span>
                               )}
@@ -1235,10 +1230,10 @@ function SchedulePageContent() {
                               cellEl,
                               <div
                                 key={`lunch-${dayNum}`}
-                                className="flex min-h-[72px] items-center justify-center rounded-lg border border-amber-200 bg-amber-50"
+                                className="flex min-h-[72px] items-center justify-center rounded-lg bg-[var(--warning-soft)]"
                               >
                                 <span
-                                  className="text-[10px] font-bold text-amber-700"
+                                  className="text-[10px] font-bold text-[var(--warning-strong)]"
                                   style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
                                 >
                                   พักกลางวัน
@@ -1265,12 +1260,12 @@ function SchedulePageContent() {
           {/* Sidebar: Clash Panel + Hours Counter */}
           <aside className="space-y-4 lg:sticky lg:top-4 lg:self-start">
             {!currentInScope && (
-              <div className="rounded-[var(--radius-lg)] border border-amber-200 bg-amber-50 p-3 text-[12px] text-amber-800">
+              <div className="rounded-[var(--radius-lg)] bg-[var(--warning-soft)] p-3 text-[12px] text-[var(--warning-strong)]">
                 <div className="flex items-start gap-2">
                   <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
                   <div>
                     ห้องนี้<span className="font-semibold">ไม่อยู่ในขอบเขตตรวจ</span> —
-                    ปรับขอบเขต "ตรวจคาบซ้ำระหว่าง" ด้านบนให้ครอบคลุมห้องนี้
+                    ปรับขอบเขต &quot;ตรวจคาบซ้ำระหว่าง&quot; ด้านบนให้ครอบคลุมห้องนี้
                   </div>
                 </div>
               </div>
@@ -1391,15 +1386,15 @@ function EditModal({
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
-      <div className="animate-slide-up w-full max-w-md rounded-t-2xl bg-white p-6 shadow-xl sm:rounded-2xl">
+      <div className="card animate-slide-up w-full max-w-md p-6 shadow-xl">
         <div className="mb-5 flex items-center gap-2">
           <Pencil size={18} className="text-[var(--primary)]" />
-          <h3 className="text-lg font-bold text-slate-900">
+          <h3 className="text-lg font-bold text-[var(--text)]">
             {DAYS[day - 1]}
             <span className="ml-1 font-normal text-[var(--muted)]">| คาบ {period}</span>
           </h3>
           {classroomName && (
-            <span className="ml-auto rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+            <span className="pill pill-muted ml-auto">
               ห้อง {classroomName}
             </span>
           )}
@@ -1407,7 +1402,7 @@ function EditModal({
 
         <div className="space-y-4">
           <div>
-            <label className="mb-1.5 block text-xs font-semibold text-slate-700">เลือกวิชา</label>
+            <label className="section-title mb-1.5 block text-xs">เลือกวิชา</label>
             <div className="flex flex-wrap gap-1.5">
               {SUBJECTS.map((s) => {
                 const active = form.subject_code === s.code
@@ -1416,12 +1411,12 @@ function EditModal({
                     key={s.code}
                     type="button"
                     onClick={() => setForm({ ...form, subject_code: s.code, subject_name: s.name })}
-                    className={`rounded-lg border-2 px-2.5 py-1 text-xs font-semibold transition ${
-                      active ? '' : 'border-[var(--line)] text-slate-600 hover:bg-slate-50'
+                    className={`rounded-lg border px-2.5 py-1 text-xs font-semibold transition ${
+                      active ? '' : 'border-[var(--line)] text-[var(--text-soft)] hover:bg-[var(--surface-muted)]'
                     }`}
                     style={{
                       borderColor: active ? s.color : undefined,
-                      backgroundColor: active ? `${s.color}20` : undefined,
+                      backgroundColor: active ? `${s.color}1F` : undefined,
                       color: active ? s.color : undefined,
                     }}
                   >
@@ -1433,14 +1428,14 @@ function EditModal({
           </div>
 
           <div>
-            <label className="mb-1 block text-xs font-semibold text-slate-700">
-              ห้องเรียน <span className="text-[var(--muted)]">(ถ้ามี)</span>
+            <label className="section-title mb-1 block text-xs">
+              ห้องเรียน <span className="font-normal text-[var(--muted)]">(ถ้ามี)</span>
             </label>
             <input
               type="text"
               value={form.room}
               onChange={(e) => setForm({ ...form, room: e.target.value })}
-              className="w-full rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-sm focus:border-[var(--primary)] focus:outline-none focus:ring-2 focus:ring-blue-100"
+              className="input"
               placeholder="เช่น S201"
             />
           </div>
@@ -1451,7 +1446,7 @@ function EditModal({
             <button
               type="button"
               onClick={onDelete}
-              className="btn-press inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
+              className="btn btn-danger-ghost btn-sm"
             >
               <Trash2 size={16} />
               ลบ
@@ -1461,7 +1456,7 @@ function EditModal({
           <button
             type="button"
             onClick={onClose}
-            className="btn-press rounded-xl border border-[var(--line)] bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            className="btn btn-secondary btn-sm"
           >
             ยกเลิก
           </button>
@@ -1469,7 +1464,7 @@ function EditModal({
             type="button"
             onClick={onSave}
             disabled={!form.subject_code}
-            className="btn-press inline-flex items-center gap-1.5 rounded-xl bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[var(--primary-strong)] disabled:opacity-50"
+            className="btn btn-primary btn-sm"
           >
             <Save size={16} />
             บันทึก
@@ -1495,24 +1490,24 @@ function ConfirmDialog({
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="animate-slide-up w-full max-w-sm rounded-2xl bg-white p-7 text-center shadow-xl">
-        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-50 text-red-500">
+      <div className="card animate-slide-up w-full max-w-sm p-7 text-center shadow-xl">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--danger-soft)] text-[var(--danger-strong)]">
           <AlertTriangle size={26} />
         </div>
-        <h3 className="text-lg font-bold text-slate-900">{title}</h3>
+        <h3 className="text-lg font-bold text-[var(--text)]">{title}</h3>
         <p className="mt-2 text-sm text-[var(--muted)]">{description}</p>
         <div className="mt-5 flex items-center justify-center gap-2">
           <button
             type="button"
             onClick={onCancel}
-            className="btn-press rounded-xl border border-[var(--line)] bg-white px-5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            className="btn btn-secondary"
           >
             ยกเลิก
           </button>
           <button
             type="button"
             onClick={onConfirm}
-            className="btn-press inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-5 py-2 text-sm font-semibold text-white hover:bg-red-700"
+            className="btn btn-danger"
           >
             <Check size={16} />
             {confirmLabel}
@@ -1536,10 +1531,10 @@ function CopyFromDialog({
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="animate-slide-up w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+      <div className="card animate-slide-up w-full max-w-md p-6 shadow-xl">
         <div className="mb-4 flex items-center gap-2">
           <Copy size={18} className="text-[var(--primary)]" />
-          <h3 className="text-lg font-bold text-slate-900">คัดลอกจากห้องอื่น</h3>
+          <h3 className="text-lg font-bold text-[var(--text)]">คัดลอกจากห้องอื่น</h3>
         </div>
         {classrooms.length === 0 ? (
           <p className="py-6 text-center text-sm text-[var(--muted)]">ไม่มีห้องอื่นให้คัดลอก</p>
@@ -1552,13 +1547,13 @@ function CopyFromDialog({
                   key={cls.id}
                   type="button"
                   onClick={() => onPick(cls.id)}
-                  className="btn-press flex items-center justify-between rounded-xl border border-[var(--line)] bg-white px-4 py-3 text-left transition hover:border-[var(--primary)] hover:bg-blue-50/50"
+                  className="card-interactive btn-press flex items-center justify-between p-4 text-left transition hover:border-[var(--primary)]"
                 >
                   <div>
-                    <div className="text-sm font-semibold text-slate-900">ห้อง {cls.name}</div>
+                    <div className="text-sm font-semibold text-[var(--text)]">ห้อง {cls.name}</div>
                     <div className="text-xs text-[var(--muted)]">{cls.level}</div>
                   </div>
-                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                  <span className="pill pill-muted">
                     {filled} คาบ
                   </span>
                 </button>
@@ -1570,7 +1565,7 @@ function CopyFromDialog({
           <button
             type="button"
             onClick={onClose}
-            className="btn-press rounded-xl border border-[var(--line)] bg-white px-5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            className="btn btn-secondary"
           >
             ปิด
           </button>
@@ -1596,7 +1591,7 @@ function ScopeButton({
       className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-semibold transition ${
         active
           ? 'bg-[var(--primary)] text-white shadow-sm'
-          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+          : 'bg-[var(--surface-muted)] text-[var(--text-soft)] hover:bg-[var(--surface-soft)]'
       }`}
     >
       {label}

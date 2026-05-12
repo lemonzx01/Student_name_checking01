@@ -45,20 +45,20 @@ export default function ScheduleClashPanel({
 
   if (clashes.length === 0) {
     return (
-      <div className="rounded-[var(--radius-lg)] border border-emerald-200 bg-emerald-50 p-4 shadow-[var(--shadow-sm)]">
+      <div className="card p-4" style={{ background: 'var(--success-soft)' }}>
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--surface)] text-[var(--success-strong)]">
             <CheckCircle2 size={16} />
           </div>
           <div>
-            <p className="text-sm font-bold text-emerald-800">ไม่มีคาบซ้ำ</p>
-            <p className="text-[11px] text-emerald-700">
+            <p className="text-sm font-bold text-[var(--success-strong)]">ไม่มีคาบซ้ำ</p>
+            <p className="text-[11px] text-[var(--success-strong)] opacity-90">
               {scopeLabel ? `ใน ${scopeLabel} ไม่ชนกัน` : 'ตารางสอนทุกห้องไม่ชนกัน'}
             </p>
           </div>
         </div>
         {scopeLabel && (
-          <div className="mt-2 inline-flex items-center gap-1 rounded-md bg-white px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+          <div className="pill pill-ok mt-2">
             <Filter size={10} />
             ขอบเขต: {scopeLabel}
           </div>
@@ -68,20 +68,20 @@ export default function ScheduleClashPanel({
   }
 
   return (
-    <div className="rounded-[var(--radius-lg)] border border-red-200 bg-white p-4 shadow-[var(--shadow-sm)]">
+    <div className="card p-4">
       <div className="mb-3 flex items-center gap-2">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-red-100 text-red-600">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--danger-soft)] text-[var(--danger-strong)]">
           <AlertTriangle size={16} />
         </div>
         <div>
-          <p className="text-sm font-bold text-red-700">พบคาบซ้ำ {clashes.length} จุด</p>
+          <p className="text-sm font-bold text-[var(--danger-strong)]">พบคาบซ้ำ {clashes.length} จุด</p>
           <p className="text-[11px] text-[var(--muted)]">
             วิชาเดียวกันถูกจัดเวลาเดียวกันในหลายห้อง — ครูประจำวิชาอาจสอนซ้ำ
           </p>
         </div>
       </div>
       {scopeLabel && (
-        <div className="mb-3 inline-flex items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+        <div className="pill pill-brand mb-3">
           <Filter size={10} />
           ขอบเขต: {scopeLabel}
         </div>
@@ -89,7 +89,7 @@ export default function ScheduleClashPanel({
 
       {currentClashes.length > 0 && (
         <>
-          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-red-600">
+          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--danger-strong)]">
             ในห้องนี้
           </p>
           <div className="mb-3 space-y-1.5">
@@ -136,17 +136,17 @@ function ClashItem({
   onJumpTo: (classroomId: number, day: number, period: number) => void
 }) {
   return (
-    <div className="rounded-lg border border-red-100 bg-red-50/50 p-2.5">
-      <div className="mb-1 flex items-center justify-between text-[11px] font-semibold text-red-800">
+    <div className="rounded-lg bg-[var(--danger-soft)] p-2.5">
+      <div className="mb-1 flex items-center justify-between text-[11px] font-semibold text-[var(--danger-strong)]">
         <span>
           {DAYS[clash.day - 1]} · คาบ {clash.period}
           {clash.subjectCode && (
-            <span className="ml-1.5 rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold">
+            <span className="ml-1.5 rounded bg-[var(--surface)] px-1.5 py-0.5 text-[10px] font-bold text-[var(--danger-strong)]">
               {clash.subjectCode}
             </span>
           )}
         </span>
-        <span className="font-normal text-red-600">{PERIOD_TIMES[clash.period - 1]}</span>
+        <span className="font-normal text-[var(--danger-strong)] opacity-80">{PERIOD_TIMES[clash.period - 1]}</span>
       </div>
       <div className="flex flex-wrap gap-1">
         {clash.classroomIds.map((id, idx) => {
@@ -159,8 +159,8 @@ function ClashItem({
               onClick={() => onJumpTo(id, clash.day, clash.period)}
               className={`inline-flex items-center gap-0.5 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold transition ${
                 isCurrent
-                  ? 'border-red-300 bg-white text-red-700'
-                  : 'border-red-200 bg-white text-slate-600 hover:bg-red-100'
+                  ? 'border-[var(--danger)] bg-[var(--surface)] text-[var(--danger-strong)]'
+                  : 'border-[var(--line)] bg-[var(--surface)] text-[var(--text-soft)] hover:bg-[var(--danger-soft)]'
               }`}
             >
               {name}

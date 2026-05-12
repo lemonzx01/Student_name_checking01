@@ -62,126 +62,131 @@ export default function SubjectEditModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/40 backdrop-blur-sm p-4 sm:items-center"
       onClick={onClose}
     >
       <div
-        className="animate-slide-up max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-white p-6 shadow-2xl sm:rounded-2xl"
+        className="animate-slide-up max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-t-[var(--radius-xl)] bg-[var(--surface)] shadow-[var(--shadow-lg)] sm:rounded-[var(--radius-xl)]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="mb-5 flex items-start justify-between gap-3">
-          <div>
-            <h2 className="flex items-center gap-2 text-xl font-bold text-slate-900">
-              <Pencil size={18} className="text-violet-600" />
-              จัดการรายวิชา
-            </h2>
-            <p className="mt-1 text-sm text-[var(--muted)]">
-              แก้รหัส (เช่น <span className="font-mono">TH</span> → <span className="font-mono">ท11101</span>) ได้ — ระบบจะอัปเดตคะแนนและตารางสอนให้อัตโนมัติ
-            </p>
+        <div className="flex items-start justify-between gap-3 border-b border-[var(--line-soft)] p-6 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--primary-ghost)] text-[var(--primary)]">
+              <Pencil size={20} />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-[var(--text)]">จัดการรายวิชา</h2>
+              <p className="mt-0.5 text-xs text-[var(--muted)]">
+                แก้รหัส (เช่น <span className="font-mono">TH</span> → <span className="font-mono">ท11101</span>) ได้ — ระบบจะอัปเดตคะแนนและตารางสอนให้อัตโนมัติ
+              </p>
+            </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="btn-press flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border border-[var(--line)] text-slate-500 transition hover:bg-slate-50"
+            className="btn btn-ghost btn-icon"
             title="ปิด (Esc)"
+            aria-label="ปิด"
           >
             <X size={16} />
           </button>
         </div>
 
-        {/* Subject list */}
-        <div className="space-y-3">
-          {subjects.map((subject) => (
-            <SubjectRow
-              key={subject.code}
-              subject={subject}
-              onUpdateName={(name) => onUpdate(subject.code, { name })}
-              onUpdateColor={(color) => onUpdate(subject.code, { color })}
-              onRenameCode={(newCode) => onRenameCode(subject.code, newCode)}
-              onRemove={() => onRemove(subject.code)}
-            />
-          ))}
-        </div>
+        <div className="p-6">
+          {/* Subject list */}
+          <div className="space-y-3">
+            {subjects.map((subject) => (
+              <SubjectRow
+                key={subject.code}
+                subject={subject}
+                onUpdateName={(name) => onUpdate(subject.code, { name })}
+                onUpdateColor={(color) => onUpdate(subject.code, { color })}
+                onRenameCode={(newCode) => onRenameCode(subject.code, newCode)}
+                onRemove={() => onRemove(subject.code)}
+              />
+            ))}
+          </div>
 
-        {/* Add new subject */}
-        <div className="mt-4">
-          {showAddForm ? (
-            <AddSubjectForm
-              onCancel={() => {
-                setShowAddForm(false)
-                setAddError(null)
-              }}
-              onAdd={(subj) => {
-                const ok = onAdd(subj)
-                if (!ok) {
-                  setAddError(`รหัส "${subj.code}" มีอยู่แล้ว — กรุณาใช้รหัสอื่น`)
-                  return
-                }
-                setShowAddForm(false)
-                setAddError(null)
-              }}
-              error={addError}
-              existingCodes={new Set(subjects.map((s) => s.code))}
-            />
-          ) : (
-            <button
-              type="button"
-              onClick={() => setShowAddForm(true)}
-              className="btn-press flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-[var(--line)] bg-slate-50/50 px-4 py-3 text-sm font-semibold text-slate-600 transition hover:border-violet-300 hover:bg-violet-50/50 hover:text-violet-700"
-            >
-              <Plus size={16} />
-              เพิ่มวิชาใหม่
-            </button>
-          )}
-        </div>
+          {/* Add new subject */}
+          <div className="mt-4">
+            {showAddForm ? (
+              <AddSubjectForm
+                onCancel={() => {
+                  setShowAddForm(false)
+                  setAddError(null)
+                }}
+                onAdd={(subj) => {
+                  const ok = onAdd(subj)
+                  if (!ok) {
+                    setAddError(`รหัส "${subj.code}" มีอยู่แล้ว — กรุณาใช้รหัสอื่น`)
+                    return
+                  }
+                  setShowAddForm(false)
+                  setAddError(null)
+                }}
+                error={addError}
+                existingCodes={new Set(subjects.map((s) => s.code))}
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowAddForm(true)}
+                className="btn-press flex w-full items-center justify-center gap-2 rounded-[var(--radius)] border-2 border-dashed border-[var(--line)] bg-[var(--surface-soft)] px-4 py-3 text-sm font-semibold text-[var(--text-soft)] transition hover:border-[var(--primary)] hover:bg-[var(--primary-ghost)] hover:text-[var(--primary-strong)]"
+              >
+                <Plus size={16} />
+                เพิ่มวิชาใหม่
+              </button>
+            )}
+          </div>
 
-        {/* Footer */}
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
-          {confirmReset ? (
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <span className="text-xs text-slate-700">
-                รีเซ็ตทั้งหมด? <span className="text-amber-700">(คะแนนใน DB ที่ใช้รหัสปัจจุบันอยู่จะยังคงอยู่ภายใต้รหัสเดิม)</span>
-              </span>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    onReset()
-                    setConfirmReset(false)
-                  }}
-                  className="btn-press rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
-                >
-                  ยืนยันรีเซ็ต
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmReset(false)}
-                  className="rounded-lg border border-[var(--line)] px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-                >
-                  ยกเลิก
-                </button>
+          {/* Footer */}
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line-soft)] pt-4">
+            {confirmReset ? (
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <span className="text-xs text-[var(--text-soft)]">
+                  รีเซ็ตทั้งหมด? <span className="text-[var(--warning-strong)]">(คะแนนใน DB ที่ใช้รหัสปัจจุบันอยู่จะยังคงอยู่ภายใต้รหัสเดิม)</span>
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onReset()
+                      setConfirmReset(false)
+                    }}
+                    className="btn btn-danger btn-sm"
+                  >
+                    ยืนยันรีเซ็ต
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmReset(false)}
+                    className="btn btn-secondary btn-sm"
+                  >
+                    ยกเลิก
+                  </button>
+                </div>
               </div>
-            </div>
-          ) : (
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmReset(true)}
+                className="btn btn-secondary btn-sm"
+              >
+                <RotateCcw size={13} />
+                รีเซ็ตเป็นค่าเริ่มต้น
+              </button>
+            )}
+
             <button
               type="button"
-              onClick={() => setConfirmReset(true)}
-              className="btn-press inline-flex items-center gap-1.5 rounded-lg border border-[var(--line)] px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-red-300 hover:text-red-600"
+              onClick={onClose}
+              className="btn btn-primary"
             >
-              <RotateCcw size={13} />
-              รีเซ็ตเป็นค่าเริ่มต้น
+              <Save size={15} />
+              เสร็จแล้ว
             </button>
-          )}
-
-          <button
-            type="button"
-            onClick={onClose}
-            className="btn-press inline-flex items-center gap-1.5 rounded-xl bg-[var(--primary)] px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[var(--primary-strong)]"
-          >
-            <Save size={15} />
-            เสร็จแล้ว
-          </button>
+          </div>
         </div>
       </div>
     </div>
@@ -247,10 +252,10 @@ function SubjectRow({
   }
 
   return (
-    <div className={`rounded-xl border p-3 transition ${
+    <div className={`rounded-[var(--radius)] border p-3 transition ${
       subject.isDefault
-        ? 'border-[var(--line)] bg-slate-50/60'
-        : 'border-violet-200 bg-violet-50/40'
+        ? 'border-[var(--line)] bg-[var(--surface-soft)]'
+        : 'border-[var(--primary-soft)] bg-[var(--primary-ghost)]'
     }`}>
       <div className="flex items-start gap-3">
         {/* Code input — แก้ได้ทุกวิชา */}
@@ -296,9 +301,14 @@ function SubjectRow({
               if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
             }}
             placeholder="ชื่อวิชา"
-            className="w-full rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-sm font-medium outline-none transition focus:border-[var(--primary)] focus:ring-2 focus:ring-blue-100"
+            className="input h-10 py-0"
           />
-          {codeError && <p className="mt-1 text-[11px] text-red-600">{codeError}</p>}
+          {codeError && (
+            <p className="mt-1 flex items-center gap-1 text-[11px] text-[var(--danger)]">
+              <Trash2 size={10} />
+              {codeError}
+            </p>
+          )}
         </div>
 
         {/* Color picker */}
@@ -313,7 +323,7 @@ function SubjectRow({
           {showPalette && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setShowPalette(false)} />
-              <div className="absolute right-0 top-full z-20 mt-2 grid grid-cols-5 gap-1.5 rounded-xl border border-[var(--line)] bg-white p-2 shadow-xl">
+              <div className="absolute right-0 top-full z-20 mt-2 grid grid-cols-5 gap-1.5 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-2 shadow-[var(--shadow-lg)]">
                 {COLOR_PALETTE.map((color) => (
                   <button
                     key={color}
@@ -339,7 +349,7 @@ function SubjectRow({
               <button
                 type="button"
                 onClick={onRemove}
-                className="rounded-lg bg-red-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-red-700"
+                className="btn btn-danger btn-sm"
                 title="ยืนยันลบ"
               >
                 ยืนยัน
@@ -347,7 +357,7 @@ function SubjectRow({
               <button
                 type="button"
                 onClick={() => setConfirmDelete(false)}
-                className="rounded-lg border border-[var(--line)] px-2 py-1 text-[11px] font-semibold text-slate-500 hover:bg-slate-50"
+                className="btn btn-secondary btn-sm"
               >
                 ยกเลิก
               </button>
@@ -356,7 +366,7 @@ function SubjectRow({
             <button
               type="button"
               onClick={() => setConfirmDelete(true)}
-              className="btn-press flex h-10 w-10 items-center justify-center rounded-lg border border-[var(--line)] text-slate-400 transition hover:border-red-300 hover:text-red-600"
+              className="btn btn-ghost btn-icon"
               title="ลบวิชานี้ (คะแนนเก่าไม่ถูกลบ จะแสดงเป็น orphan)"
             >
               <Trash2 size={14} />
@@ -389,8 +399,8 @@ function AddSubjectForm({
   const canSubmit = trimmedCode.length > 0 && trimmedName.length > 0 && !isDuplicate
 
   return (
-    <div className="rounded-xl border-2 border-violet-200 bg-violet-50/40 p-3">
-      <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-violet-800">
+    <div className="rounded-[var(--radius)] border-2 border-[var(--primary-soft)] bg-[var(--primary-ghost)] p-3">
+      <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-[var(--primary-strong)]">
         <Plus size={14} />
         เพิ่มวิชาใหม่
       </div>
@@ -401,14 +411,14 @@ function AddSubjectForm({
           onChange={(e) => setCode(e.target.value)}
           maxLength={10}
           placeholder="รหัส (เช่น CN, ท11101)"
-          className="h-10 w-32 rounded-lg border border-[var(--line)] bg-white px-2 text-center text-sm font-bold outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100"
+          className="input h-10 w-32 text-center font-bold"
         />
         <input
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="ชื่อวิชา (เช่น ภาษาจีน)"
-          className="h-10 min-w-[180px] flex-1 rounded-lg border border-[var(--line)] bg-white px-3 text-sm outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-100"
+          className="input h-10 min-w-[180px] flex-1"
         />
         <div className="flex items-center gap-1.5">
           {COLOR_PALETTE.slice(0, 8).map((c) => (
@@ -417,7 +427,7 @@ function AddSubjectForm({
               type="button"
               onClick={() => setColor(c)}
               className={`h-7 w-7 rounded-md transition ${
-                c === color ? 'ring-2 ring-offset-2 ring-violet-500 scale-110' : 'hover:scale-110'
+                c === color ? 'ring-2 ring-offset-2 ring-[var(--primary)] scale-110' : 'hover:scale-110'
               }`}
               style={{ backgroundColor: c }}
             />
@@ -426,7 +436,7 @@ function AddSubjectForm({
       </div>
 
       {(isDuplicate || error) && (
-        <p className="mt-2 text-[11px] text-red-600">
+        <p className="mt-2 text-[11px] text-[var(--danger)]">
           {isDuplicate ? `รหัส "${trimmedCode}" มีอยู่แล้ว` : error}
         </p>
       )}
@@ -435,7 +445,7 @@ function AddSubjectForm({
         <button
           type="button"
           onClick={onCancel}
-          className="rounded-lg border border-[var(--line)] bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+          className="btn btn-secondary btn-sm"
         >
           ยกเลิก
         </button>
@@ -443,7 +453,7 @@ function AddSubjectForm({
           type="button"
           onClick={() => canSubmit && onAdd({ code: trimmedCode, name: trimmedName, color })}
           disabled={!canSubmit}
-          className="btn-press inline-flex items-center gap-1 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
+          className="btn btn-primary btn-sm"
         >
           <Plus size={12} />
           เพิ่ม

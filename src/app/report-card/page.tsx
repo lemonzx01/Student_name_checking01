@@ -6,7 +6,6 @@ import { useSearchParams } from 'next/navigation'
 import {
   AlertTriangle,
   Award,
-  ChevronLeft,
   Download,
   FileText,
   NotebookPen,
@@ -14,6 +13,7 @@ import {
   User,
 } from 'lucide-react'
 import CustomSelect from '@/components/CustomSelect'
+import PageHeader from '@/components/PageHeader'
 import {
   getClassrooms,
   getGradesData,
@@ -384,32 +384,19 @@ function ReportCardContent() {
 
   return (
     <div className="mx-auto max-w-6xl animate-fade-in">
-      {/* Breadcrumb */}
-      <div className="mb-4">
-        <Link
-          href="/"
-          className="btn-press inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm font-medium text-[var(--primary)] transition hover:bg-blue-50"
-        >
-          <ChevronLeft size={16} />
-          กลับหน้าหลัก
-        </Link>
-      </div>
+      <PageHeader
+        icon={FileText}
+        badge="Report Card"
+        tone="warn"
+        title="ใบรายงานคะแนน"
+        subtitle="ดาวน์โหลด PDF คะแนนนักเรียนรายคนหรือทั้งห้อง (แสดงเฉพาะวิชาที่กรอกคะแนนแล้ว) พร้อมบันทึกประจำตัว"
+      />
 
-      {/* Header */}
-      <section className="animate-slide-up mb-5 rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-6 shadow-[var(--shadow-sm)]">
-        <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-600">
-          <FileText size={13} />
-          Report Card
-        </div>
-        <h1 className="text-2xl font-bold text-slate-900 md:text-3xl">ใบรายงานคะแนน</h1>
-        <p className="mt-1 text-sm text-[var(--muted)]">
-          ดาวน์โหลด PDF คะแนนนักเรียนรายคนหรือทั้งห้อง (แสดงเฉพาะวิชาที่กรอกคะแนนแล้ว) พร้อมบันทึกประจำตัว
-        </p>
-
-        {/* ตัวเลือก */}
-        <div className="mt-5 grid gap-3 md:grid-cols-4">
+      {/* Controls */}
+      <section className="card animate-slide-up mb-5 p-6">
+        <div className="grid gap-3 md:grid-cols-4">
           <div>
-            <label className="mb-1 block text-xs font-semibold text-slate-700">ห้องเรียน</label>
+            <label className="mb-1 block text-xs font-semibold text-[var(--text-soft)]">ห้องเรียน</label>
             <CustomSelect
               value={selectedClassroom ?? ''}
               onChange={(v) => {
@@ -422,7 +409,7 @@ function ReportCardContent() {
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-semibold text-slate-700">ภาคเรียน</label>
+            <label className="mb-1 block text-xs font-semibold text-[var(--text-soft)]">ภาคเรียน</label>
             <CustomSelect
               value={semester}
               onChange={(v) => setSemester(Number(v))}
@@ -433,7 +420,7 @@ function ReportCardContent() {
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-semibold text-slate-700">ปีการศึกษา</label>
+            <label className="mb-1 block text-xs font-semibold text-[var(--text-soft)]">ปีการศึกษา</label>
             <CustomSelect
               value={academicYear}
               onChange={(v) => setAcademicYear(String(v))}
@@ -441,7 +428,7 @@ function ReportCardContent() {
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-semibold text-slate-700">นักเรียน</label>
+            <label className="mb-1 block text-xs font-semibold text-[var(--text-soft)]">นักเรียน</label>
             <CustomSelect
               value={selectedStudentId ?? ''}
               onChange={(v) => setSelectedStudentId(v ? Number(v) : null)}
@@ -454,13 +441,13 @@ function ReportCardContent() {
           </div>
         </div>
 
-        {/* ปุ่ม export */}
+        {/* Action buttons */}
         <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           <button
             type="button"
             disabled={exporting || !selectedStudent || activeSubjectCodes.length === 0}
             onClick={() => buildAndDownloadPdf('single')}
-            className="btn-press inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-[var(--primary-strong)] disabled:cursor-not-allowed disabled:opacity-50"
+            className="btn btn-primary btn-lg"
           >
             <Download size={16} />
             {exporting ? 'กำลังสร้าง PDF...' : 'ดาวน์โหลด PDF (นักเรียนคนนี้)'}
@@ -469,7 +456,7 @@ function ReportCardContent() {
             type="button"
             disabled={exporting || students.length === 0 || activeSubjectCodes.length === 0}
             onClick={() => buildAndDownloadPdf('all')}
-            className="btn-press inline-flex items-center justify-center gap-2 rounded-xl border-2 border-[var(--primary)] bg-white px-5 py-3 text-sm font-bold text-[var(--primary)] transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+            className="btn btn-brand-ghost btn-lg"
           >
             <FileText size={16} />
             ดาวน์โหลด PDF (ทั้งห้อง {students.length} คน)
@@ -477,7 +464,7 @@ function ReportCardContent() {
           <button
             type="button"
             onClick={() => window.print()}
-            className="btn-press inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--line)] px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            className="btn btn-secondary btn-lg"
           >
             <Printer size={16} />
             พิมพ์หน้านี้
@@ -485,24 +472,20 @@ function ReportCardContent() {
         </div>
 
         {message ? (
-          <div
-            className={`mt-4 rounded-xl px-4 py-2.5 text-sm font-medium ${
-              message.type === 'success'
-                ? 'bg-emerald-50 text-emerald-700'
-                : 'bg-red-50 text-red-700'
-            }`}
-          >
-            {message.text}
+          <div className="mt-4">
+            <span className={`pill ${message.type === 'success' ? 'pill-ok' : 'pill-danger'}`}>
+              {message.text}
+            </span>
           </div>
         ) : null}
 
         {/* Info banner - บอกว่ากำลังแสดงกี่วิชา */}
         {!loading && selectedClassroom ? (
           activeSubjectCodes.length > 0 ? (
-            <div className="mt-4 flex items-start gap-3 rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3 text-sm text-slate-700">
-              <FileText size={18} className="mt-0.5 flex-shrink-0 text-blue-600" />
+            <div className="mt-4 flex items-start gap-3 rounded-[var(--radius-lg)] border border-[var(--line-soft)] bg-[var(--primary-ghost)] px-4 py-3 text-sm text-[var(--text)]">
+              <FileText size={18} className="mt-0.5 flex-shrink-0 text-[var(--primary)]" />
               <div>
-                <span className="font-semibold text-blue-700">
+                <span className="font-semibold text-[var(--primary-strong)]">
                   แสดง {activeSubjectCodes.length} วิชา
                 </span>{' '}
                 ที่คุณกรอกคะแนนในภาคเรียนนี้ —{' '}
@@ -515,10 +498,10 @@ function ReportCardContent() {
               </div>
             </div>
           ) : (
-            <div className="mt-4 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-slate-700">
-              <AlertTriangle size={18} className="mt-0.5 flex-shrink-0 text-amber-600" />
+            <div className="mt-4 flex items-start gap-3 rounded-[var(--radius-lg)] border border-[var(--line-soft)] bg-[var(--warning-soft)] px-4 py-3 text-sm text-[var(--text)]">
+              <AlertTriangle size={18} className="mt-0.5 flex-shrink-0 text-[var(--warning)]" />
               <div>
-                <span className="font-semibold text-amber-700">ยังไม่มีวิชาที่กรอกคะแนน</span>{' '}
+                <span className="font-semibold text-[var(--warning-strong)]">ยังไม่มีวิชาที่กรอกคะแนน</span>{' '}
                 สำหรับห้องนี้ ภาคเรียน {semester}/{academicYear} —{' '}
                 <Link
                   href={`/grades?classroom=${selectedClassroom}`}
@@ -534,18 +517,18 @@ function ReportCardContent() {
 
       {/* Preview */}
       {loading ? (
-        <div className="rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-8 shadow-[var(--shadow-sm)]">
+        <div className="card p-8">
           <div className="skeleton mb-3 h-5 w-48" />
           <div className="skeleton mb-2 h-4 w-full" />
           <div className="skeleton mb-2 h-4 w-5/6" />
           <div className="skeleton h-4 w-3/4" />
         </div>
       ) : !selectedStudent || !summary ? (
-        <div className="rounded-[var(--radius-lg)] border-2 border-dashed border-[var(--line)] bg-white p-12 text-center">
-          <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-xl bg-amber-50 text-amber-500">
+        <div className="empty-state">
+          <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--warning-soft)] text-[var(--warning)]">
             <AlertTriangle size={22} />
           </div>
-          <p className="text-lg font-bold text-slate-900">
+          <p className="text-lg font-bold text-[var(--text)]">
             {students.length === 0
               ? 'ห้องนี้ยังไม่มีนักเรียน'
               : 'กรุณาเลือกนักเรียนเพื่อดูตัวอย่าง'}
@@ -555,10 +538,10 @@ function ReportCardContent() {
           </p>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--line)] bg-white shadow-[var(--shadow-sm)] print:border-0 print:shadow-none">
+        <div className="card overflow-hidden print:border-0 print:shadow-none">
           {/* Header ในตัวอย่าง */}
-          <div className="border-b border-[var(--line)] bg-slate-50 px-6 py-4 print:bg-white">
-            <p className="text-center text-lg font-bold text-slate-900">
+          <div className="border-b border-[var(--line)] bg-[var(--surface-soft)] px-6 py-4 print:bg-[var(--surface)]">
+            <p className="text-center text-lg font-bold text-[var(--text)]">
               ใบรายงานคะแนนนักเรียน
             </p>
             <p className="mt-1 text-center text-sm text-[var(--muted)]">
@@ -569,30 +552,30 @@ function ReportCardContent() {
           {/* ข้อมูลนักเรียน */}
           <div className="grid gap-3 border-b border-[var(--line)] px-6 py-4 md:grid-cols-2">
             <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--primary-ghost)] text-[var(--primary)]">
                 <User size={18} />
               </div>
               <div>
                 <p className="text-xs font-medium text-[var(--muted)]">ชื่อ–นามสกุล</p>
-                <p className="text-base font-bold text-slate-900">{displayName(selectedStudent)}</p>
+                <p className="text-base font-bold text-[var(--text)]">{displayName(selectedStudent)}</p>
               </div>
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div>
                 <p className="text-xs font-medium text-[var(--muted)]">เลขที่</p>
-                <p className="text-base font-bold text-slate-900">
+                <p className="text-base font-bold text-[var(--text)]">
                   {selectedStudent.student_number || '-'}
                 </p>
               </div>
               <div>
                 <p className="text-xs font-medium text-[var(--muted)]">รหัสนักเรียน</p>
-                <p className="text-base font-bold text-slate-900">
+                <p className="text-base font-bold text-[var(--text)]">
                   {selectedStudent.student_id || '-'}
                 </p>
               </div>
               <div>
                 <p className="text-xs font-medium text-[var(--muted)]">ห้องเรียน</p>
-                <p className="text-base font-bold text-slate-900">
+                <p className="text-base font-bold text-[var(--text)]">
                   {selectedClassroomObj?.name || '-'}
                 </p>
               </div>
@@ -603,7 +586,7 @@ function ReportCardContent() {
           <div className="overflow-x-auto px-6 py-4">
             <table className="min-w-full border-separate border-spacing-0 text-sm">
               <thead>
-                <tr className="bg-blue-50 text-left text-xs font-bold uppercase tracking-wider text-slate-700">
+                <tr className="bg-[var(--primary-ghost)] text-left text-xs font-bold uppercase tracking-wider text-[var(--text-soft)]">
                   <th className="border border-[var(--line)] px-3 py-2">รหัส</th>
                   <th className="border border-[var(--line)] px-3 py-2">รายวิชา</th>
                   <th className="border border-[var(--line)] px-3 py-2 text-center">กลางภาค</th>
@@ -615,20 +598,20 @@ function ReportCardContent() {
               <tbody>
                 {summary.entries.map((e) => (
                   <tr key={e.code}>
-                    <td className="border border-[var(--line)] px-3 py-2 font-mono text-xs">
+                    <td className="border border-[var(--line)] px-3 py-2 font-mono text-xs text-[var(--text-soft)]">
                       {e.code}
                     </td>
-                    <td className="border border-[var(--line)] px-3 py-2">{e.name}</td>
-                    <td className="border border-[var(--line)] px-3 py-2 text-center">
+                    <td className="border border-[var(--line)] px-3 py-2 text-[var(--text)]">{e.name}</td>
+                    <td className="border border-[var(--line)] px-3 py-2 text-center text-[var(--text)]">
                       {e.total > 0 ? e.midterm : '-'}
                     </td>
-                    <td className="border border-[var(--line)] px-3 py-2 text-center">
+                    <td className="border border-[var(--line)] px-3 py-2 text-center text-[var(--text)]">
                       {e.total > 0 ? e.final : '-'}
                     </td>
-                    <td className="border border-[var(--line)] px-3 py-2 text-center font-semibold">
+                    <td className="border border-[var(--line)] px-3 py-2 text-center font-semibold text-[var(--text)]">
                       {e.total > 0 ? e.total : '-'}
                     </td>
-                    <td className="border border-[var(--line)] px-3 py-2 text-center font-bold text-slate-900">
+                    <td className="border border-[var(--line)] px-3 py-2 text-center font-bold text-[var(--text)]">
                       {e.grade}
                     </td>
                   </tr>
@@ -637,12 +620,12 @@ function ReportCardContent() {
             </table>
 
             {/* GPA */}
-            <div className="mt-4 flex items-center justify-between rounded-xl border-2 border-amber-200 bg-amber-50 px-5 py-3">
+            <div className="mt-4 flex items-center justify-between rounded-[var(--radius-lg)] border border-[var(--warning-soft)] bg-[var(--warning-soft)] px-5 py-3">
               <div className="flex items-center gap-2">
-                <Award size={18} className="text-amber-600" />
-                <span className="text-sm font-semibold text-slate-800">เกรดเฉลี่ยรวม (GPA)</span>
+                <Award size={18} className="text-[var(--warning-strong)]" />
+                <span className="text-sm font-semibold text-[var(--text)]">เกรดเฉลี่ยรวม (GPA)</span>
               </div>
-              <span className="text-2xl font-bold text-amber-700">
+              <span className="text-2xl font-bold text-[var(--warning-strong)]">
                 {summary.gpa > 0 ? summary.gpa.toFixed(2) : '-'}
               </span>
             </div>
@@ -651,13 +634,13 @@ function ReportCardContent() {
           {/* บันทึกประจำตัว */}
           <div className="border-t border-[var(--line)] px-6 py-4">
             <div className="mb-3 flex items-center gap-2">
-              <NotebookPen size={16} className="text-violet-600" />
-              <span className="text-sm font-bold text-slate-800">
+              <NotebookPen size={16} className="text-[var(--accent)]" />
+              <span className="section-title">
                 บันทึกประจำตัวนักเรียน (ล่าสุด 5 รายการ)
               </span>
             </div>
             {notes.length === 0 ? (
-              <p className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-[var(--muted)]">
+              <p className="rounded-[var(--radius-lg)] bg-[var(--surface-muted)] px-4 py-3 text-sm text-[var(--muted)]">
                 ยังไม่มีบันทึกประจำตัวสำหรับนักเรียนคนนี้
               </p>
             ) : (
@@ -665,12 +648,12 @@ function ReportCardContent() {
                 {notes.slice(0, 5).map((n) => (
                   <li
                     key={n.id}
-                    className="flex items-start gap-3 rounded-xl border border-[var(--line)] px-4 py-2.5"
+                    className="flex items-start gap-3 rounded-[var(--radius-lg)] border border-[var(--line)] px-4 py-2.5"
                   >
-                    <span className="min-w-[90px] flex-shrink-0 rounded-md bg-violet-50 px-2 py-1 text-center text-xs font-bold text-violet-700">
+                    <span className="pill pill-accent min-w-[90px] justify-center">
                       {formatThaiShortDate(n.date)}
                     </span>
-                    <span className="flex-1 text-sm text-slate-700">{n.note}</span>
+                    <span className="flex-1 text-sm text-[var(--text-soft)]">{n.note}</span>
                   </li>
                 ))}
               </ul>

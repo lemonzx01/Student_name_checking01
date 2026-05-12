@@ -71,19 +71,19 @@ export default function ScheduleHoursCounter({ schedule, level }: ScheduleHoursC
   const totalSubjects = SUBJECTS.filter((s) => (target[s.code] || 0) > 0).length
 
   return (
-    <div className="rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-4 shadow-[var(--shadow-sm)]">
+    <div className="card p-4">
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--primary-ghost)] text-[var(--primary-strong)]">
             <BarChart3 size={16} />
           </div>
           <div>
-            <p className="text-sm font-bold text-slate-900">จำนวนคาบ/สัปดาห์</p>
+            <p className="section-title text-sm">จำนวนคาบ/สัปดาห์</p>
             <p className="text-[11px] text-[var(--muted)]">เทียบกับมาตรฐาน {levelLabel}</p>
           </div>
         </div>
         <div className="text-right">
-          <p className="text-xs font-bold text-slate-900">
+          <p className="text-xs font-bold text-[var(--text)]">
             {totalCurrent}
             <span className="text-[var(--muted)]">/{totalTarget}</span>
           </p>
@@ -91,12 +91,12 @@ export default function ScheduleHoursCounter({ schedule, level }: ScheduleHoursC
         </div>
       </div>
 
-      {/* Sticker สรุป */}
+      {/* Sticker สรุป — pill token */}
       <div
-        className={`mb-3 flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold ${
+        className={`mb-3 inline-flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${
           onTargetCount === totalSubjects
-            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-            : 'border-amber-200 bg-amber-50 text-amber-700'
+            ? 'bg-[var(--success-soft)] text-[var(--success-strong)]'
+            : 'bg-[var(--warning-soft)] text-[var(--warning-strong)]'
         }`}
       >
         {onTargetCount === totalSubjects ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
@@ -114,28 +114,36 @@ export default function ScheduleHoursCounter({ schedule, level }: ScheduleHoursC
           const over = cur > tgt
           const reached = cur >= tgt
 
+          // map สถานะ → token color
+          const barColor = over
+            ? 'var(--warning)'
+            : reached
+              ? 'var(--success)'
+              : s.color
+          const numberClass = over
+            ? 'text-[var(--warning-strong)]'
+            : reached
+              ? 'text-[var(--success-strong)]'
+              : 'text-[var(--muted)]'
+
           return (
             <div key={s.code} className="space-y-1">
               <div className="flex items-center justify-between text-[11px]">
                 <div className="flex items-center gap-1.5">
                   <span className="h-2 w-2 rounded-full" style={{ backgroundColor: s.color }} />
-                  <span className="font-bold text-slate-700">{s.code}</span>
+                  <span className="font-bold text-[var(--text-soft)]">{s.code}</span>
                   <span className="text-[var(--muted)]">{s.name}</span>
                 </div>
-                <span
-                  className={`font-bold ${
-                    over ? 'text-amber-600' : reached ? 'text-emerald-600' : 'text-slate-500'
-                  }`}
-                >
+                <span className={`font-bold ${numberClass}`}>
                   {cur}/{tgt}
                 </span>
               </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+              <div className="h-1.5 overflow-hidden rounded-full bg-[var(--surface-muted)]">
                 <div
                   className="h-full rounded-full transition-all"
                   style={{
                     width: `${pct}%`,
-                    backgroundColor: over ? '#f59e0b' : reached ? '#10b981' : s.color,
+                    backgroundColor: barColor,
                   }}
                 />
               </div>

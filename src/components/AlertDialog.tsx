@@ -16,31 +16,27 @@ export interface AlertDialogProps {
 
 const VARIANT_STYLE: Record<
   AlertVariant,
-  { icon: typeof Info; bg: string; text: string; btn: string }
+  { icon: typeof Info; iconBg: string; btnClass: string }
 > = {
   info: {
     icon: Info,
-    bg: 'bg-blue-50 text-blue-600',
-    text: 'text-slate-900',
-    btn: 'bg-[var(--primary)] hover:bg-[var(--primary-strong)]',
+    iconBg: 'bg-[var(--primary-ghost)] text-[var(--primary)]',
+    btnClass: 'btn-primary',
   },
   success: {
     icon: CheckCircle,
-    bg: 'bg-emerald-50 text-emerald-600',
-    text: 'text-slate-900',
-    btn: 'bg-emerald-600 hover:bg-emerald-700',
+    iconBg: 'bg-[var(--success-soft)] text-[var(--success)]',
+    btnClass: 'btn-primary',
   },
   error: {
     icon: AlertCircle,
-    bg: 'bg-red-50 text-red-600',
-    text: 'text-slate-900',
-    btn: 'bg-red-600 hover:bg-red-700',
+    iconBg: 'bg-[var(--danger-soft)] text-[var(--danger)]',
+    btnClass: 'btn-danger',
   },
   warning: {
     icon: AlertCircle,
-    bg: 'bg-amber-50 text-amber-600',
-    text: 'text-slate-900',
-    btn: 'bg-amber-600 hover:bg-amber-700',
+    iconBg: 'bg-[var(--warning-soft)] text-[var(--warning)]',
+    btnClass: 'btn-primary',
   },
 }
 
@@ -67,17 +63,25 @@ export default function AlertDialog({
   const style = VARIANT_STYLE[variant]
   const Icon = style.icon
 
+  // For success variant, override button color
+  const successOverride =
+    variant === 'success'
+      ? { background: 'var(--success)', color: '#fff' }
+      : variant === 'warning'
+        ? { background: 'var(--warning)', color: '#fff' }
+        : undefined
+
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       <div
         className="modal-overlay absolute inset-0 bg-slate-950/40 backdrop-blur-sm"
         onClick={onClose}
       />
-      <div className="modal-content relative w-full max-w-md rounded-[var(--radius-lg)] bg-white p-6 shadow-2xl">
+      <div className="modal-content relative w-full max-w-md rounded-[var(--radius-xl)] bg-[var(--surface)] p-6 shadow-[var(--shadow-lg)]">
         <button
           type="button"
           onClick={onClose}
-          className="btn-press absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+          className="btn btn-ghost btn-icon absolute right-3 top-3"
           aria-label="ปิด"
         >
           <X size={16} />
@@ -85,13 +89,13 @@ export default function AlertDialog({
 
         <div className="mb-3 flex items-start gap-3">
           <div
-            className={`flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl ${style.bg}`}
+            className={`flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl ${style.iconBg}`}
           >
             <Icon size={22} />
           </div>
           <div className="min-w-0 flex-1 pr-6">
-            {title && <h3 className="text-lg font-bold text-slate-900">{title}</h3>}
-            <div className={`${title ? 'mt-1' : ''} text-sm ${style.text}`}>
+            {title && <h3 className="text-lg font-bold text-[var(--text)]">{title}</h3>}
+            <div className={`${title ? 'mt-1' : ''} text-sm text-[var(--text-soft)]`}>
               {typeof message === 'string' ? <p>{message}</p> : message}
             </div>
           </div>
@@ -102,7 +106,8 @@ export default function AlertDialog({
             type="button"
             onClick={onClose}
             autoFocus
-            className={`btn-press inline-flex items-center justify-center rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition ${style.btn}`}
+            className={`btn ${style.btnClass}`}
+            style={successOverride}
           >
             {buttonText}
           </button>
