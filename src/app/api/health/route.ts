@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getStudentsByClassroom, getHealthByClassroom, saveHealth, getAllHealthByClassroom } from '@/lib/db'
+import { getStudentsByClassroom, getHealthByClassroom, saveHealth, getAllHealthByClassroom, upsertHealthEntry } from '@/lib/db'
 import { calculateBmi } from '@/types'
 
 export async function GET(request: Request) {
@@ -121,26 +121,14 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Missing student_id' }, { status: 400 })
       }
 
-      const existing = getHealthByClassroom(classroomId, date)
-      const otherEntries = existing
-        .filter(h => h.student_id !== student_id)
-        .map(h => ({
-          student_id: h.student_id,
-          brushed_teeth: h.brushed_teeth,
-          drank_milk: h.drank_milk,
-          weight_kg: h.weight_kg ?? null,
-          height_cm: h.height_cm ?? null,
-        }))
-
-      otherEntries.push({
+      // atomic single-record upsert — กัน race เมื่อ 2 request พร้อมกันบนวันเดียวกัน
+      upsertHealthEntry(classroomId, date, {
         student_id,
         brushed_teeth: brushed_teeth ?? false,
         drank_milk: drank_milk ?? false,
         weight_kg: weight_kg ?? null,
         height_cm: height_cm ?? null,
       })
-
-      saveHealth(classroomId, date, otherEntries)
     }
 
     return NextResponse.json({ success: true })

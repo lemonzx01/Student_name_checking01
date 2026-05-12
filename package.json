@@ -2,6 +2,7 @@
   "name": "school_system",
   "version": "1.0.0",
   "description": "ระบบจัดการชั้นเรียนและนักเรียน",
+  "main": "electron/main.js",
   "scripts": {
     "dev": "next dev",
     "dev:webpack": "next dev --webpack",
@@ -53,7 +54,24 @@
       "output": "dist"
     },
     "files": [
-      "**/*"
+      "electron/**/*",
+      ".next/standalone/**/*",
+      ".next/static/**/*",
+      "public/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": ".next/static",
+        "to": ".next/static"
+      },
+      {
+        "from": "public",
+        "to": "public"
+      }
+    ],
+    "asarUnpack": [
+      "**/node_modules/better-sqlite3/**/*"
     ],
     "win": {
       "target": "portable",

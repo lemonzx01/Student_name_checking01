@@ -112,6 +112,23 @@ async function migrateSubjectCodeInDB(
   to: string,
   newName?: string
 ): Promise<{ ok: boolean; error?: string }> {
+  // Electron mode: ไม่มี Next.js server — ใช้ IPC โดยตรง
+  // กันเคสที่ migrate ใน production แล้ว fetch ล้มเหลว ทำให้ UI revert ค่ากลับ
+  if (typeof window !== 'undefined' && window.electronAPI) {
+    try {
+      if (from !== to) {
+        await window.electronAPI.renameSubjectCode({ from, to })
+      }
+      if (newName) {
+        await window.electronAPI.renameSubjectName({ code: to, newName })
+      }
+      return { ok: true }
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'อัปเดตผ่าน Electron ไม่สำเร็จ' }
+    }
+  }
+
+  // Web mode: เรียก API route ปกติ
   try {
     const res = await fetch('/api/subjects/rename', {
       method: 'POST',

@@ -30,9 +30,39 @@ function pad(n: number) {
   return String(n).padStart(2, '0')
 }
 
+/**
+ * แปลง input หลาย format → YYYY-MM-DD (ค.ศ.)
+ * รองรับ: YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY (ทั้งปี ค.ศ. และ พ.ศ. — auto convert)
+ * ใช้กับ raw text จาก Excel import ที่ครูอาจกรอกมาหลายรูปแบบ
+ */
+function parseToISO(input: string): string | null {
+  if (!input) return null
+  const trimmed = String(input).trim()
+
+  // YYYY-MM-DD
+  let m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(trimmed)
+  if (m) {
+    const y = Number(m[1])
+    const year = y > 2500 ? y - 543 : y // กัน DB เก่าเก็บปี พ.ศ.
+    return `${year}-${pad(Number(m[2]))}-${pad(Number(m[3]))}`
+  }
+
+  // DD/MM/YYYY หรือ DD-MM-YYYY (พบบ่อยใน Excel ไทย)
+  m = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/.exec(trimmed)
+  if (m) {
+    const y = Number(m[3])
+    const year = y > 2500 ? y - 543 : y
+    return `${year}-${pad(Number(m[2]))}-${pad(Number(m[1]))}`
+  }
+
+  return null
+}
+
 function formatDisplay(dateStr: string) {
   if (!dateStr) return ''
-  const [y, m, d] = dateStr.split('-').map(Number)
+  const iso = parseToISO(dateStr)
+  if (!iso) return dateStr // fallback: แสดง raw text กัน "undefined NaN"
+  const [y, m, d] = iso.split('-').map(Number)
   return `${d} ${MONTHS[m - 1]?.slice(0, 3) ?? ''} ${y + 543}`
 }
 
@@ -57,7 +87,9 @@ export default function CalendarPicker({
   const today = new Date()
   const todayStr = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`
 
-  const initial = value ? new Date(value) : today
+  // ค่าที่ normalize เป็น YYYY-MM-DD แล้ว — ใช้สำหรับ initialize calendar + เปรียบเทียบ cells
+  const normalizedValue = value ? parseToISO(value) : null
+  const initial = normalizedValue ? new Date(normalizedValue) : today
   const [viewYear, setViewYear] = useState(initial.getFullYear())
   const [viewMonth, setViewMonth] = useState(initial.getMonth())
   const [open, setOpen] = useState(false)
@@ -80,8 +112,9 @@ export default function CalendarPicker({
   }, [])
 
   useEffect(() => {
-    if (value) {
-      const d = new Date(value)
+    const iso = value ? parseToISO(value) : null
+    if (iso) {
+      const d = new Date(iso)
       setViewYear(d.getFullYear())
       setViewMonth(d.getMonth())
     }
@@ -331,7 +364,7 @@ export default function CalendarPicker({
               const dateStr = cell.current
                 ? `${viewYear}-${pad(viewMonth + 1)}-${pad(cell.day)}`
                 : ''
-              const isSelected = cell.current && dateStr === value
+              const isSelected = cell.current && dateStr === normalizedValue
               const isToday = cell.current && dateStr === todayStr
               const isMarked = cell.current && markedDates?.has(dateStr)
 

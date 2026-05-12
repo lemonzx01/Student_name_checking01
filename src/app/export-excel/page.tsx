@@ -77,10 +77,20 @@ type ExportType = 'attendance' | 'health' | 'weight_height' | 'grades'
 
 function ExportPageContent() {
   const searchParams = useSearchParams()
-  const initialClassroomId = searchParams.get('classroom') || (typeof window !== 'undefined' ? localStorage.getItem('selectedClassroom') : null)
+  const urlClassroom = searchParams.get('classroom')
 
   const [classrooms, setClassrooms] = useState<Classroom[]>([])
-  const [selectedClassroom, setSelectedClassroom] = useState<number | null>(initialClassroomId ? Number(initialClassroomId) : null)
+  const [selectedClassroom, setSelectedClassroom] = useState<number | null>(
+    urlClassroom ? Number(urlClassroom) : null
+  )
+  useEffect(() => {
+    if (urlClassroom) {
+      setSelectedClassroom(Number(urlClassroom))
+      return
+    }
+    const stored = typeof window !== 'undefined' ? localStorage.getItem('selectedClassroom') : null
+    if (stored) setSelectedClassroom(Number(stored))
+  }, [urlClassroom])
   const [currentClassroomName, setCurrentClassroomName] = useState('')
   const [startDate, setStartDate] = useState(() => {
     const d = new Date()

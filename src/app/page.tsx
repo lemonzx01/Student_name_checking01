@@ -8,7 +8,6 @@ import {
   ClipboardCheck,
   Download,
   FileBarChart,
-  LayoutDashboard,
   Plus,
   School,
   Users,
@@ -179,18 +178,74 @@ export default function HomePage() {
 
   return (
     <div className="mx-auto max-w-7xl animate-fade-in">
-      {/* ─── รายการห้องเรียน (อยู่บนสุด — เปิดได้ทันที) ─────────── */}
-      <section className="animate-slide-up mb-6">
-        <div className="mb-4 flex items-end justify-between">
+      {/* ─── 1. Welcome Hero — ทักทาย + วันที่ + ค้นหา + สถิติย่อ ─── */}
+      <section className="animate-slide-up mb-6 overflow-hidden rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-6 shadow-[var(--shadow-sm)] md:p-8">
+        <div className="grid gap-6 lg:grid-cols-[1.3fr_0.7fr] lg:items-center">
+          <div>
+            <p className="text-sm font-medium text-[var(--primary)]">ยินดีต้อนรับ</p>
+            <h1 className="mt-1 text-3xl font-bold leading-tight text-slate-900 md:text-4xl">
+              ระบบจัดการนักเรียน
+            </h1>
+            <p className="mt-2 text-lg text-slate-600">วันนี้คือ{thaiDate}</p>
+            <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-[var(--muted)]">
+              ดูตารางสอนวันนี้ เช็คชื่อ และเข้าทำงานในห้องเรียนของคุณได้จากเมนูด้านล่าง
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <GlobalSearch placeholder="พิมพ์ชื่อ หรือรหัสนักเรียน" />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex items-center gap-3 rounded-xl border border-[var(--line)] bg-white p-4 stat-blue">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                  <School size={22} />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-[var(--muted)]">ห้องทั้งหมด</p>
+                  <p className="text-xl font-bold text-slate-900">{classrooms.length}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 rounded-xl border border-[var(--line)] bg-white p-4 stat-green">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+                  <Users size={22} />
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-[var(--muted)]">นักเรียน</p>
+                  <p className="text-xl font-bold text-slate-900">{totalStudents}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ─── 2. ห้องเรียนทั้งหมด — Entry point หลัก, ครูเลือกห้องก่อนทำงาน ─── */}
+      <section className="animate-slide-up mb-6" style={{ animationDelay: '60ms' }}>
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="text-xl font-bold text-slate-900 md:text-2xl">ห้องเรียนทั้งหมด</h2>
-            <p className="mt-1 text-sm text-[var(--muted)]">คลิกที่การ์ดเพื่อเปิดรายชื่อนักเรียนในห้องนั้น</p>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              คลิกที่การ์ดเพื่อเปิดรายชื่อนักเรียนในห้องนั้น
+            </p>
           </div>
-          {classrooms.length > 0 && (
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-              {classrooms.length} ห้อง
-            </span>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {classrooms.length > 0 && (
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                {classrooms.length} ห้อง
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setEditingClassroom(null)
+                setModalOpen(true)
+              }}
+              className="btn-press inline-flex items-center gap-2 rounded-xl bg-[var(--primary)] px-4 py-2.5 text-sm font-semibold text-white shadow-[var(--shadow-sm)] transition-all hover:bg-[var(--primary-strong)]"
+            >
+              <Plus size={16} />
+              สร้างห้องเรียน
+            </button>
+            <ExcelImportButton onImported={loadClassrooms} />
+          </div>
         </div>
 
         {loading ? (
@@ -250,49 +305,9 @@ export default function HomePage() {
         )}
       </section>
 
-      {/* ─── ส่วนต้อนรับ + วันที่ + ค้นหา ─────────── */}
-      <section className="animate-slide-up mb-6 overflow-hidden rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-6 shadow-[var(--shadow-sm)] md:p-8">
-        <div className="grid gap-6 lg:grid-cols-[1.3fr_0.7fr] lg:items-center">
-          <div>
-            <p className="text-sm font-medium text-[var(--primary)]">ยินดีต้อนรับ</p>
-            <h1 className="mt-1 text-3xl font-bold leading-tight text-slate-900 md:text-4xl">
-              ระบบจัดการนักเรียน
-            </h1>
-            <p className="mt-2 text-lg text-slate-600">วันนี้คือ{thaiDate}</p>
-            <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-[var(--muted)]">
-              เริ่มจากเลือกเมนูด้านล่าง หรือใช้ช่องค้นหาเพื่อหานักเรียนจากทุกห้องได้ในคลิกเดียว
-            </p>
-          </div>
-
-          <div className="space-y-3">
-            <GlobalSearch placeholder="พิมพ์ชื่อ หรือรหัสนักเรียน" />
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex items-center gap-3 rounded-xl border border-[var(--line)] bg-white p-4 stat-blue">
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-                  <School size={22} />
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-[var(--muted)]">ห้องทั้งหมด</p>
-                  <p className="text-xl font-bold text-slate-900">{classrooms.length}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 rounded-xl border border-[var(--line)] bg-white p-4 stat-green">
-                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-                  <Users size={22} />
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-[var(--muted)]">นักเรียน</p>
-                  <p className="text-xl font-bold text-slate-900">{totalStudents}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ─── วันนี้สอนอะไร + ปฏิทินเช็คชื่อ ─────────── */}
+      {/* ─── 3. วันนี้สอนอะไร + ปฏิทินเช็คชื่อ (ห้องล่าสุด) ─── */}
       {quickClassroomId ? (
-        <section className="animate-slide-up mb-6 space-y-4" style={{ animationDelay: '60ms' }}>
+        <section className="animate-slide-up mb-6 space-y-4" style={{ animationDelay: '100ms' }}>
           <TodaySchedule
             classroomId={quickClassroomId}
             classroomName={quickClassroom?.name || ''}
@@ -304,9 +319,9 @@ export default function HomePage() {
         </section>
       ) : null}
 
-      {/* ─── งานที่ทำบ่อย (Quick Actions) ─────────── */}
+      {/* ─── 4. งานที่ทำบ่อย (Quick Actions) — Shortcut ของห้องล่าสุด ─── */}
       {quickClassroomId ? (
-        <section className="animate-slide-up mb-8" style={{ animationDelay: '100ms' }}>
+        <section className="animate-slide-up mb-8" style={{ animationDelay: '140ms' }}>
           <div className="mb-4 flex items-end justify-between">
             <div>
               <h2 className="text-xl font-bold text-slate-900 md:text-2xl">งานที่ทำบ่อย</h2>
@@ -349,59 +364,8 @@ export default function HomePage() {
         </section>
       ) : null}
 
-      {/* ─── ปุ่ม สร้างห้อง / Import ─────────── */}
-      <section
-        className="animate-slide-up mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--line)] bg-white px-5 py-4 shadow-[var(--shadow-sm)]"
-        style={{ animationDelay: '140ms' }}
-      >
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
-            <Plus size={20} />
-          </div>
-          <div>
-            <p className="text-[15px] font-bold text-slate-900">เริ่มต้นใช้งาน</p>
-            <p className="text-[13px] text-[var(--muted)]">สร้างห้องเอง หรือนำเข้ารายชื่อจาก Excel</p>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              setEditingClassroom(null)
-              setModalOpen(true)
-            }}
-            className="btn-press inline-flex items-center gap-2 rounded-xl bg-[var(--primary)] px-4 py-2.5 text-[15px] font-semibold text-white shadow-[var(--shadow-sm)] transition-all hover:bg-[var(--primary-strong)]"
-          >
-            <Plus size={18} />
-            สร้างห้องเรียน
-          </button>
-          <ExcelImportButton onImported={loadClassrooms} />
-        </div>
-      </section>
-
-      {/* ─── ลิงก์ไปหน้าภาพรวม (Dashboard) ─────────── */}
-      <section className="animate-slide-up mt-6" style={{ animationDelay: '200ms' }}>
-        <Link
-          href="/dashboard"
-          className="card-hover flex items-center gap-4 rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-5 shadow-[var(--shadow-sm)] transition-all hover:-translate-y-0.5 hover:shadow-[var(--shadow-md)]"
-        >
-          <div
-            className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl"
-            style={{ backgroundColor: '#3B82F618', color: '#3B82F6' }}
-          >
-            <LayoutDashboard size={28} strokeWidth={2.2} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-lg font-bold text-slate-900">ภาพรวม (Dashboard)</p>
-            <p className="mt-0.5 text-[13px] text-[var(--muted)]">
-              สถิติขาดเรียน, BMI ผิดปกติ, นักเรียนใหม่, เช็คชื่อล่าสุด
-            </p>
-          </div>
-        </Link>
-      </section>
-
-      {/* ─── สถานะการสำรองข้อมูลอัตโนมัติ ─────────── */}
-      <section className="animate-slide-up mt-8" style={{ animationDelay: '260ms' }}>
+      {/* ─── 5. Backup status (footer notice) ─── */}
+      <section className="animate-slide-up" style={{ animationDelay: '200ms' }}>
         <BackupStatusCard />
       </section>
 

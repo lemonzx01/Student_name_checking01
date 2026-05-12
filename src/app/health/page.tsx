@@ -44,10 +44,18 @@ interface HealthRecord {
 function HealthPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const classroomParam =
-    searchParams.get('classroom') ||
-    (typeof window !== 'undefined' ? localStorage.getItem('selectedClassroom') : null)
-  const selectedClassroom = classroomParam ? Number(classroomParam) : null
+  const urlClassroom = searchParams.get('classroom')
+  const [selectedClassroom, setSelectedClassroom] = useState<number | null>(
+    urlClassroom ? Number(urlClassroom) : null
+  )
+  useEffect(() => {
+    if (urlClassroom) {
+      setSelectedClassroom(Number(urlClassroom))
+      return
+    }
+    const stored = typeof window !== 'undefined' ? localStorage.getItem('selectedClassroom') : null
+    if (stored) setSelectedClassroom(Number(stored))
+  }, [urlClassroom])
 
   const [classrooms, setClassrooms] = useState<Classroom[]>([])
   const [healthRecords, setHealthRecords] = useState<HealthRecord[]>([])

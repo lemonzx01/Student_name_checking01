@@ -2,13 +2,11 @@
 
 import { useState, useEffect, useCallback, useMemo, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import Link from 'next/link'
 import {
   AlertTriangle,
   BookOpen,
   CheckCircle,
   FileSpreadsheet,
-  ListChecks,
   Pencil,
 } from 'lucide-react'
 import AutoSaveIndicator from '@/components/AutoSaveIndicator'
@@ -37,8 +35,18 @@ type GradeMap = Record<number, Record<string, SemGrade>>
 function GradesPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const classroomId = searchParams.get('classroom') || (typeof window !== 'undefined' ? localStorage.getItem('selectedClassroom') : null)
-  const selectedClassroom = classroomId ? Number(classroomId) : null
+  const urlClassroomId = searchParams.get('classroom')
+  const [selectedClassroom, setSelectedClassroom] = useState<number | null>(
+    urlClassroomId ? Number(urlClassroomId) : null
+  )
+  useEffect(() => {
+    if (urlClassroomId) {
+      setSelectedClassroom(Number(urlClassroomId))
+      return
+    }
+    const stored = typeof window !== 'undefined' ? localStorage.getItem('selectedClassroom') : null
+    if (stored) setSelectedClassroom(Number(stored))
+  }, [urlClassroomId])
 
   // ─── รายวิชา (custom ผ่าน localStorage) ───
   const {
@@ -95,6 +103,7 @@ function GradesPageContent() {
 
   async function reloadAll() {
     setIsLoading(true)
+    setIsDirty(false)
     try {
       await Promise.all([loadStudents(), loadAllGrades()])
     } finally {
@@ -146,6 +155,7 @@ function GradesPageContent() {
         },
       },
     }))
+    setIsDirty(true)
   }
 
   function getSemGrade(sem: GradeMap, studentId: number, subject: string): SemGrade {
@@ -153,6 +163,10 @@ function GradesPageContent() {
   }
 
   // ─── Auto-save ────────────────────────────────────────────
+  // dirty flag — auto-save ส่งเฉพาะเมื่อ user แก้เอง (ไม่ใช่จาก reload)
+  // กัน race: ตอน reload เปลี่ยน sem1/sem2 จาก setState — value เปลี่ยน ถ้าไม่มี dirty flag
+  // จะมีโอกาส save ซ้ำด้วยข้อมูลห้องเก่าก่อน enabled flip
+  const [isDirty, setIsDirty] = useState(false)
   // รวม sem1 + sem2 เป็น value เดียว — เปลี่ยนเมื่อใดจะ trigger auto-save
   const gradesValue = useMemo(() => ({ sem1, sem2 }), [sem1, sem2])
 
@@ -209,7 +223,8 @@ function GradesPageContent() {
   const { status: saveStatus, lastSavedAt, hasPendingChanges } = useAutoSave(gradesValue, saveGrades, {
     // ครูพิมพ์ตัวเลขลงในช่อง — รอให้หยุดพิมพ์สักหน่อยก่อนบันทึก
     debounceMs: 1000,
-    enabled: !!selectedClassroom && !isLoading && students.length > 0,
+    enabled: !!selectedClassroom && !isLoading && students.length > 0 && isDirty,
+    onSaved: () => setIsDirty(false),
   })
 
   // เตือนก่อนปิดหน้า ถ้ายังมีคะแนนที่รอบันทึก
@@ -338,13 +353,6 @@ function GradesPageContent() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Link
-              href={`/grades/items?classroom=${selectedClassroom ?? ''}`}
-              className="btn-press inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-4 py-2.5 text-sm font-semibold text-violet-700 transition hover:bg-violet-100"
-            >
-              <ListChecks size={18} />
-              คะแนนเก็บ (ใหม่)
-            </Link>
             <button
               type="button"
               onClick={exportToExcel}
@@ -355,19 +363,6 @@ function GradesPageContent() {
               ส่งออก Excel
             </button>
           </div>
-        </div>
-
-        {/* Tab indicator */}
-        <div className="mt-4 inline-flex items-center gap-1 rounded-lg bg-slate-100 p-1 text-xs font-semibold">
-          <span className="rounded-md bg-white px-3 py-1.5 text-slate-700 shadow-sm">
-            คะแนนรวม (เดิม)
-          </span>
-          <Link
-            href={`/grades/items?classroom=${selectedClassroom ?? ''}`}
-            className="rounded-md px-3 py-1.5 text-slate-500 transition hover:bg-white hover:text-slate-700"
-          >
-            คะแนนเก็บ
-          </Link>
         </div>
       </div>
 
@@ -385,79 +380,84 @@ function GradesPageContent() {
         </div>
       )}
 
-      {/* Controls — ห้องเรียน + รายวิชา + ปีการศึกษา (ปุ่มกดทั้งหมด) */}
+      {/* Controls — Compact toolbar: ห้อง+ปี (แถวบน) / รายวิชา (แถวล่าง) */}
       <div className="animate-slide-up mb-6 rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-5 shadow-[var(--shadow-sm)]">
-        {/* ── ห้องเรียน ── */}
-        {classrooms.length > 0 && (
-          <div className="mb-4 border-b border-slate-100 pb-4">
-            <label className="mb-2 block text-xs font-semibold text-slate-700">ห้องเรียน</label>
-            <div className="flex flex-wrap gap-1.5">
-              {classrooms.map((cls) => {
-                const isSelected = selectedClassroom === cls.id
-                return (
-                  <button
-                    key={cls.id}
-                    type="button"
-                    onClick={() => switchClassroom(cls.id)}
-                    className={`btn-press inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                      isSelected
-                        ? 'bg-[var(--primary)] text-white shadow-sm'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
-                  >
-                    {cls.name}
-                  </button>
-                )
-              })}
+        {/* ── แถว 1: ห้องเรียน (ซ้าย) + ปีการศึกษา (ขวา) ── */}
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+          {classrooms.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold text-slate-700">ห้องเรียน</span>
+              <div className="flex flex-wrap gap-1.5">
+                {classrooms.map((cls) => {
+                  const isSelected = selectedClassroom === cls.id
+                  return (
+                    <button
+                      key={cls.id}
+                      type="button"
+                      onClick={() => switchClassroom(cls.id)}
+                      className={`btn-press inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                        isSelected
+                          ? 'bg-[var(--primary)] text-white shadow-sm'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      {cls.name}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-slate-700">ปีการศึกษา</span>
+            <div className="w-[140px]">
+              <CustomSelect
+                value={academicYear}
+                onChange={(v) => setAcademicYear(String(v))}
+                options={yearOptions}
+              />
             </div>
           </div>
-        )}
+        </div>
 
-        {/* ── รายวิชา + ปีการศึกษา ── */}
-        <div className="grid gap-4 md:grid-cols-[1fr_200px]">
-          <div>
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <label className="block text-xs font-semibold text-slate-700">รายวิชา</label>
-              <button
-                type="button"
-                onClick={() => setEditingSubjects(true)}
-                className="btn-press inline-flex items-center gap-1 rounded-lg border border-[var(--line)] bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 transition hover:border-violet-300 hover:text-violet-600"
-                title="แก้ไขชื่อวิชาและสี"
-              >
-                <Pencil size={11} />
-                แก้ไขรายวิชา
-              </button>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {SUBJECTS.map((s) => {
-                const isSelected = selectedSubject === s.code
-                return (
-                  <button
-                    key={s.code}
-                    type="button"
-                    onClick={() => setSelectedSubject(s.code)}
-                    className={`btn-press inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                      isSelected ? 'text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
-                    style={isSelected ? { backgroundColor: s.color } : undefined}
-                  >
-                    <span
-                      className="inline-block h-2 w-2 rounded-full"
-                      style={{ backgroundColor: isSelected ? '#ffffff80' : s.color }}
-                    />
-                    {s.name}
-                  </button>
-                )
-              })}
-            </div>
+        {/* ── Divider ── */}
+        <div className="my-4 border-t border-slate-100" />
+
+        {/* ── แถว 2: รายวิชา ── */}
+        <div>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <label className="block text-xs font-semibold text-slate-700">รายวิชา</label>
+            <button
+              type="button"
+              onClick={() => setEditingSubjects(true)}
+              className="btn-press inline-flex items-center gap-1 rounded-lg border border-[var(--line)] bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 transition hover:border-violet-300 hover:text-violet-600"
+              title="แก้ไขชื่อวิชาและสี"
+            >
+              <Pencil size={11} />
+              แก้ไขรายวิชา
+            </button>
           </div>
-          <div>
-            <label className="mb-2 block text-xs font-semibold text-slate-700">ปีการศึกษา</label>
-            <CustomSelect
-              value={academicYear}
-              onChange={(v) => setAcademicYear(String(v))}
-              options={yearOptions}
-            />
+          <div className="flex flex-wrap gap-1.5">
+            {SUBJECTS.map((s) => {
+              const isSelected = selectedSubject === s.code
+              return (
+                <button
+                  key={s.code}
+                  type="button"
+                  onClick={() => setSelectedSubject(s.code)}
+                  className={`btn-press inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                    isSelected ? 'text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                  style={isSelected ? { backgroundColor: s.color } : undefined}
+                >
+                  <span
+                    className="inline-block h-2 w-2 rounded-full"
+                    style={{ backgroundColor: isSelected ? '#ffffff80' : s.color }}
+                  />
+                  {s.name}
+                </button>
+              )
+            })}
           </div>
         </div>
       </div>

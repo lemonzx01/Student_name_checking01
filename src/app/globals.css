@@ -3,53 +3,124 @@
 @tailwind utilities;
 
 :root {
-  --bg: #f0f4fa;
+  /* Surface */
+  --bg: #f5f7fb;              /* เปลี่ยนจาก #f0f4fa — ลดความฟ้า ให้ neutral อบอุ่นขึ้นเล็กน้อย */
   --surface: #ffffff;
-  --surface-soft: #f6f9ff;
+  --surface-soft: #f8fafc;    /* เปลี่ยนจาก #f6f9ff — neutral กว่า */
+  --surface-muted: #f1f5f9;   /* ใหม่ — สำหรับ hover row, secondary bg */
+
+  /* Text */
   --text: #0f1d35;
+  --text-soft: #334155;       /* ใหม่ — รองจาก text หลัก */
   --muted: #5b6b82;
-  --line: #dde5f0;
+  --muted-soft: #94a3b8;      /* ใหม่ — placeholder, caption */
+
+  /* Border */
+  --line: #e1e7f0;            /* เปลี่ยนจาก #dde5f0 — อ่อนลงเล็กน้อย */
+  --line-soft: #eef2f8;       /* ใหม่ — divider บางๆ */
+  --line-strong: #cbd5e1;     /* ใหม่ — emphasized border */
+
+  /* Brand */
   --primary: #2563eb;
   --primary-soft: #dbeafe;
   --primary-strong: #1d4ed8;
+  --primary-ghost: #eff6ff;   /* ใหม่ — bg ของ ghost button */
+
+  /* Accent (warm) — เพิ่ม สำหรับ highlight/badge ที่ไม่ใช่ primary */
+  --accent: #f59e0b;
+  --accent-soft: #fef3c7;
+  --accent-strong: #b45309;
+
+  /* Status */
   --success: #16a34a;
   --success-soft: #dcfce7;
+  --success-strong: #15803d;  /* ใหม่ */
   --warning: #d97706;
   --warning-soft: #fef3c7;
+  --warning-strong: #b45309;  /* ใหม่ */
   --danger: #dc2626;
   --danger-soft: #fee2e2;
+  --danger-strong: #b91c1c;   /* ใหม่ */
+  --info: #0284c7;            /* ใหม่ */
+  --info-soft: #e0f2fe;       /* ใหม่ */
+
+  /* Nav */
   --nav: #0f172a;
   --nav-hover: #1e293b;
-  --radius: 18px;
-  --radius-lg: 24px;
-  --shadow-sm: 0 1px 3px rgba(15,23,42,0.04), 0 1px 2px rgba(15,23,42,0.06);
-  --shadow-md: 0 4px 12px rgba(15,23,42,0.06), 0 2px 4px rgba(15,23,42,0.04);
-  --shadow-lg: 0 12px 40px rgba(15,23,42,0.1), 0 4px 12px rgba(15,23,42,0.05);
+  --nav-active: #2563eb;      /* ใหม่ — active state sidebar item */
+
+  /* Radius — scale ใหม่ ให้ map กับ Tailwind */
+  --radius-sm: 8px;           /* ใหม่ — chip, small button */
+  --radius: 12px;             /* เปลี่ยนจาก 18px — button, input */
+  --radius-md: 16px;          /* ใหม่ — small card */
+  --radius-lg: 20px;          /* เปลี่ยนจาก 24px — main card */
+  --radius-xl: 28px;          /* ใหม่ — modal, large panel */
+
+  /* Shadow — นุ่มกว่าเดิม diffuse ขึ้น */
+  --shadow-xs: 0 1px 2px rgba(15,23,42,0.04);                                  /* ใหม่ */
+  --shadow-sm: 0 1px 3px rgba(15,23,42,0.05), 0 1px 2px rgba(15,23,42,0.04);
+  --shadow-md: 0 4px 14px rgba(15,23,42,0.06), 0 2px 4px rgba(15,23,42,0.03);
+  --shadow-lg: 0 16px 48px rgba(15,23,42,0.10), 0 4px 12px rgba(15,23,42,0.05);
+
+  /* Spacing scale (ไว้ใช้ใน custom class) */
+  --space-card: 20px;         /* ใหม่ — padding card หลัก */
+  --space-card-sm: 16px;      /* ใหม่ */
 }
 
 /* ─── Dark theme ─────────────────────────────────────── */
 /* Sprint 2: override CSS variables เมื่อ <html data-theme="dark"> */
 [data-theme="dark"] {
+  /* Surface */
   --bg: #0b1220;
   --surface: #131b2c;
   --surface-soft: #1a233a;
+  --surface-muted: #232d44;       /* ใหม่ */
+
+  /* Text */
   --text: #e5edf9;
+  --text-soft: #cbd5e1;           /* ใหม่ */
   --muted: #94a3c0;
+  --muted-soft: #64748b;          /* ใหม่ */
+
+  /* Border */
   --line: #2b3852;
+  --line-soft: #1e2a44;           /* ใหม่ */
+  --line-strong: #475569;         /* ใหม่ */
+
+  /* Brand */
   --primary: #60a5fa;
   --primary-soft: #1e3a8a;
   --primary-strong: #93c5fd;
+  --primary-ghost: #1e3a8a;       /* ใหม่ */
+
+  /* Accent (warm) */
+  --accent: #fbbf24;              /* ใหม่ */
+  --accent-soft: #78350f;         /* ใหม่ */
+  --accent-strong: #fcd34d;       /* ใหม่ */
+
+  /* Status */
   --success: #34d399;
   --success-soft: #064e3b;
+  --success-strong: #6ee7b7;      /* ใหม่ */
   --warning: #fbbf24;
   --warning-soft: #78350f;
+  --warning-strong: #fde68a;      /* ใหม่ */
   --danger: #f87171;
   --danger-soft: #7f1d1d;
+  --danger-strong: #fca5a5;       /* ใหม่ */
+  --info: #38bdf8;                /* ใหม่ */
+  --info-soft: #0c4a6e;           /* ใหม่ */
+
+  /* Nav */
   --nav: #0b1220;
   --nav-hover: #1e293b;
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.35), 0 2px 4px rgba(0,0,0,0.25);
-  --shadow-lg: 0 12px 40px rgba(0,0,0,0.5), 0 4px 12px rgba(0,0,0,0.3);
+  --nav-active: #3b82f6;          /* ใหม่ */
+
+  /* Shadow */
+  --shadow-xs: 0 1px 2px rgba(0,0,0,0.4);                                     /* ใหม่ */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.35), 0 1px 2px rgba(0,0,0,0.25);
+  --shadow-md: 0 4px 14px rgba(0,0,0,0.45), 0 2px 4px rgba(0,0,0,0.3);
+  --shadow-lg: 0 16px 48px rgba(0,0,0,0.55), 0 4px 12px rgba(0,0,0,0.35);
   color-scheme: dark;
 }
 
@@ -431,6 +502,172 @@ input, select, textarea {
 /* Button press */
 .btn-press:active {
   transform: scale(0.97);
+}
+
+/* ─── Base components ─────────────────────────────────── */
+
+/* Card หลัก — ใช้แทน pattern ที่ทำซ้ำในทุกหน้า */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.card-interactive {
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.card-interactive:hover {
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+/* Pill badge — ป้ายสีอ่อนแบบ "หัวข้อ section" */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+}
+
+.pill-brand   { background: var(--primary-ghost); color: var(--primary-strong); }
+.pill-accent  { background: var(--accent-soft);   color: var(--accent-strong); }
+.pill-ok      { background: var(--success-soft);  color: var(--success-strong); }
+.pill-warn    { background: var(--warning-soft);  color: var(--warning-strong); }
+.pill-danger  { background: var(--danger-soft);   color: var(--danger-strong); }
+.pill-info    { background: var(--info-soft);     color: var(--info); }
+.pill-muted   { background: var(--surface-muted); color: var(--muted); }
+
+/* Button system — ใช้แทนการเขียน inline-flex+px-4+py-2+bg-blue-600+... ในทุกไฟล์ */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: var(--radius);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  border: 1px solid transparent;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn:active:not(:disabled) { transform: scale(0.97); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-primary {
+  background: var(--primary);
+  color: #ffffff;
+  box-shadow: var(--shadow-xs);
+}
+.btn-primary:hover:not(:disabled) { background: var(--primary-strong); }
+
+.btn-secondary {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--line);
+}
+.btn-secondary:hover:not(:disabled) {
+  background: var(--surface-muted);
+  border-color: var(--line-strong);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-soft);
+}
+.btn-ghost:hover:not(:disabled) {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.btn-brand-ghost {
+  background: var(--primary-ghost);
+  color: var(--primary-strong);
+}
+.btn-brand-ghost:hover:not(:disabled) {
+  background: var(--primary-soft);
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: #ffffff;
+}
+.btn-danger:hover:not(:disabled) { background: var(--danger-strong); }
+
+.btn-danger-ghost {
+  background: var(--danger-soft);
+  color: var(--danger-strong);
+}
+.btn-danger-ghost:hover:not(:disabled) {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+
+/* Size modifiers */
+.btn-sm { padding: 6px 12px; font-size: 13px; }
+.btn-lg { padding: 12px 20px; font-size: 15px; }
+.btn-icon { padding: 8px; width: 36px; height: 36px; }
+
+/* Input baseline */
+.input {
+  display: block;
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+  outline: none;
+}
+
+.input::placeholder { color: var(--muted-soft); }
+
+/* Section header — ใช้ใน card */
+.section-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.01em;
+}
+
+.section-subtitle {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* Empty state */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  text-align: center;
+  border: 2px dashed var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--muted);
 }
 
 /* ─── Print layout (สำหรับพิมพ์ผ่านเบราว์เซอร์) ─── */

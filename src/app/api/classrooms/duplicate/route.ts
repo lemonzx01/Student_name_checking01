@@ -1,9 +1,5 @@
 import { NextResponse } from 'next/server'
-import {
-  archiveClassroom,
-  duplicateClassroom,
-  promoteStudents,
-} from '@/lib/db'
+import { duplicateClassroom } from '@/lib/db'
 
 export async function POST(request: Request) {
   try {
@@ -15,16 +11,10 @@ export async function POST(request: Request) {
     const result = duplicateClassroom(
       Number(sourceId),
       String(newName),
-      String(newAcademicYear || '')
+      String(newAcademicYear || ''),
+      { promoteStudents: !!doPromote, archiveSource: !!archiveSource }
     )
-    let movedStudents = 0
-    if (doPromote && result.id) {
-      movedStudents = promoteStudents(Number(sourceId), result.id)
-    }
-    if (archiveSource) {
-      archiveClassroom(Number(sourceId))
-    }
-    return NextResponse.json({ success: true, ...result, movedStudents })
+    return NextResponse.json({ success: true, ...result })
   } catch (error: any) {
     console.error('[API] POST /api/classrooms/duplicate', error)
     return NextResponse.json(

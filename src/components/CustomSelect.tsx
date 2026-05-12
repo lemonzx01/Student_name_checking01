@@ -14,6 +14,10 @@ interface Props {
   options: SelectOption[]
   placeholder?: string
   className?: string
+  /** ขนาด: 'md' (default) สำหรับ form ปกติ, 'sm' สำหรับ table cell */
+  size?: 'sm' | 'md'
+  /** override styling ของปุ่ม — ใช้เมื่อต้องการ dynamic colors (เช่น level badge) */
+  buttonClassName?: string
 }
 
 export default function CustomSelect({
@@ -22,6 +26,8 @@ export default function CustomSelect({
   options,
   placeholder,
   className = '',
+  size = 'md',
+  buttonClassName,
 }: Props) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -38,19 +44,35 @@ export default function CustomSelect({
 
   const selectedLabel = options.find((o) => String(o.value) === String(value))?.label ?? placeholder ?? ''
 
+  const isPlaceholder = value === '' || value === 0
+
+  const sizeButton =
+    size === 'sm'
+      ? 'rounded-md px-2 py-1 text-[11px] font-semibold'
+      : 'rounded-xl px-4 py-2.5 text-sm'
+
+  const defaultButton =
+    'border border-[var(--line)] bg-white text-slate-900 hover:border-slate-300 focus:border-[var(--primary)]'
+
+  const sizeMenuItem = size === 'sm' ? 'px-2 py-1.5 text-[11px]' : 'px-4 py-2.5 text-sm'
+
   return (
     <div className={`relative ${className}`} ref={ref}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between rounded-xl border border-[var(--line)] bg-white px-4 py-2.5 text-left text-sm outline-none transition hover:border-slate-300 focus:border-[var(--primary)] focus:ring-0"
+        className={`flex w-full items-center justify-between text-left outline-none transition focus:ring-0 ${sizeButton} ${
+          buttonClassName ?? defaultButton
+        }`}
       >
-        <span className={value === '' || value === 0 ? 'text-slate-400' : 'text-slate-900'}>
-          {selectedLabel}
+        <span className={isPlaceholder && !buttonClassName ? 'text-slate-400' : ''}>
+          {selectedLabel || '-'}
         </span>
         <ChevronDown
-          size={16}
-          className={`ml-2 flex-shrink-0 text-slate-400 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+          size={size === 'sm' ? 12 : 16}
+          className={`ml-2 flex-shrink-0 opacity-70 transition-transform duration-200 ${
+            open ? 'rotate-180' : ''
+          }`}
         />
       </button>
       {open && (
@@ -65,14 +87,16 @@ export default function CustomSelect({
                   onChange(opt.value)
                   setOpen(false)
                 }}
-                className={`flex w-full items-center justify-between px-4 py-2.5 text-left text-sm transition-colors ${
+                className={`flex w-full items-center justify-between text-left transition-colors ${sizeMenuItem} ${
                   isSelected
                     ? 'bg-blue-50 font-medium text-blue-700'
                     : 'text-slate-700 hover:bg-slate-50'
                 }`}
               >
                 <span>{opt.label}</span>
-                {isSelected && <Check size={16} className="flex-shrink-0 text-blue-600" />}
+                {isSelected && (
+                  <Check size={size === 'sm' ? 12 : 16} className="flex-shrink-0 text-blue-600" />
+                )}
               </button>
             )
           })}
