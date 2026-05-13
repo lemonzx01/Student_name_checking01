@@ -12,13 +12,191 @@ const LOCKOUT_UNTIL_KEY = 'pinLockoutUntil'
 const MAX_ATTEMPTS = 5
 const LOCKOUT_DURATION_MS = 30 * 1000 // 30 seconds
 
-export async function hashPin(pin: string): Promise<string> {
-  // SHA-256 ของ PIN ผ่าน Web Crypto API
+// PBKDF2 parameters — ใช้ SHA-256 + 100k iterations (OWASP ~2023 ขั้นต่ำ)
+const PBKDF2_ITERATIONS = 100_000
+const PBKDF2_HASH = 'SHA-256'
+const PBKDF2_KEY_BITS = 256
+const SALT_BYTES = 16
+
+interface StoredPinRecord {
+  // algo: 'pbkdf2' = ฟอร์แมตใหม่ (salted) | 'sha256' = ฟอร์แมตเก่า (จาก localStorage รุ่นก่อน)
+  algo: 'pbkdf2' | 'sha256'
+  salt?: string // hex; required when algo='pbkdf2'
+  hash: string // hex
+  iter?: number // PBKDF2 iterations; required when algo='pbkdf2'
+}
+
+// --- helpers ---
+
+function bytesToHex(bytes: Uint8Array): string {
+  let out = ''
+  for (let i = 0; i < bytes.length; i++) {
+    out += bytes[i].toString(16).padStart(2, '0')
+  }
+  return out
+}
+
+function hexToBytes(hex: string): Uint8Array {
+  const len = hex.length / 2
+  const out = new Uint8Array(len)
+  for (let i = 0; i < len; i++) {
+    out[i] = parseInt(hex.substr(i * 2, 2), 16)
+  }
+  return out
+}
+
+/**
+ * Constant-time equality check บน hex string — กัน timing attack เล็กน้อย
+ * (ในบริบท localStorage นี้ความเสี่ยงน้อย แต่ทำให้ปลอดภัยขึ้นโดยไม่มี cost)
+ */
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false
+  let diff = 0
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  }
+  return diff === 0
+}
+
+/**
+ * Legacy SHA-256 hash (ไม่ salted) — ใช้สำหรับตรวจสอบรูปแบบเก่าตอน migration เท่านั้น
+ * **ห้ามใช้กับ PIN ใหม่** — ปลอดภัยน้อย, rainbow table ทำได้
+ */
+async function legacySha256Hash(pin: string): Promise<string> {
   const encoder = new TextEncoder()
   const data = encoder.encode(pin)
   const hash = await crypto.subtle.digest('SHA-256', data)
-  const bytes = Array.from(new Uint8Array(hash))
-  return bytes.map((b) => b.toString(16).padStart(2, '0')).join('')
+  return bytesToHex(new Uint8Array(hash))
+}
+
+/**
+ * PBKDF2 derive — return hex hash
+ */
+async function pbkdf2DeriveHex(
+  pin: string,
+  salt: Uint8Array,
+  iterations: number
+): Promise<string> {
+  const encoder = new TextEncoder()
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(pin),
+    { name: 'PBKDF2' },
+    false,
+    ['deriveBits']
+  )
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      // cast: TS lib แยก ArrayBuffer/SharedArrayBuffer แต่ Web Crypto รับ BufferSource ทั่วไป
+      salt: salt as BufferSource,
+      iterations,
+      hash: PBKDF2_HASH,
+    },
+    keyMaterial,
+    PBKDF2_KEY_BITS
+  )
+  return bytesToHex(new Uint8Array(bits))
+}
+
+/**
+ * สร้าง record ใหม่ของ PIN ด้วย PBKDF2 + random salt
+ */
+async function buildPbkdf2Record(pin: string): Promise<StoredPinRecord> {
+  const salt = new Uint8Array(SALT_BYTES)
+  crypto.getRandomValues(salt)
+  const hash = await pbkdf2DeriveHex(pin, salt, PBKDF2_ITERATIONS)
+  return {
+    algo: 'pbkdf2',
+    salt: bytesToHex(salt),
+    hash,
+    iter: PBKDF2_ITERATIONS,
+  }
+}
+
+/**
+ * อ่าน stored record จาก localStorage — รองรับทั้งฟอร์แมตใหม่ (JSON) และเก่า (raw hex SHA-256)
+ * Backward compat: PIN เก่าที่เก็บเป็น raw SHA-256 hex (64 chars) จะถูก parse เป็น legacy record
+ */
+function readStoredRecord(): StoredPinRecord | null {
+  if (typeof window === 'undefined') return null
+  const raw = localStorage.getItem(PIN_HASH_KEY)
+  if (!raw) return null
+
+  // ฟอร์แมตใหม่: JSON
+  if (raw.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(raw) as StoredPinRecord
+      if (parsed && typeof parsed.hash === 'string' && (parsed.algo === 'pbkdf2' || parsed.algo === 'sha256')) {
+        return parsed
+      }
+    } catch {
+      return null
+    }
+    return null
+  }
+
+  // ฟอร์แมตเก่า: raw hex SHA-256 (64 chars)
+  if (/^[0-9a-f]{64}$/i.test(raw)) {
+    return { algo: 'sha256', hash: raw.toLowerCase() }
+  }
+
+  return null
+}
+
+function writeStoredRecord(record: StoredPinRecord): void {
+  localStorage.setItem(PIN_HASH_KEY, JSON.stringify(record))
+}
+
+/**
+ * Hash PIN เพื่อเปรียบเทียบกับค่าที่เก็บไว้
+ *
+ * Backward-compat: ฟังก์ชันนี้คงสัญญา API เดิมที่ caller สามารถใช้ pattern
+ *   `(await hashPin(pin)) === getStoredPinHash()` เพื่อตรวจสอบความถูกต้อง
+ *
+ * วิธีการ:
+ * - ถ้ามี stored record แบบ PBKDF2 → derive hash โดยใช้ salt+iter ของ record นั้น
+ *   (เพื่อให้ผลเทียบกับ getStoredPinHash() ตรงกัน)
+ * - ถ้ามี stored record แบบเก่า (SHA-256) หรือไม่มีเลย → fallback เป็น legacy SHA-256
+ *   (ครอบคลุมเคส migration และเคสตั้ง PIN ครั้งแรก)
+ *
+ * หมายเหตุ: caller ใหม่ควรใช้ `verifyPin(pin)` ซึ่ง robust กว่า (รองรับ migration auto)
+ */
+export async function hashPin(pin: string): Promise<string> {
+  const record = typeof window !== 'undefined' ? readStoredRecord() : null
+  if (record && record.algo === 'pbkdf2' && record.salt && record.iter) {
+    const salt = hexToBytes(record.salt)
+    return pbkdf2DeriveHex(pin, salt, record.iter)
+  }
+  // ไม่มี record หรือเป็น legacy SHA-256 → ใช้ SHA-256
+  return legacySha256Hash(pin)
+}
+
+/**
+ * ตรวจสอบ PIN เทียบกับที่เก็บไว้ — รองรับทั้งฟอร์แมตใหม่ (PBKDF2) และเก่า (SHA-256)
+ * return:
+ *   - ok: PIN ถูกหรือไม่
+ *   - needsRehash: ถ้า PIN ถูก แต่อยู่ในฟอร์แมตเก่า → caller ควรเรียก setStoredPin เพื่อ migrate
+ */
+export async function verifyPin(pin: string): Promise<{ ok: boolean; needsRehash: boolean }> {
+  const record = readStoredRecord()
+  if (!record) return { ok: false, needsRehash: false }
+
+  if (record.algo === 'pbkdf2' && record.salt && record.iter) {
+    const salt = hexToBytes(record.salt)
+    const candidate = await pbkdf2DeriveHex(pin, salt, record.iter)
+    return { ok: constantTimeEqual(candidate, record.hash), needsRehash: false }
+  }
+
+  // legacy SHA-256 — ตรวจสอบเพื่อให้ครูเข้าระบบได้ครั้งแรกหลังอัพเดท
+  // แล้ว caller จะ re-hash ด้วย PBKDF2 อัตโนมัติ (graceful migration)
+  if (record.algo === 'sha256') {
+    const candidate = await legacySha256Hash(pin)
+    const ok = constantTimeEqual(candidate, record.hash.toLowerCase())
+    return { ok, needsRehash: ok }
+  }
+
+  return { ok: false, needsRehash: false }
 }
 
 export function isPinEnabled(): boolean {
@@ -26,16 +204,29 @@ export function isPinEnabled(): boolean {
   return localStorage.getItem(PIN_ENABLED_KEY) === '1'
 }
 
+/**
+ * Return hash hex string ที่เก็บไว้ใน localStorage (โดยไม่รวม salt/metadata)
+ *
+ * Backward-compat: ฟังก์ชันเดิม return raw string จาก localStorage ตรงๆ ซึ่งเป็น SHA-256 hex
+ *   เพื่อให้ caller เปรียบเทียบ `hashPin(pin) === getStoredPinHash()`
+ *
+ * เวอร์ชันใหม่: extract เฉพาะ `hash` field จาก JSON record และคู่กับ `hashPin()` ใหม่
+ *   ซึ่ง derive PBKDF2 ด้วย salt ของ record นั้น → equality check จะ work เหมือนเดิม
+ *
+ * caller ใหม่ควรใช้ `verifyPin` ซึ่ง robust กว่า (handles migration, constant-time compare)
+ */
 export function getStoredPinHash(): string | null {
-  if (typeof window === 'undefined') return null
-  return localStorage.getItem(PIN_HASH_KEY)
+  const record = readStoredRecord()
+  return record ? record.hash : null
 }
 
-export function setStoredPin(pin: string, enabled = true): Promise<void> {
-  return hashPin(pin).then((hash) => {
-    localStorage.setItem(PIN_HASH_KEY, hash)
-    localStorage.setItem(PIN_ENABLED_KEY, enabled ? '1' : '0')
-  })
+/**
+ * ตั้งค่า PIN ใหม่ — ใช้ PBKDF2 + random salt + 100k iterations
+ */
+export async function setStoredPin(pin: string, enabled = true): Promise<void> {
+  const record = await buildPbkdf2Record(pin)
+  writeStoredRecord(record)
+  localStorage.setItem(PIN_ENABLED_KEY, enabled ? '1' : '0')
 }
 
 export function disablePin(): void {
@@ -105,16 +296,26 @@ export default function PinGate({ children }: { children: ReactNode }) {
       e.preventDefault()
       if (lockoutUntil > Date.now()) return
 
-      const storedHash = getStoredPinHash()
-      if (!storedHash) {
+      const storedRaw = localStorage.getItem(PIN_HASH_KEY)
+      if (!storedRaw) {
         // ไม่มี hash แต่ flag เปิด — กรณีผิดปกติ ปลดล็อกแล้ว reset flag
         disablePin()
         setUnlocked(true)
         return
       }
 
-      const inputHash = await hashPin(pinInput)
-      if (inputHash === storedHash) {
+      const { ok, needsRehash } = await verifyPin(pinInput)
+      if (ok) {
+        // graceful migration: ถ้าเป็น legacy SHA-256 → re-hash ด้วย PBKDF2
+        // ทำหลัง verify สำเร็จเท่านั้น เพื่อไม่ล็อกครูออกจากระบบ
+        if (needsRehash) {
+          try {
+            await setStoredPin(pinInput, true)
+          } catch (err) {
+            // ถ้า migrate ล้มเหลว ก็ยังให้ครูเข้าระบบได้ — ลองใหม่ครั้งหน้า
+            console.warn('[PinGate] PIN migration failed:', err)
+          }
+        }
         markSessionUnlocked()
         localStorage.removeItem(FAILED_COUNT_KEY)
         localStorage.removeItem(LOCKOUT_UNTIL_KEY)
@@ -207,20 +408,9 @@ export default function PinGate({ children }: { children: ReactNode }) {
           </button>
         </form>
 
-        <details className="mt-5 cursor-pointer text-xs text-[var(--muted)]">
-          <summary className="select-none font-medium hover:text-slate-700">ลืม PIN?</summary>
-          <p className="mt-2 leading-relaxed text-[11px]">
-            ระบบเก็บ PIN ในเครื่องนี้เท่านั้น — ลืมแล้วต้อง:
-            <br />
-            1. เปิด DevTools (F12 หรือ Ctrl+Shift+I)
-            <br />
-            2. ไปที่แท็บ Application → Local Storage
-            <br />
-            3. ลบ key &quot;pinHash&quot; และ &quot;pinEnabled&quot;
-            <br />
-            4. โหลดหน้าใหม่ — จะปลดล็อกอัตโนมัติ
-          </p>
-        </details>
+        <p className="mt-5 text-center text-[11px] leading-relaxed text-[var(--muted)]">
+          ลืม PIN? กรุณาติดต่อผู้ดูแลระบบของโรงเรียนเพื่อรีเซ็ต
+        </p>
       </div>
     </div>
   )
