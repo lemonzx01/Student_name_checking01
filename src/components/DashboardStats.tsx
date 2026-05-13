@@ -16,16 +16,7 @@ import {
 } from 'lucide-react'
 import { getDashboardStats, type DashboardStats as Stats } from '@/lib/client-data'
 import StudentAvatar from '@/components/StudentAvatar'
-
-function formatThaiShortDate(iso: string): string {
-  const [y, m, d] = iso.split('-').map(Number)
-  if (!y || !m || !d) return iso
-  const months = [
-    'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
-    'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.',
-  ]
-  return `${d} ${months[m - 1]} ${y + 543}`
-}
+import { formatThaiShortDate } from '@/lib/constants/thai-date'
 
 interface Props {
   classroomId?: number | null

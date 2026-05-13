@@ -230,12 +230,78 @@ export async function importStudentsFromExcel(
   })
 }
 
-export async function getScheduleByClassroom(classroomId: number): Promise<any[]> {
+export interface ScheduleRow {
+  classroom_id: number
+  day_of_week: number
+  period: number
+  subject_code: string | null
+  subject_name: string | null
+  class_level: string | null
+  room: string | null
+}
+
+export async function getScheduleByClassroom(classroomId: number): Promise<ScheduleRow[]> {
   if (await waitForElectronAPI()) {
-    return window.electronAPI!.getSchedule(classroomId)
+    return window.electronAPI!.getSchedule(classroomId) as Promise<ScheduleRow[]>
   }
 
-  return fetchJson<any[]>(`/api/schedule?classroom=${classroomId}`)
+  return fetchJson<ScheduleRow[]>(`/api/schedule?classroom=${classroomId}`)
+}
+
+/**
+ * โหลดตารางสอนของทุกห้องพร้อมกัน — ใช้ใน /app/schedule (โหลด overview ครั้งเดียว)
+ * คืน Record<classroomId, rows[]>
+ */
+export async function getAllSchedules(
+  classroomIds: number[],
+): Promise<Record<number, ScheduleRow[]>> {
+  const result: Record<number, ScheduleRow[]> = {}
+  const entries = await Promise.all(
+    classroomIds.map(async (id) => {
+      const rows = await getScheduleByClassroom(id)
+      return [id, rows] as const
+    }),
+  )
+  for (const [id, rows] of entries) result[id] = rows
+  return result
+}
+
+/**
+ * บันทึกตารางสอนของห้องเดียว
+ * - Electron: เรียก IPC `save-schedule` ตรง ๆ
+ * - Web: POST /api/schedule
+ *
+ * schedule = map ของ `${day}-${period}` → slot
+ * ตัว main process / API route จะลบของเดิมแล้ว insert ใหม่ทั้งห้อง (transactional)
+ */
+export async function saveScheduleForClassroom(
+  classroomId: number,
+  schedule: Record<
+    string,
+    {
+      subject_code?: string
+      subject_name?: string
+      class_level?: string
+      room?: string
+    }
+  >,
+): Promise<void> {
+  if (await waitForElectronAPI()) {
+    const result = await window.electronAPI!.saveSchedule({
+      classroom: classroomId,
+      schedule,
+    })
+    if (result && (result as any).success === false) {
+      throw new Error('บันทึกตารางสอนไม่สำเร็จ')
+    }
+    return
+  }
+
+  await fetchJson('/api/schedule', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ classroom: classroomId, schedule }),
+  })
 }
 
 export async function getGradesData(

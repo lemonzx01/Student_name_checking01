@@ -114,6 +114,21 @@ function FormField({ label, children }: { label: string; children: React.ReactNo
 
 const inputClass = 'input'
 
+// แม็พคำนำหน้า → เพศ (อัตโนมัติ)
+// "นางสาว" ไม่มีสตริง 'หญิง' ตรง ๆ → ต้องใช้ lookup เพื่อกัน fall-through เป็น ''
+const TITLE_GENDER_MAP: Record<string, 'ชาย' | 'หญิง'> = {
+  เด็กชาย: 'ชาย',
+  นาย: 'ชาย',
+  เด็กหญิง: 'หญิง',
+  นาง: 'หญิง',
+  นางสาว: 'หญิง',
+}
+
+function inferGenderFromTitle(title: string | null | undefined): '' | 'ชาย' | 'หญิง' {
+  if (!title) return ''
+  return TITLE_GENDER_MAP[title.trim()] ?? ''
+}
+
 export default function StudentModal({
   isOpen,
   onClose,
@@ -197,7 +212,8 @@ export default function StudentModal({
       ...formData,
       classroom_label: activeClassroomName,
       student_number: formData.student_number || formData.student_id,
-      gender: formData.gender || (formData.title?.includes('หญิง') ? 'หญิง' : formData.title?.includes('ชาย') ? 'ชาย' : ''),
+      // กัน "นางสาว" หลุดจาก includes('หญิง') — ใช้ explicit lookup
+      gender: formData.gender || inferGenderFromTitle(formData.title),
     }
 
     setSaving(true)

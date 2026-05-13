@@ -1,9 +1,11 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
-import { DEFAULT_SUBJECTS, type SubjectDef } from '@/types/index'
+import { useEffect, useRef, useState, useCallback } from 'react'
+import type { SubjectDef } from '@/types/index'
+import { DEFAULT_SUBJECTS } from '@/lib/constants/subjects'
 
 const STORAGE_KEY = 'customSubjects'
+const CHANGE_EVENT = 'subjects-changed'
 
 /** เซ็ตของรหัสวิชา default — ใช้ display ตัว lock icon ถ้าจะ */
 const DEFAULT_CODES = new Set(DEFAULT_SUBJECTS.map((s) => s.code))
@@ -99,8 +101,11 @@ function saveToStorage(subjects: SubjectWithMeta[]): void {
     const data: StoredData = {
       subjects: subjects.map((s) => ({ code: s.code, name: s.name, color: s.color })),
     }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
-    window.dispatchEvent(new CustomEvent('subjects-changed'))
+    const serialized = JSON.stringify(data)
+    localStorage.setItem(STORAGE_KEY, serialized)
+    // dispatch custom event เฉพาะ same-tab — storage event ไม่ trigger ใน tab ที่ setItem เอง
+    // tab อื่นจะรับ storage event แยกต่างหาก จึงไม่ re-render ซ้ำ
+    window.dispatchEvent(new CustomEvent(CHANGE_EVENT, { detail: { serialized } }))
   } catch (err) {
     console.error('[useSubjects] save failed:', err)
   }
@@ -157,19 +162,38 @@ export function useSubjects() {
     DEFAULT_SUBJECTS.map(attachMeta)
   )
 
-  useEffect(() => {
-    setSubjects(loadFromStorage())
+  // dedupe key — ใช้ snapshot ของ raw JSON ปัจจุบันเพื่อกัน reload ซ้ำเมื่อ
+  // ค่าใน storage ไม่เปลี่ยน (เช่น tab A dispatch custom event + tab B รับ storage event
+  // แต่ค่าเหมือนเดิม — เกิดจากการ migrate-only path)
+  const lastSnapshotRef = useRef<string | null>(null)
 
-    const customHandler = () => setSubjects(loadFromStorage())
-    const storageHandler = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY) setSubjects(loadFromStorage())
+  useEffect(() => {
+    const initial = loadFromStorage()
+    setSubjects(initial)
+    lastSnapshotRef.current = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null
+
+    // refreshIfChanged: อ่าน storage แล้ว set state เฉพาะเมื่อ snapshot ต่างจากเดิม
+    // กันการ re-render ซ้ำเมื่อมี trigger หลายชั้น (custom + storage)
+    const refreshIfChanged = () => {
+      if (typeof window === 'undefined') return
+      const snapshot = localStorage.getItem(STORAGE_KEY)
+      if (snapshot === lastSnapshotRef.current) return
+      lastSnapshotRef.current = snapshot
+      setSubjects(loadFromStorage())
     }
 
-    window.addEventListener('subjects-changed', customHandler)
+    // same-tab: custom event (storage event ไม่ trigger ใน tab ที่ setItem เอง)
+    const customHandler = () => refreshIfChanged()
+    // cross-tab: storage event (custom event ไม่ข้าม tab)
+    const storageHandler = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY) refreshIfChanged()
+    }
+
+    window.addEventListener(CHANGE_EVENT, customHandler)
     window.addEventListener('storage', storageHandler)
 
     return () => {
-      window.removeEventListener('subjects-changed', customHandler)
+      window.removeEventListener(CHANGE_EVENT, customHandler)
       window.removeEventListener('storage', storageHandler)
     }
   }, [])

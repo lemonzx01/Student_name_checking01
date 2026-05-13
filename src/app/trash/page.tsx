@@ -19,6 +19,7 @@ import {
   purgeStudent,
   restoreStudent,
 } from '@/lib/client-data'
+import { toLocalISO } from '@/lib/local-date'
 import type { Classroom, Student } from '@/types'
 
 function displayName(student: Student) {
@@ -35,7 +36,7 @@ function formatRelative(iso: string | null | undefined): string {
   const days = Math.floor(diffMs / day)
   if (days < 1) return 'วันนี้'
   if (days < 30) return `${days} วันที่แล้ว`
-  return d.toISOString().slice(0, 10)
+  return toLocalISO(d)
 }
 
 function daysUntilPurge(iso: string | null | undefined): number | null {

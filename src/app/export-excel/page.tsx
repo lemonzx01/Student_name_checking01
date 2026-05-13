@@ -15,12 +15,14 @@ import {
   File,
   Activity,
 } from 'lucide-react'
-import { type Classroom, type Student, DEFAULT_SUBJECTS, calculateGrade } from '@/types/index'
+import { type Classroom, type Student, calculateGrade } from '@/types/index'
 import CalendarPicker from '@/components/CalendarPicker'
 import CustomSelect from '@/components/CustomSelect'
 import PageHeader from '@/components/PageHeader'
 import { TONE, type Tone } from '@/lib/constants/colors'
 import { useDialog } from '@/lib/hooks/useConfirm'
+import { useSubjects } from '@/lib/hooks/useSubjects'
+import { toLocalISO, todayISO } from '@/lib/local-date'
 const loadThaiFont = () => import('@/lib/thai-font').then((m) => m.NotoSansThai)
 
 // Lazy loaders
@@ -97,16 +99,16 @@ function ExportPageContent() {
   const [startDate, setStartDate] = useState(() => {
     const d = new Date()
     d.setDate(1)
-    return d.toISOString().split('T')[0]
+    return toLocalISO(d)
   })
-  const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [endDate, setEndDate] = useState(() => todayISO())
   const [exporting, setExporting] = useState<string | null>(null)
   const [exportedFiles, setExportedFiles] = useState<string[]>([])
   const [selectedFormat, setSelectedFormat] = useState<ExportFormat>('excel')
-  const [gradeSemester, setGradeSemester] = useState(1)
   const [gradeYear, setGradeYear] = useState(String(new Date().getFullYear() + 543))
   const [toast, setToast] = useState<string | null>(null)
   const { alert } = useDialog()
+  const { subjects } = useSubjects()
 
   const showToast = useCallback((message: string) => {
     setToast(message)
@@ -239,34 +241,55 @@ function ExportPageContent() {
   }
 
   const fetchGradeData = async () => {
-    // Fetch students and grades separately, then merge
-    const [studentsRes, gradesRes] = await Promise.all([
+    // โหลด sem1 + sem2 พร้อมกัน — รวมคะแนนเป็น "annual" ต่อวิชา (ตรงกับหน้า /grades)
+    // หน้า /grades คิดเกรดจากผลรวม sem1 + sem2 (รวม 100 คะแนน)
+    // ถ้าใช้ semester เดียว (max 50) เทียบกับ calculateGrade ที่ threshold เป็น /100
+    // → ทุกคนจะได้เกรด '0' หรือ '1' ทั้งหมด ไม่ตรงกับ UI
+    const [studentsRes, sem1Res, sem2Res] = await Promise.all([
       fetch(`/api/students?classroom=${selectedClassroom}`),
-      fetch(`/api/grades?classroom=${selectedClassroom}&semester=${gradeSemester}&year=${gradeYear}`),
+      fetch(`/api/grades?classroom=${selectedClassroom}&semester=1&year=${gradeYear}`),
+      fetch(`/api/grades?classroom=${selectedClassroom}&semester=2&year=${gradeYear}`),
     ])
     if (!studentsRes.ok) throw new Error('Failed to fetch students')
-    if (!gradesRes.ok) throw new Error('Failed to fetch grade data')
+    if (!sem1Res.ok || !sem2Res.ok) throw new Error('Failed to fetch grade data')
 
-    const students = await studentsRes.json() as Student[]
-    const gradeRows = await gradesRes.json() as { student_id: number; subject_code: string; score: number }[]
+    const students = (await studentsRes.json()) as Student[]
+    type GradeRow = {
+      student_id: number
+      subject_code: string
+      score?: number | null
+      midterm_score?: number | null
+      final_score?: number | null
+    }
+    const sem1Rows = (await sem1Res.json()) as GradeRow[]
+    const sem2Rows = (await sem2Res.json()) as GradeRow[]
 
-    // Build grade lookup: student_id -> { subject_code: score }
-    const gradeMap = new Map<number, Record<string, number>>()
-    gradeRows.forEach((row) => {
-      if (!gradeMap.has(row.student_id)) {
-        gradeMap.set(row.student_id, {})
+    // student_id -> subject_code -> annual total (sem1 + sem2)
+    const annualMap = new Map<number, Record<string, number>>()
+    const rowScore = (r: GradeRow): number => {
+      // ใช้ midterm+final ถ้ามี (legacy field `score` ก็เป็น mid+final อยู่แล้ว แต่ field ใหม่ชัดกว่า)
+      if (r.midterm_score != null || r.final_score != null) {
+        return (Number(r.midterm_score) || 0) + (Number(r.final_score) || 0)
       }
-      if (row.subject_code && row.score !== null) {
-        gradeMap.get(row.student_id)![row.subject_code] = row.score
+      return Number(r.score) || 0
+    }
+    const add = (rows: GradeRow[]) => {
+      for (const r of rows) {
+        if (!r.subject_code) continue
+        if (!annualMap.has(r.student_id)) annualMap.set(r.student_id, {})
+        const m = annualMap.get(r.student_id)!
+        m[r.subject_code] = (m[r.subject_code] || 0) + rowScore(r)
       }
-    })
+    }
+    add(sem1Rows)
+    add(sem2Rows)
 
     return students.map((s) => ({
       id: s.id,
       student_id: s.student_id,
       first_name: s.first_name,
       last_name: s.last_name,
-      scores: gradeMap.get(s.id) || {},
+      scores: annualMap.get(s.id) || {},
     }))
   }
 
@@ -277,20 +300,20 @@ function ExportPageContent() {
     const students = await fetchGradeData()
     const workbook = XLSX.utils.book_new()
 
-    const headers = ['#', 'รหัส', 'ชื่อ-นามสกุล', ...DEFAULT_SUBJECTS.map((s) => s.name), 'เฉลี่ย', 'เกรดเฉลี่ย']
+    const headers = ['#', 'รหัส', 'ชื่อ-นามสกุล', ...subjects.map((s) => s.name), 'เฉลี่ย', 'เกรดเฉลี่ย']
     const dataRows = students.map((student, i) => {
-      const scores = DEFAULT_SUBJECTS.map((s) => student.scores[s.code] ?? '')
-      const validScores = DEFAULT_SUBJECTS.map((s) => student.scores[s.code]).filter((v) => v !== undefined && v !== null)
+      const scores = subjects.map((s) => student.scores[s.code] ?? '')
+      const validScores = subjects.map((s) => student.scores[s.code]).filter((v) => v !== undefined && v !== null)
       const avg = validScores.length > 0 ? validScores.reduce((a, b) => a + b, 0) / validScores.length : 0
       const avgGrade = validScores.length > 0 ? calculateGrade(avg) : '-'
       return [i + 1, student.student_id, `${student.first_name} ${student.last_name}`, ...scores, validScores.length > 0 ? Math.round(avg * 100) / 100 : '-', avgGrade]
     })
 
     const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows])
-    ws['!cols'] = [{ wch: 5 }, { wch: 12 }, { wch: 25 }, ...DEFAULT_SUBJECTS.map(() => ({ wch: 10 })), { wch: 8 }, { wch: 10 }]
+    ws['!cols'] = [{ wch: 5 }, { wch: 12 }, { wch: 25 }, ...subjects.map(() => ({ wch: 10 })), { wch: 8 }, { wch: 10 }]
     XLSX.utils.book_append_sheet(workbook, ws, 'คะแนน-เกรด')
 
-    const fileName = `เกรด_${currentClassroomName || selectedClassroom}_ภาค${gradeSemester}_${gradeYear}.xlsx`
+    const fileName = `เกรด_${currentClassroomName || selectedClassroom}_ปี${gradeYear}.xlsx`
     XLSX.writeFile(workbook, fileName)
   }
 
@@ -435,12 +458,12 @@ function ExportPageContent() {
     doc.setFontSize(16)
     doc.text(`สรุปคะแนน/เกรด - ${currentClassroomName || `ห้อง ${selectedClassroom}`}`, 14, 15)
     doc.setFontSize(10)
-    doc.text(`ภาคเรียนที่ ${gradeSemester} ปีการศึกษา ${gradeYear}`, 14, 22)
+    doc.text(`ปีการศึกษา ${gradeYear} (รวมภาคเรียนที่ 1 และ 2)`, 14, 22)
 
-    const headers = [['#', 'รหัส', 'ชื่อ-นามสกุล', ...DEFAULT_SUBJECTS.map((s) => s.name), 'เฉลี่ย', 'เกรด']]
+    const headers = [['#', 'รหัส', 'ชื่อ-นามสกุล', ...subjects.map((s) => s.name), 'เฉลี่ย', 'เกรด']]
     const rows = students.map((student, i) => {
-      const scores = DEFAULT_SUBJECTS.map((s) => student.scores[s.code] !== undefined ? String(student.scores[s.code]) : '-')
-      const validScores = DEFAULT_SUBJECTS.map((s) => student.scores[s.code]).filter((v) => v !== undefined && v !== null)
+      const scores = subjects.map((s) => student.scores[s.code] !== undefined ? String(student.scores[s.code]) : '-')
+      const validScores = subjects.map((s) => student.scores[s.code]).filter((v) => v !== undefined && v !== null)
       const avg = validScores.length > 0 ? validScores.reduce((a, b) => a + b, 0) / validScores.length : 0
       return [String(i + 1), student.student_id, `${student.first_name} ${student.last_name}`, ...scores, validScores.length > 0 ? String(Math.round(avg * 100) / 100) : '-', validScores.length > 0 ? calculateGrade(avg) : '-']
     })
@@ -454,7 +477,7 @@ function ExportPageContent() {
       columnStyles: { 2: { halign: 'left' } },
     })
 
-    doc.save(`เกรด_${currentClassroomName || selectedClassroom}_ภาค${gradeSemester}_${gradeYear}.pdf`)
+    doc.save(`เกรด_${currentClassroomName || selectedClassroom}_ปี${gradeYear}.pdf`)
   }
 
   // ============================================================
@@ -644,15 +667,15 @@ function ExportPageContent() {
 
   const exportGradesCSV = async () => {
     const students = await fetchGradeData()
-    const headers = ['ลำดับ', 'รหัส', 'ชื่อ-นามสกุล', ...DEFAULT_SUBJECTS.map((s) => s.name), 'เฉลี่ย', 'เกรดเฉลี่ย']
+    const headers = ['ลำดับ', 'รหัส', 'ชื่อ-นามสกุล', ...subjects.map((s) => s.name), 'เฉลี่ย', 'เกรดเฉลี่ย']
     const rows = students.map((student, i) => {
-      const scores = DEFAULT_SUBJECTS.map((s) => student.scores[s.code] !== undefined ? student.scores[s.code] : '')
-      const validScores = DEFAULT_SUBJECTS.map((s) => student.scores[s.code]).filter((v) => v !== undefined && v !== null)
+      const scores = subjects.map((s) => student.scores[s.code] !== undefined ? student.scores[s.code] : '')
+      const validScores = subjects.map((s) => student.scores[s.code]).filter((v) => v !== undefined && v !== null)
       const avg = validScores.length > 0 ? validScores.reduce((a, b) => a + b, 0) / validScores.length : 0
       return [i + 1, student.student_id, `${student.first_name} ${student.last_name}`, ...scores, validScores.length > 0 ? Math.round(avg * 100) / 100 : '-', validScores.length > 0 ? calculateGrade(avg) : '-'].map((v) => csvEscape(String(v))).join(',')
     })
     const csv = [headers.map((h) => csvEscape(h)).join(','), ...rows].join('\n')
-    downloadCSV(csv, `เกรด_${currentClassroomName || selectedClassroom}_ภาค${gradeSemester}_${gradeYear}.csv`)
+    downloadCSV(csv, `เกรด_${currentClassroomName || selectedClassroom}_ปี${gradeYear}.csv`)
   }
 
   // ============================================================
@@ -829,7 +852,7 @@ function ExportPageContent() {
           subtitle="Grades"
           icon={<BookOpenCheck size={22} />}
           tone="accent"
-          desc={`คะแนน/เกรด เทอม ${gradeSemester}/${gradeYear}`}
+          desc={`คะแนน/เกรด รวมทั้งปี ${gradeYear}`}
           exporting={exporting === `grades-${selectedFormat}`}
           exported={exportedFiles.includes(`grades-${selectedFormat}`)}
           disabled={!selectedClassroom || exporting !== null}

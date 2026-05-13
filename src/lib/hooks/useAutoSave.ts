@@ -70,6 +70,12 @@ export function useAutoSave<T>(
   //       เดิมจะใช้ saveFn ใหม่ → บันทึกข้อมูลเก่าไปลงบริบทใหม่
   // ตอนนี้: capture saveFn ตอนผู้ใช้แก้ไข แล้ว flush ใช้ saveFn ที่ผูกกับการแก้ไขนั้น
   const pendingSaveFnRef = useRef<((value: T) => Promise<void>) | null>(null)
+  // snapshot ของ value ตอนที่ timer ถูกตั้ง — ใช้ตอน flush-on-disable
+  // กัน race: ถ้า context เปลี่ยน (เช่น เปลี่ยนห้อง/วันที่) → refreshData setRows([])
+  // → latestValueRef.current อาจกลายเป็น [] ก่อนที่ flush effect จะทำงาน
+  // → ถ้าใช้ ref อาจ flush [] ลง bucket เก่า (ข้อมูลหาย)
+  // ใช้ snapshot นี้แทน เพื่อรับประกันว่า value + saveFn คู่กันเสมอ
+  const pendingValueSnapshotRef = useRef<{ value: T } | null>(null)
 
   // อัปเดต ref ของ callback ให้ล่าสุดเสมอ (เพื่อไม่ต้อง restart hook)
   useEffect(() => {
@@ -84,10 +90,22 @@ export function useAutoSave<T>(
 
   // ฟังก์ชันบันทึกจริง — ใช้ทั้งใน debounce และใน saveNow
   // ใช้ loop แทน recursion เพื่อกัน stack overflow ตอนพิมพ์เร็ว ๆ + network ช้า
-  const performSave = useCallback(async () => {
+  //
+  // useFrozenSnapshot=true: ใช้ตอน flush-on-disable
+  //   - iter แรกจะใช้ value จาก snapshot (ค่า ณ ตอน timer ถูกตั้ง)
+  //   - ไม่ใช้ latestValueRef ที่อาจถูก context ใหม่เขียนทับแล้ว (เช่น setRows([]))
+  //   - หลัง flush เสร็จจะไม่ loop iter 2 เพราะถือว่า disabled แล้ว
+  const performSave = useCallback(async (useFrozenSnapshot = false) => {
     // ถ้ากำลัง save อยู่แล้ว ให้ตั้ง flag ว่าต้อง save อีกรอบ (ข้อมูลใหม่กว่า)
     if (isSavingRef.current) {
       pendingSaveRef.current = true
+      return
+    }
+
+    // โหมด frozen: ดึง snapshot ออกมาก่อนเริ่ม
+    // ถ้าไม่มี snapshot = ไม่มี pending change → ไม่ flush
+    const frozenSnapshot = useFrozenSnapshot ? pendingValueSnapshotRef.current : null
+    if (useFrozenSnapshot && !frozenSnapshot) {
       return
     }
 
@@ -98,18 +116,37 @@ export function useAutoSave<T>(
     try {
       // วน save จนกว่าจะไม่มีข้อมูลใหม่เข้ามาระหว่าง save
       // (เคสพิมพ์เร็ว: pendingSaveRef ถูก set ระหว่าง await)
+      let isFirstIter = true
       // eslint-disable-next-line no-constant-condition
       while (true) {
-        const valueToSave = latestValueRef.current
+        let valueToSave: T
+        let fn: (value: T) => Promise<void>
+
+        if (isFirstIter && frozenSnapshot) {
+          // โหมด frozen: ใช้ value+saveFn ที่ snapshot ไว้ตอนตั้ง timer
+          // กัน race condition: context เปลี่ยน → latestValueRef ถูกเขียนทับแล้ว
+          valueToSave = frozenSnapshot.value
+          fn = pendingSaveFnRef.current ?? saveFnRef.current
+        } else {
+          valueToSave = latestValueRef.current
+          // iter แรก: ใช้ saveFn ที่ capture ตอนสร้าง timer (closure ตอนแก้ไข)
+          // iter ถัดไป: ใช้ saveFn ปัจจุบัน เพราะถ้ามีการแก้ไขเพิ่ม
+          //              ผู้ใช้อยู่ในบริบทปัจจุบันแล้ว
+          fn = pendingSaveFnRef.current ?? saveFnRef.current
+        }
+
         pendingSaveRef.current = false
-        // iter แรก: ใช้ saveFn ที่ capture ตอนสร้าง timer (closure ตอนแก้ไข)
-        // iter ถัดไป: ใช้ saveFn ปัจจุบัน เพราะถ้ามีการแก้ไขเพิ่ม
-        //              ผู้ใช้อยู่ในบริบทปัจจุบันแล้ว
-        const fn = pendingSaveFnRef.current ?? saveFnRef.current
         // เคลียร์ทันทีหลังใช้งาน — กัน iter 2 ใช้ saveFn เก่ากับ value ใหม่
         pendingSaveFnRef.current = null
+        // เคลียร์ snapshot ด้วย เพราะถือว่า consumed แล้ว
+        pendingValueSnapshotRef.current = null
+        isFirstIter = false
+
         await fn(valueToSave)
 
+        // โหมด frozen: ไม่ loop iter 2 เพราะ disabled แล้ว
+        //   ถ้ามี pendingSaveRef ถูก set ระหว่าง await → ปล่อยให้ effect ถัดไปจัดการ
+        if (frozenSnapshot) break
         // ถ้าระหว่าง save มีการแก้ไขเพิ่ม → loop ต่อ
         if (!pendingSaveRef.current) break
       }
@@ -126,6 +163,7 @@ export function useAutoSave<T>(
       isSavingRef.current = false
       pendingSaveRef.current = false
       pendingSaveFnRef.current = null
+      pendingValueSnapshotRef.current = null
     }
   }, [])
 
@@ -156,12 +194,15 @@ export function useAutoSave<T>(
     // รีเซ็ต error ถ้าผู้ใช้แก้ไขต่อ (เพื่อให้ลองใหม่)
     setStatus((prev) => (prev === 'error' ? 'idle' : prev))
 
-    // capture saveFn ปัจจุบัน (ที่ผูกกับ closure ของ value ตอนนี้)
+    // capture saveFn + value snapshot ปัจจุบัน (ที่ผูกกับ closure ตอนนี้)
     // ใช้ตอน flush เพื่อกัน closure mismatch — ถ้าครูเปลี่ยน date ก่อน timer ฟอง
     // saveFn จะเปลี่ยน identity แต่ pendingSaveFnRef ยังเป็นตัวเก่า → ข้อมูลลงบริบทเดิม
+    // value snapshot กัน race ตอน flush-on-disable: refreshData อาจ setRows([])
+    //   ก่อน flush effect ทำงาน → latestValueRef เป็น stale แล้ว ต้องใช้ snapshot
     // เจตนา: saveFn อยู่ใน deps ของ useAutoSave caller ไม่ใช่ deps ของ effect นี้
     //        ดังนั้นจะ capture เฉพาะตอน "ผู้ใช้แก้ไข" (value/enabled เปลี่ยน) เท่านั้น
     pendingSaveFnRef.current = saveFn
+    pendingValueSnapshotRef.current = { value }
 
     timerRef.current = setTimeout(() => {
       performSave()
@@ -186,8 +227,12 @@ export function useAutoSave<T>(
         // flush เฉพาะกรณี "ยังไม่ได้เริ่ม save" — ถ้ากำลัง save อยู่แล้ว
         // performSave มันจะดูแลให้ (loop ภายใน + saveFn ที่ capture ไว้)
         // ถ้าเรียกซ้ำตอน in-flight จะตั้ง pendingSaveRef → loop iter 2 ใช้ saveFn ปัจจุบัน → ผิดบริบท
-        if (hasPendingChanges && !isSavingRef.current) {
-          performSave().catch((err) => console.error('[useAutoSave] flush failed:', err))
+        //
+        // ใช้ useFrozenSnapshot=true: ดึง value จาก snapshot ตอนตั้ง timer
+        // ไม่ใช่จาก latestValueRef (อาจถูก context ใหม่เขียนทับแล้ว เช่น setRows([]))
+        // ถ้าไม่มี snapshot pending = ไม่มี change → performSave จะ skip เอง
+        if (hasPendingChanges && !isSavingRef.current && pendingValueSnapshotRef.current) {
+          performSave(true).catch((err) => console.error('[useAutoSave] flush failed:', err))
         }
       }
       setHasPendingChanges(false)

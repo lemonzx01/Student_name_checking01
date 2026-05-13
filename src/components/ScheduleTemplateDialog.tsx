@@ -3,18 +3,16 @@
 import { useEffect, useState } from 'react'
 import { Sparkles, X, AlertTriangle, Minus, Plus, Users, Star } from 'lucide-react'
 import {
-  TEMPLATE_SUBJECT_NAMES,
   generateScheduleFromHours,
   TOTAL_AVAILABLE_SLOTS,
 } from '@/lib/schedule-templates'
+import { useSubjects } from '@/lib/hooks/useSubjects'
 import type { Classroom } from '@/types/index'
 
-const SUBJECT_COLORS: Record<string, string> = {
-  TH: '#3B82F6', MA: '#EF4444', EN: '#8B5CF6', SC: '#10B981',
-  SO: '#F59E0B', HI: '#D97706', HE: '#EC4899', AR: '#06B6D4', WO: '#84CC16',
+/** ค่า default จำนวนคาบ/สัปดาห์สำหรับรหัสวิชามาตรฐาน — ถ้ารหัสตรง ก็ใช้ค่านี้ ไม่ตรง = 0 */
+const DEFAULT_HOURS: Record<string, number> = {
+  TH: 4, MA: 4, EN: 3, SC: 3, SO: 2, HI: 1, HE: 2, AR: 2, WO: 2,
 }
-
-const ALL_SUBJECTS = ['TH', 'MA', 'EN', 'SC', 'SO', 'HI', 'HE', 'AR', 'WO']
 
 interface ScheduleTemplateDialogProps {
   open: boolean
@@ -39,9 +37,8 @@ export default function ScheduleTemplateDialog({
   classrooms = [],
   currentClassroomId = null,
 }: ScheduleTemplateDialogProps) {
-  const [customCounts, setCustomCounts] = useState<Record<string, number>>({
-    TH: 4, MA: 4, EN: 3, SC: 3, SO: 2, HI: 1, HE: 2, AR: 2, WO: 2,
-  })
+  const { subjects } = useSubjects()
+  const [customCounts, setCustomCounts] = useState<Record<string, number>>({})
   const [pickedClassroomIds, setPickedClassroomIds] = useState<Set<number>>(new Set())
   const [avoidClashes, setAvoidClashes] = useState(true)
 
@@ -51,6 +48,17 @@ export default function ScheduleTemplateDialog({
       setPickedClassroomIds(currentClassroomId ? new Set([currentClassroomId]) : new Set())
     }
   }, [open, currentClassroomId])
+
+  // เมื่อ dialog เปิด หรือรายการวิชาเปลี่ยน → reset customCounts ให้ตรงกับ subjects ปัจจุบัน
+  // รหัสที่ตรงกับ DEFAULT_HOURS ใช้ค่า default, ที่เหลือ = 0
+  useEffect(() => {
+    if (!open) return
+    const next: Record<string, number> = {}
+    for (const s of subjects) {
+      next[s.code] = DEFAULT_HOURS[s.code] ?? 0
+    }
+    setCustomCounts(next)
+  }, [open, subjects])
 
   if (!open) return null
 
@@ -136,27 +144,26 @@ export default function ScheduleTemplateDialog({
 
           {/* Subject counters */}
           <div className="space-y-2">
-            {ALL_SUBJECTS.map((code) => {
-              const count = customCounts[code] || 0
-              const color = SUBJECT_COLORS[code]
+            {subjects.map((subject) => {
+              const count = customCounts[subject.code] || 0
               return (
                 <div
-                  key={code}
+                  key={subject.code}
                   className="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface)] px-3 py-2"
                 >
-                  <span className="h-3 w-3 flex-shrink-0 rounded-full" style={{ backgroundColor: color }} />
+                  <span className="h-3 w-3 flex-shrink-0 rounded-full" style={{ backgroundColor: subject.color }} />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-bold text-[var(--text)]">
-                      {code}
+                      {subject.code}
                       <span className="ml-2 text-[13px] font-normal text-[var(--muted)]">
-                        {TEMPLATE_SUBJECT_NAMES[code]}
+                        {subject.name}
                       </span>
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => bumpCount(code, -1)}
+                      onClick={() => bumpCount(subject.code, -1)}
                       disabled={count === 0}
                       className="btn-press flex h-7 w-7 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface)] text-[var(--text-soft)] transition hover:border-[var(--danger)] hover:text-[var(--danger)] disabled:opacity-40"
                     >
@@ -165,7 +172,7 @@ export default function ScheduleTemplateDialog({
                     <span className="w-6 text-center text-sm font-bold text-[var(--text)] tabular-nums">{count}</span>
                     <button
                       type="button"
-                      onClick={() => bumpCount(code, 1)}
+                      onClick={() => bumpCount(subject.code, 1)}
                       disabled={customTotal >= TOTAL_AVAILABLE_SLOTS}
                       className="btn-press flex h-7 w-7 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface)] text-[var(--text-soft)] transition hover:border-[var(--primary)] hover:text-[var(--primary)] disabled:opacity-40"
                     >
@@ -316,9 +323,9 @@ export default function ScheduleTemplateDialog({
           <div className="mt-4 border-t border-[var(--line-soft)] pt-3">
             <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--muted)]">รหัสวิชา</p>
             <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[var(--muted)]">
-              {Object.entries(TEMPLATE_SUBJECT_NAMES).map(([code, name]) => (
-                <span key={code}>
-                  <span className="font-bold text-[var(--text-soft)]">{code}</span> = {name}
+              {subjects.map((subject) => (
+                <span key={subject.code}>
+                  <span className="font-bold text-[var(--text-soft)]">{subject.code}</span> = {subject.name}
                 </span>
               ))}
             </div>

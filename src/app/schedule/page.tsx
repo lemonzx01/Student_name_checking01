@@ -22,7 +22,12 @@ import {
   X,
 } from 'lucide-react'
 import type { Classroom } from '@/types/index'
-import { getClassrooms } from '@/lib/client-data'
+import {
+  getClassrooms,
+  getScheduleByClassroom,
+  saveScheduleForClassroom,
+} from '@/lib/client-data'
+import { useSubjects, type SubjectWithMeta } from '@/lib/hooks/useSubjects'
 import ScheduleHoursCounter from '@/components/ScheduleHoursCounter'
 import ScheduleTemplateDialog from '@/components/ScheduleTemplateDialog'
 import ScheduleClashPanel, { Clash } from '@/components/ScheduleClashPanel'
@@ -31,7 +36,6 @@ import UndoToast from '@/components/Toast'
 import PageHeader from '@/components/PageHeader'
 import { useAutoSave } from '@/lib/hooks/useAutoSave'
 import {
-  TEMPLATE_SUBJECT_NAMES,
   detectScheduleClashes,
   generateMultiClassroomSchedules,
 } from '@/lib/schedule-templates'
@@ -51,17 +55,8 @@ const PERIOD_TIMES = [
 ]
 const LUNCH_TIME = '11.10-12.20'
 
-const SUBJECTS = [
-  { code: 'TH', name: 'ภาษาไทย', color: '#3B82F6' },
-  { code: 'MA', name: 'คณิตศาสตร์', color: '#EF4444' },
-  { code: 'EN', name: 'ภาษาอังกฤษ', color: '#8B5CF6' },
-  { code: 'SC', name: 'วิทยาศาสตร์', color: '#10B981' },
-  { code: 'SO', name: 'สังคมศึกษา', color: '#F59E0B' },
-  { code: 'HI', name: 'ประวัติศาสตร์', color: '#D97706' },
-  { code: 'HE', name: 'สุขศึกษา/พละ', color: '#EC4899' },
-  { code: 'AR', name: 'ศิลปะ', color: '#06B6D4' },
-  { code: 'WO', name: 'การงานฯ', color: '#84CC16' },
-]
+// Subjects list — มาจาก useSubjects() (live; ผู้ใช้แก้ผ่านหน้า Settings ได้)
+// แก้รายการวิชา default ที่ /lib/constants/subjects.ts
 
 // Fixed activities (auto-filled, non-editable)
 const FIXED_SLOTS: Record<string, { code: string; name: string }> = {
@@ -82,10 +77,6 @@ type AllSchedules = Record<number, ScheduleMap>
 
 // ขอบเขตตรวจคาบซ้ำ: ระดับชั้นเดียวกัน / เลือกเอง
 type ClashScope = 'grade' | 'custom'
-
-function getSubjectColor(code: string): string {
-  return SUBJECTS.find((s) => s.code === code)?.color || '#64748B'
-}
 
 // ดึงเลขชั้น (1-6) จาก level เช่น "ป.1", "ป 2", "ประถม 3"
 function parseGradeNum(level: string | null | undefined): number | null {
@@ -118,12 +109,14 @@ function SchedulePageContent() {
   const searchParams = useSearchParams()
   const urlClassroomId = searchParams.get('classroom')
 
+  const { subjects } = useSubjects()
+
   const [classrooms, setClassrooms] = useState<Classroom[]>([])
   const [allSchedules, setAllSchedules] = useState<AllSchedules>({})
   const [selectedId, setSelectedId] = useState<number | null>(
     urlClassroomId ? Number(urlClassroomId) : null
   )
-  const [activePaint, setActivePaint] = useState<(typeof SUBJECTS)[number] | null>(null)
+  const [activePaint, setActivePaint] = useState<SubjectWithMeta | null>(null)
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
@@ -233,20 +226,21 @@ function SchedulePageContent() {
     try {
       const cls = await getClassrooms()
       setClassrooms(cls)
+      // ใช้ data layer abstraction (getScheduleByClassroom) ที่ auto-detect
+      // ระหว่าง Electron IPC กับ /api/* — ไม่ทำ fetch ตรง ๆ เพื่อให้ build
+      // production ของ Electron (ไม่มี Next.js server) ใช้งานได้
       const results = await Promise.all(
         cls.map(async (c) => {
-          const res = await fetch(`/api/schedule?classroom=${c.id}`)
-          const data = await res.json()
+          const data = await getScheduleByClassroom(c.id)
           const map: ScheduleMap = {}
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          data.forEach((item: any) => {
+          for (const item of data) {
             map[`${item.day_of_week}-${item.period}`] = {
               subject_code: item.subject_code || '',
               subject_name: item.subject_name || '',
               class_level: item.class_level || '',
               room: item.room || '',
             }
-          })
+          }
           return [c.id, map] as const
         })
       )
@@ -271,20 +265,11 @@ function SchedulePageContent() {
       if (dirtyClassrooms.size === 0) return
 
       const ids = Array.from(dirtyClassrooms)
-      const responses = await Promise.all(
-        ids.map((id) =>
-          fetch('/api/schedule', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ classroom: id, schedule: schedules[id] || {} }),
-          })
-        )
+      // ใช้ saveScheduleForClassroom (Electron IPC + Web API ใน abstraction เดียว)
+      // ถ้าห้องใดบันทึกพลาด → จะ throw ออกมาทาง useAutoSave ที่ใช้แสดง state error
+      await Promise.all(
+        ids.map((id) => saveScheduleForClassroom(id, schedules[id] || {})),
       )
-      for (const res of responses) {
-        if (!res.ok) {
-          throw new Error(`บันทึกไม่สำเร็จ: ${res.status}`)
-        }
-      }
       // เคลียร์ dirty set หลัง save สำเร็จ — รอบหน้าค่อยมาทับ
       setDirtyClassrooms(new Set())
     },
@@ -502,7 +487,7 @@ function SchedulePageContent() {
         for (const [key, code] of Object.entries(slotsForThisClassroom)) {
           newSchedule[key] = {
             subject_code: code,
-            subject_name: TEMPLATE_SUBJECT_NAMES[code] || code,
+            subject_name: subjects.find((s) => s.code === code)?.name || code,
             class_level: classroom?.level || '',
             room: '',
           }
@@ -1077,7 +1062,7 @@ function SchedulePageContent() {
                 )}
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {SUBJECTS.map((s) => {
+                {subjects.map((s) => {
                   const isActive = activePaint?.code === s.code
                   return (
                     <button
@@ -1157,7 +1142,9 @@ function SchedulePageContent() {
                           const slot = currentSchedule[key]
                           const fixed = FIXED_SLOTS[key]
                           const isEmpty = !slot && !fixed
-                          const color = slot ? getSubjectColor(slot.subject_code) : '#64748B'
+                          const color = slot
+                            ? subjects.find((s) => s.code === slot.subject_code)?.color || '#64748B'
+                            : '#64748B'
                           const hasClash = clashKeysForCurrent.has(key)
                           const clashPeers = clashPeersForCurrent.get(key) || []
                           const clashTitle = hasClash
@@ -1292,6 +1279,7 @@ function SchedulePageContent() {
           classroomName={selectedClassroom?.name || ''}
           form={editForm}
           setForm={setEditForm}
+          subjects={subjects}
           onSave={saveEditModal}
           onDelete={deleteFromModal}
           onClose={() => setEditingSlot(null)}
@@ -1369,6 +1357,7 @@ function EditModal({
   classroomName,
   form,
   setForm,
+  subjects,
   onSave,
   onDelete,
   onClose,
@@ -1379,6 +1368,7 @@ function EditModal({
   classroomName: string
   form: Slot
   setForm: (s: Slot) => void
+  subjects: SubjectWithMeta[]
   onSave: () => void
   onDelete: () => void
   onClose: () => void
@@ -1404,7 +1394,7 @@ function EditModal({
           <div>
             <label className="section-title mb-1.5 block text-xs">เลือกวิชา</label>
             <div className="flex flex-wrap gap-1.5">
-              {SUBJECTS.map((s) => {
+              {subjects.map((s) => {
                 const active = form.subject_code === s.code
                 return (
                   <button

@@ -8,15 +8,17 @@ import {
   CheckCircle,
   FileSpreadsheet,
   Minus,
+  School,
   TrendingDown,
   TrendingUp,
 } from 'lucide-react'
-import { Classroom, calculateBmi } from '@/types'
+import { Classroom, calculateBmi, getClassroomColor } from '@/types'
 import CalendarPicker from '@/components/CalendarPicker'
 import AutoSaveIndicator from '@/components/AutoSaveIndicator'
 import PageHeader from '@/components/PageHeader'
 import { useAutoSave } from '@/lib/hooks/useAutoSave'
 import { useBeforeUnloadWarning } from '@/lib/hooks/useBeforeUnloadWarning'
+import { todayISO } from '@/lib/local-date'
 
 const loadXLSX = async () => {
   try {
@@ -60,51 +62,37 @@ function HealthPageContent() {
 
   const [classrooms, setClassrooms] = useState<Classroom[]>([])
   const [healthRecords, setHealthRecords] = useState<HealthRecord[]>([])
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
+  const [selectedDate, setSelectedDate] = useState(todayISO())
   const [loading, setLoading] = useState(false)
   const [toast, setToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
   const currentClassroomName =
     classrooms.find((c) => c.id === selectedClassroom)?.name || ''
 
-  useEffect(() => {
-    loadClassrooms()
-  }, [])
-
-  useEffect(() => {
-    if (selectedClassroom) {
-      loadHealthData()
-    }
-  }, [selectedClassroom, selectedDate])
-
-  useEffect(() => {
-    if (toast) {
-      const timer = setTimeout(() => setToast(null), 2500)
-      return () => clearTimeout(timer)
-    }
-  }, [toast])
-
-  const loadClassrooms = async () => {
+  const loadClassrooms = useCallback(async () => {
     try {
       const res = await fetch('/api/classrooms')
+      if (!res.ok) {
+        console.error(`[health] loadClassrooms failed: ${res.status}`)
+        setClassrooms([])
+        return
+      }
       const data = await res.json()
       setClassrooms(Array.isArray(data) ? data : [])
     } catch (error) {
       console.error('Failed to load classrooms:', error)
     }
-  }
+  }, [])
 
-  // เปลี่ยนห้องเรียน → อัปเดต URL + localStorage
-  function switchClassroom(id: number) {
-    if (id === selectedClassroom) return
-    localStorage.setItem('selectedClassroom', String(id))
-    router.replace(`/health?classroom=${id}`)
-  }
-
-  const loadHealthData = async () => {
+  const loadHealthData = useCallback(async () => {
     setLoading(true)
     try {
       const res = await fetch(`/api/health?classroom=${selectedClassroom}&date=${selectedDate}`)
+      if (!res.ok) {
+        console.error(`[health] loadHealthData failed: ${res.status}`)
+        setHealthRecords([])
+        return
+      }
       const data = await res.json()
       setHealthRecords(Array.isArray(data) ? data : [])
     } catch (error) {
@@ -113,6 +101,30 @@ function HealthPageContent() {
     } finally {
       setLoading(false)
     }
+  }, [selectedClassroom, selectedDate])
+
+  useEffect(() => {
+    loadClassrooms()
+  }, [loadClassrooms])
+
+  useEffect(() => {
+    if (selectedClassroom) {
+      loadHealthData()
+    }
+  }, [selectedClassroom, selectedDate, loadHealthData])
+
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 2500)
+      return () => clearTimeout(timer)
+    }
+  }, [toast])
+
+  // เปลี่ยนห้องเรียน → อัปเดต URL + localStorage
+  function switchClassroom(id: number) {
+    if (id === selectedClassroom) return
+    localStorage.setItem('selectedClassroom', String(id))
+    router.replace(`/health?classroom=${id}`)
   }
 
   // ─── Auto-save ────────────────────────────────────────────
@@ -298,21 +310,36 @@ function HealthPageContent() {
       {/* Classroom selector — ปุ่มกดเลือกห้อง */}
       {classrooms.length > 0 && (
         <div className="card animate-slide-up mb-4 p-4">
-          <label className="section-title mb-2 block text-xs">ห้องเรียน</label>
-          <div className="flex flex-wrap gap-1.5">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="flex h-6 w-6 items-center justify-center rounded-md bg-[var(--surface-muted)] text-[var(--text-soft)]">
+                <School className="h-3.5 w-3.5" />
+              </span>
+              <span className="section-title text-xs">ห้องเรียน</span>
+            </div>
+            <span className="rounded-full bg-[var(--surface-muted)] px-2 py-0.5 text-[10px] font-semibold text-[var(--text-soft)]">
+              {classrooms.length} ห้อง
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
             {classrooms.map((cls) => {
               const isSelected = selectedClassroom === cls.id
+              const color = getClassroomColor(cls)
               return (
                 <button
                   key={cls.id}
                   type="button"
                   onClick={() => switchClassroom(cls.id)}
-                  className={`btn-press inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                  className={`btn-press inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all duration-200 ${
                     isSelected
-                      ? 'bg-[var(--primary)] text-white shadow-sm'
-                      : 'bg-[var(--surface-muted)] text-[var(--text-soft)] hover:bg-[var(--surface-soft)]'
+                      ? `${color.bg} text-white shadow-md ring-1 ring-white/40`
+                      : 'border border-[var(--line)] bg-[var(--surface)] text-[var(--text)] hover:-translate-y-0.5 hover:border-[var(--line-strong)] hover:shadow-sm'
                   }`}
+                  aria-pressed={isSelected}
                 >
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${isSelected ? 'bg-white' : color.bg}`}
+                  />
                   {cls.name}
                 </button>
               )

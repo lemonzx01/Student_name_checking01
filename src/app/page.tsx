@@ -28,16 +28,7 @@ import {
   getClassroomStats,
 } from '@/lib/client-data'
 import { useDialog } from '@/lib/hooks/useConfirm'
-
-const THAI_DAYS = ['วันอาทิตย์', 'วันจันทร์', 'วันอังคาร', 'วันพุธ', 'วันพฤหัสบดี', 'วันศุกร์', 'วันเสาร์']
-const THAI_MONTHS = [
-  'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
-  'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
-]
-
-function formatThaiDate(d: Date): string {
-  return `${THAI_DAYS[d.getDay()]}ที่ ${d.getDate()} ${THAI_MONTHS[d.getMonth()]} ${d.getFullYear() + 543}`
-}
+import { formatThaiDate } from '@/lib/constants/thai-date'
 
 interface QuickActionProps {
   href: string
@@ -74,7 +65,26 @@ export default function HomePage() {
   const [editingClassroom, setEditingClassroom] = useState<Classroom | null>(null)
   const [duplicateSource, setDuplicateSource] = useState<Classroom | null>(null)
   const [lastClassroomId, setLastClassroomId] = useState<number | null>(null)
+  const [nowTick, setNowTick] = useState(0)
   const { confirm, alert } = useDialog()
+
+  // Keep "วันนี้" label fresh — re-tick every 60s + when tab regains focus,
+  // so the date doesn't get stuck on yesterday past midnight.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNowTick((n) => n + 1)
+    }, 60_000)
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        setNowTick((n) => n + 1)
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [])
 
   async function loadClassrooms() {
     setLoading(true)
@@ -164,7 +174,7 @@ export default function HomePage() {
   }
 
   const totalStudents = classrooms.reduce((sum, c) => sum + (c.student_count || 0), 0)
-  const today = useMemo(() => new Date(), [])
+  const today = useMemo(() => new Date(), [nowTick])
   const thaiDate = useMemo(() => formatThaiDate(today), [today])
 
   // Quick Actions ไปห้องล่าสุดที่เปิด ถ้าไม่มีใช้ห้องแรก

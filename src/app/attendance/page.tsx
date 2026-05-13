@@ -14,6 +14,7 @@ import { getAttendance, getAttendanceDates, getClassrooms, saveAttendanceRecord 
 import { useAutoSave } from '@/lib/hooks/useAutoSave'
 import { useBeforeUnloadWarning } from '@/lib/hooks/useBeforeUnloadWarning'
 import { ATTENDANCE_STATUS } from '@/lib/constants/colors'
+import { todayISO } from '@/lib/local-date'
 
 const STATUS_OPTIONS: AttendanceStatus[] = ['มา', 'ขาด', 'ลาป่วย', 'ลากิจ']
 
@@ -40,7 +41,7 @@ function AttendancePageContent() {
   const classroomFromUrl = searchParams.get('classroom')
   const [classrooms, setClassrooms] = useState<Classroom[]>([])
   const [rows, setRows] = useState<any[]>([])
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const [date, setDate] = useState(todayISO())
   const [search, setSearch] = useState('')
   const [markedDates, setMarkedDates] = useState<Set<string>>(new Set())
   // flag กัน auto-save ยิงตอนที่เรากำลังโหลดข้อมูลใหม่จาก DB (เปลี่ยนห้อง/วันที่)
@@ -81,10 +82,25 @@ function AttendancePageContent() {
     [activeClassroomId, date]
   )
 
+  // โหลดข้อมูล + จุดสีบนปฏิทิน พร้อมกันในรอบเดียว
+  // - deps เป็น primitives [activeClassroomId, date] ตรง ๆ เพื่อกันการยิงซ้ำจาก
+  //   identity ของ useCallback ที่ rebuild เมื่อ deps เปลี่ยน
+  // - cancelled flag กัน race เมื่อผู้ใช้เปลี่ยนห้อง/วันที่อย่างรวดเร็ว
   useEffect(() => {
-    refreshData()
-    fetchMarkedDates()
-  }, [refreshData, fetchMarkedDates])
+    let cancelled = false
+    async function load() {
+      if (cancelled) return
+      await Promise.all([refreshData(), fetchMarkedDates()])
+    }
+    load()
+    return () => {
+      cancelled = true
+    }
+    // refreshData/fetchMarkedDates ถูก memo ด้วย [activeClassroomId, date] อยู่แล้ว
+    // — ใส่เป็น deps จะทำให้ effect ยิงซ้ำเมื่อ identity เปลี่ยน ซึ่งเทียบเท่ากับ
+    //   primitives เหล่านี้พอดี → กันซ้ำด้วยการใช้ primitives ตรง ๆ
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeClassroomId, date])
 
   const filteredRows = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -102,10 +118,14 @@ function AttendancePageContent() {
     })
   }, [rows, search])
 
-  const counts = rows.reduce<Record<string, number>>((acc, row) => {
-    acc[row.status] = (acc[row.status] || 0) + 1
-    return acc
-  }, {})
+  const counts = useMemo(
+    () =>
+      rows.reduce<Record<string, number>>((acc, row) => {
+        acc[row.status] = (acc[row.status] || 0) + 1
+        return acc
+      }, {}),
+    [rows]
+  )
 
   function setAllStatus(status: AttendanceStatus) {
     setRows((current) => current.map((item) => ({ ...item, status })))

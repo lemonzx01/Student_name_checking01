@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { CalendarDays, Clock, Coffee } from 'lucide-react'
 import { getScheduleByClassroom } from '@/lib/client-data'
+import { useSubjects } from '@/lib/hooks/useSubjects'
 
 // ให้ตรงกับ /app/schedule/page.tsx
 const PERIOD_RANGES: [number, number][] = [
@@ -23,19 +24,6 @@ const FIXED_SLOTS: Record<string, string> = {
   '5-6': 'สวดมนต์',
 }
 
-// subject code → ชื่อเต็ม (ซิงค์กับ SUBJECTS ใน /app/schedule/page.tsx)
-const SUBJECT_MAP: Record<string, { name: string; color: string }> = {
-  TH: { name: 'ภาษาไทย', color: '#3B82F6' },
-  MA: { name: 'คณิตศาสตร์', color: '#EF4444' },
-  EN: { name: 'ภาษาอังกฤษ', color: '#8B5CF6' },
-  SC: { name: 'วิทยาศาสตร์', color: '#10B981' },
-  SO: { name: 'สังคมศึกษา', color: '#F59E0B' },
-  HI: { name: 'ประวัติศาสตร์', color: '#D97706' },
-  HE: { name: 'สุขศึกษา/พละ', color: '#EC4899' },
-  AR: { name: 'ศิลปะ', color: '#06B6D4' },
-  WO: { name: 'การงานฯ', color: '#84CC16' },
-}
-
 interface TodayScheduleProps {
   classroomId: number
   classroomName: string
@@ -53,6 +41,17 @@ export default function TodaySchedule({ classroomId, classroomName }: TodaySched
   const [loading, setLoading] = useState(true)
   // อัพเดท now ทุก 1 นาที เพื่อ highlight คาบปัจจุบันได้ถูกต้อง
   const [now, setNow] = useState(() => new Date())
+
+  // ดึงรายการวิชาที่ครูตั้งไว้จริง — ให้ sync กับ Settings/useSubjects
+  // (รับการแก้ชื่อ/สีของวิชาทันทีโดยไม่ต้อง refresh)
+  const { subjects } = useSubjects()
+  const subjectMap = useMemo(() => {
+    const m: Record<string, { name: string; color: string }> = {}
+    for (const s of subjects) {
+      m[s.code] = { name: s.name, color: s.color }
+    }
+    return m
+  }, [subjects])
 
   useEffect(() => {
     if (!classroomId) return
@@ -164,7 +163,7 @@ export default function TodaySchedule({ classroomId, classroomName }: TodaySched
         <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
           {todayRows.map(({ period, row }) => {
             const fixed = FIXED_SLOTS[`${todayDayNum}-${period}`]
-            const subject = row?.subject_code ? SUBJECT_MAP[row.subject_code] : null
+            const subject = row?.subject_code ? subjectMap[row.subject_code] : null
             const isNow = currentPeriod === period
             const isPast = currentPeriod > 0 && period < currentPeriod
             const color = subject?.color || (fixed ? '#8b5cf6' : '#94a3b8')

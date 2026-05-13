@@ -6,6 +6,7 @@ import { Classroom, AttendanceRow, Student } from '@/types'
 import CalendarPicker from '@/components/CalendarPicker'
 import CustomSelect from '@/components/CustomSelect'
 import PageHeader from '@/components/PageHeader'
+import { toLocalISO } from '@/lib/local-date'
 
 const loadXLSX = async () => {
   try {
@@ -40,8 +41,8 @@ export default function AttendanceReportPage() {
   useEffect(() => {
     loadClassrooms()
     const now = new Date()
-    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
-    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0]
+    const firstDay = toLocalISO(new Date(now.getFullYear(), now.getMonth(), 1))
+    const lastDay = toLocalISO(new Date(now.getFullYear(), now.getMonth() + 1, 0))
     setStartDate(firstDay)
     setEndDate(lastDay)
   }, [])
@@ -84,7 +85,7 @@ export default function AttendanceReportPage() {
       const end = new Date(endDate)
       const result: ReportRow[] = []
       for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-        const dateStr = d.toISOString().split('T')[0]
+        const dateStr = toLocalISO(d)
         const rows = dayMap.get(dateStr)
         if (!rows || rows.length === 0) continue
 

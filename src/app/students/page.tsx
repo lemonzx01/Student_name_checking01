@@ -1,21 +1,18 @@
 'use client'
 
-import { Suspense, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { CalendarDays, ChevronLeft, Eye, NotebookPen, Pencil, Phone, Plus, Search, Trash2, UserSquare2, Users, X } from 'lucide-react'
+import { ChevronLeft, Eye, Pencil, Phone, Plus, Search, Trash2, UserSquare2, Users, X } from 'lucide-react'
 import CustomSelect from '@/components/CustomSelect'
 import ExcelImportButton from '@/components/ExcelImportButton'
 import PageHeader from '@/components/PageHeader'
 import StudentAvatar from '@/components/StudentAvatar'
 import StudentModal from '@/components/StudentModal'
-import { Classroom, Student, StudentNote } from '@/types'
+import { Classroom, Student } from '@/types'
 import {
-  addStudentNoteRecord,
-  deleteStudentNoteRecord,
   deleteStudentRecord,
   getClassrooms,
-  getStudentNotes,
   getStudents,
 } from '@/lib/client-data'
 import { useDialog } from '@/lib/hooks/useConfirm'
@@ -42,17 +39,14 @@ function StudentsPageContent() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editingStudent, setEditingStudent] = useState<Student | null>(null)
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
-  const [notes, setNotes] = useState<StudentNote[]>([])
-  const [notesLoading, setNotesLoading] = useState(false)
-  const [noteDate, setNoteDate] = useState(() => new Date().toISOString().split('T')[0])
-  const [noteText, setNoteText] = useState('')
-  const [savingNote, setSavingNote] = useState(false)
   const { confirm, alert } = useDialog()
 
   const activeClassroomId = classroomFromUrl ? Number(classroomFromUrl) : null
   const activeClassroom = classrooms.find((item) => item.id === activeClassroomId) ?? null
 
-  async function refreshData() {
+  // refreshData ผูกกับ activeClassroomId — ใช้ useCallback เพื่อให้ identity คงที่
+  // และส่งเป็น prop ได้โดยไม่ทำให้ child re-render
+  const refreshData = useCallback(async () => {
     setLoading(true)
     try {
       const [classroomRows, studentRows] = await Promise.all([
@@ -64,11 +58,11 @@ function StudentsPageContent() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [activeClassroomId])
 
   useEffect(() => {
     refreshData()
-  }, [classroomFromUrl])
+  }, [refreshData])
 
   // เปิด detail modal อัตโนมัติเมื่อมี ?student=<id> ใน URL (จาก global search)
   const studentIdFromUrl = searchParams.get('student')
@@ -79,88 +73,6 @@ function StudentsPageContent() {
       setSelectedStudent(found)
     }
   }, [studentIdFromUrl, students])
-
-  // โหลดบันทึกประจำตัว ทุกครั้งที่เปิดดูนักเรียนคนใหม่
-  useEffect(() => {
-    if (!selectedStudent) {
-      setNotes([])
-      setNoteText('')
-      return
-    }
-
-    let cancelled = false
-    setNotesLoading(true)
-    getStudentNotes(selectedStudent.id)
-      .then((rows) => {
-        if (!cancelled) setNotes(rows)
-      })
-      .catch((err) => {
-        console.error('[notes] load error', err)
-        if (!cancelled) setNotes([])
-      })
-      .finally(() => {
-        if (!cancelled) setNotesLoading(false)
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [selectedStudent])
-
-  async function handleAddNote() {
-    if (!selectedStudent) return
-    const trimmed = noteText.trim()
-    if (!trimmed) {
-      await alert({ title: 'ข้อมูลไม่ครบ', message: 'กรุณากรอกข้อความบันทึก', variant: 'warning' })
-      return
-    }
-    if (!noteDate) {
-      await alert({ title: 'ข้อมูลไม่ครบ', message: 'กรุณาเลือกวันที่', variant: 'warning' })
-      return
-    }
-
-    setSavingNote(true)
-    try {
-      const created = await addStudentNoteRecord({
-        student_id: selectedStudent.id,
-        date: noteDate,
-        note: trimmed,
-      })
-      setNotes((prev) => [created, ...prev])
-      setNoteText('')
-    } catch (err) {
-      console.error('[notes] add error', err)
-      await alert({ title: 'บันทึกไม่สำเร็จ', message: 'ลองใหม่อีกครั้ง', variant: 'error' })
-    } finally {
-      setSavingNote(false)
-    }
-  }
-
-  async function handleDeleteNote(note: StudentNote) {
-    const ok = await confirm({
-      title: 'ลบบันทึกนี้?',
-      message: 'บันทึกประจำตัวที่เลือกจะถูกลบทิ้ง',
-      variant: 'danger',
-      confirmText: 'ลบบันทึก',
-    })
-    if (!ok) return
-
-    try {
-      await deleteStudentNoteRecord(note.id)
-      setNotes((prev) => prev.filter((n) => n.id !== note.id))
-    } catch (err) {
-      console.error('[notes] delete error', err)
-      await alert({ title: 'ลบไม่สำเร็จ', message: 'ลองใหม่อีกครั้ง', variant: 'error' })
-    }
-  }
-
-  function formatThaiShortDate(iso: string): string {
-    // รับ 'YYYY-MM-DD' → '12 เม.ย. 2568'
-    const [y, m, d] = iso.split('-').map(Number)
-    if (!y || !m || !d) return iso
-    const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
-    return `${d} ${months[m - 1]} ${y + 543}`
-  }
 
   const filteredStudents = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -560,96 +472,6 @@ function StudentsPageContent() {
                   ))}
                 </div>
               </div>
-            </div>
-
-            {/* บันทึกประจำตัวนักเรียน */}
-            <div className="mt-5 rounded-[var(--radius-md)] border border-[var(--line)] p-5">
-              <h3 className="mb-4 flex items-center gap-2 text-base font-bold text-[var(--text)]">
-                <div
-                  className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)]"
-                  style={{ background: 'var(--info-soft)', color: 'var(--info)' }}
-                >
-                  <NotebookPen size={15} />
-                </div>
-                บันทึกประจำตัวนักเรียน
-                <span className="pill pill-muted">{notes.length}</span>
-              </h3>
-
-              {/* ฟอร์มเพิ่มบันทึกใหม่ */}
-              <div className="mb-4 rounded-[var(--radius-md)] border border-[var(--line)] bg-[var(--surface-soft)] p-4">
-                <div className="mb-3 grid gap-3 sm:grid-cols-[180px_1fr]">
-                  <div>
-                    <label className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-[var(--text-soft)]">
-                      <CalendarDays size={13} />
-                      วันที่
-                    </label>
-                    <input
-                      type="date"
-                      value={noteDate}
-                      onChange={(e) => setNoteDate(e.target.value)}
-                      className="input"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-semibold text-[var(--text-soft)]">รายละเอียดบันทึก</label>
-                    <textarea
-                      value={noteText}
-                      onChange={(e) => setNoteText(e.target.value)}
-                      rows={2}
-                      placeholder="เช่น พูดคุยกับผู้ปกครองเรื่องการบ้าน, พฤติกรรมในห้องเรียน, การแจ้งเตือน ฯลฯ"
-                      className="input resize-none"
-                    />
-                  </div>
-                </div>
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    onClick={handleAddNote}
-                    disabled={savingNote || !noteText.trim()}
-                    className="btn btn-primary btn-sm btn-press"
-                  >
-                    <Plus size={14} />
-                    {savingNote ? 'กำลังบันทึก...' : 'เพิ่มบันทึก'}
-                  </button>
-                </div>
-              </div>
-
-              {/* รายการบันทึก */}
-              {notesLoading ? (
-                <div className="space-y-2">
-                  <div className="skeleton h-16 w-full rounded-[var(--radius-md)]" />
-                  <div className="skeleton h-16 w-full rounded-[var(--radius-md)]" />
-                </div>
-              ) : notes.length === 0 ? (
-                <div className="rounded-[var(--radius-md)] border border-dashed border-[var(--line)] bg-[var(--surface-soft)] px-4 py-6 text-center text-sm text-[var(--muted)]">
-                  ยังไม่มีบันทึก — เพิ่มบันทึกแรกด้วยแบบฟอร์มด้านบน
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {notes.map((note) => (
-                    <div
-                      key={note.id}
-                      className="group flex items-start gap-3 rounded-[var(--radius-md)] border border-[var(--line-soft)] bg-[var(--surface)] px-4 py-3 transition hover:border-[var(--info-soft)] hover:bg-[var(--info-soft)]"
-                    >
-                      <div className="flex min-w-[90px] flex-shrink-0 flex-col items-center rounded-[var(--radius-sm)] bg-[var(--info-soft)] px-2 py-1.5 text-center text-[var(--info)]">
-                        <span className="text-[11px] font-medium">วันที่</span>
-                        <span className="text-sm font-bold">{formatThaiShortDate(note.date)}</span>
-                      </div>
-                      <p className="flex-1 whitespace-pre-wrap text-sm leading-relaxed text-[var(--text-soft)]">
-                        {note.note}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteNote(note)}
-                        className="btn-press flex-shrink-0 rounded-[var(--radius-sm)] p-1.5 text-[var(--muted-soft)] opacity-0 transition hover:bg-[var(--danger-soft)] hover:text-[var(--danger-strong)] group-hover:opacity-100"
-                        title="ลบบันทึก"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
 
             {selectedStudent.source_payload ? (

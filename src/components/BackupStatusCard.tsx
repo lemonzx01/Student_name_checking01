@@ -4,11 +4,7 @@ import { useEffect, useState } from 'react'
 import { ShieldCheck, FolderOpen, AlertCircle } from 'lucide-react'
 import { getBackupInfo, openBackupFolder, type BackupInfo } from '@/lib/client-data'
 import { useDialog } from '@/lib/hooks/useConfirm'
-
-const THAI_MONTHS_SHORT = [
-  'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
-  'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.',
-]
+import { THAI_MONTHS_SHORT } from '@/lib/constants/thai-date'
 
 function formatBackupTime(iso: string | null): string {
   if (!iso) return 'ยังไม่มีไฟล์สำรอง'

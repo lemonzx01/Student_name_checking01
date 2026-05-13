@@ -5,11 +5,8 @@ import Link from 'next/link'
 import { ChevronLeft, ChevronRight, CalendarCheck, Check, X, AlertCircle, Info } from 'lucide-react'
 import { getAttendanceDates } from '@/lib/client-data'
 import { formatDateISO, isWeekend } from '@/lib/thai-holidays'
+import { THAI_MONTHS } from '@/lib/constants/thai-date'
 
-const THAI_MONTHS = [
-  'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
-  'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม',
-]
 const DAY_LABELS = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
 
 interface AttendanceCalendarProps {
@@ -21,16 +18,35 @@ export default function AttendanceCalendar({ classroomId, classroomName }: Atten
   const [viewDate, setViewDate] = useState(() => new Date())
   const [checkedDates, setCheckedDates] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
+  const [nowTick, setNowTick] = useState(0)
 
   const year = viewDate.getFullYear()
   const month0 = viewDate.getMonth()
   const yearMonth = `${year}-${String(month0 + 1).padStart(2, '0')}`
 
+  // Keep `today` fresh — re-tick every 60s + when tab regains focus,
+  // so the highlight doesn't get stuck on yesterday past midnight.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNowTick((n) => n + 1)
+    }, 60_000)
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        setNowTick((n) => n + 1)
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [])
+
   const today = useMemo(() => {
     const d = new Date()
     d.setHours(0, 0, 0, 0)
     return d
-  }, [])
+  }, [nowTick])
   const todayISO = formatDateISO(today)
 
   // โหลดวันที่เช็คไปแล้ว

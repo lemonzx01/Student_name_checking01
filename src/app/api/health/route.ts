@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server'
 import { getStudentsByClassroom, getHealthByClassroom, saveHealth, getAllHealthByClassroom, upsertHealthEntry } from '@/lib/db'
 import { calculateBmi } from '@/types'
+import { todayISO } from '@/lib/local-date'
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const classroom = searchParams.get('classroom')
-  const date = searchParams.get('date') || new Date().toISOString().split('T')[0]
+  const date = searchParams.get('date') || todayISO()
   const mode = searchParams.get('mode')
 
   try {

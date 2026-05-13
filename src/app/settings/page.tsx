@@ -25,14 +25,12 @@ import {
 } from 'lucide-react'
 import { getAllStats, listBackups, restoreBackup, type BackupFile } from '@/lib/client-data'
 import { useDialog } from '@/lib/hooks/useConfirm'
+import { useSubjects } from '@/lib/hooks/useSubjects'
 import { useTheme, type FontSize, type ThemeMode } from '@/lib/hooks/useTheme'
 import { disablePin, hashPin, isPinEnabled, getStoredPinHash, setStoredPin } from '@/components/PinGate'
 import PageHeader from '@/components/PageHeader'
-
-const THAI_MONTHS_SHORT = [
-  'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
-  'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.',
-]
+import { todayISO } from '@/lib/local-date'
+import { THAI_MONTHS_SHORT } from '@/lib/constants/thai-date'
 
 function formatBackupDate(iso: string): string {
   try {
@@ -73,6 +71,7 @@ export default function SettingsPage() {
     typeof window !== 'undefined' && typeof window.electronAPI !== 'undefined'
   const { confirm, alert } = useDialog()
   const { mode: themeMode, fontSize, setMode: setThemeMode, setFontSize, ready: themeReady } = useTheme()
+  const { subjects: liveSubjects } = useSubjects()
 
   // PIN state
   const [pinEnabled, setPinEnabled] = useState(false)
@@ -183,11 +182,19 @@ export default function SettingsPage() {
         if (data.error) throw new Error(data.error)
       }
 
+      // Override subjects with the live (teacher-edited) list from localStorage —
+      // ทั้ง Electron exportData() และ /api/settings/export ต่างก็ส่ง DEFAULT_SUBJECTS
+      // กลับมา จึงต้องเขียนทับด้วยรายการที่ครูแก้ไขจริงในแอปหน้าเว็บ
+      data = {
+        ...data,
+        subjects: liveSubjects.map((s) => ({ code: s.code, name: s.name, color: s.color })),
+      }
+
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `school_backup_${new Date().toISOString().split('T')[0]}.json`
+      a.download = `school_backup_${todayISO()}.json`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
@@ -228,7 +235,19 @@ export default function SettingsPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data),
         })
-        if (!res.ok) throw new Error('Import failed')
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({} as any))
+          throw new Error(body?.error || `Import failed (${res.status})`)
+        }
+      }
+
+      // คืน subjects จากไฟล์สำรองลง localStorage (subjects เก็บฝั่ง client, ไม่ผ่าน server)
+      if (Array.isArray(data.subjects) && data.subjects.length > 0) {
+        try {
+          localStorage.setItem('customSubjects', JSON.stringify({ subjects: data.subjects }))
+        } catch (err) {
+          console.warn('[import] restore subjects to localStorage failed:', err)
+        }
       }
 
       setMessage({ type: 'success', text: 'นำเข้าข้อมูลสำเร็จ! กำลังรีเฟรช...' })

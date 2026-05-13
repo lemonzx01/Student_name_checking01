@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Check, ChevronDown } from 'lucide-react'
 
 export interface SelectOption {
@@ -30,17 +31,56 @@ export default function CustomSelect({
   buttonClassName,
 }: Props) {
   const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
+  const [mounted, setMounted] = useState(false)
+  const [menuRect, setMenuRect] = useState<{ left: number; top: number; width: number } | null>(null)
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  // ปิดเมื่อคลิกนอก button + menu (menu อยู่ใน portal คนละ tree เลยต้องเช็คทั้งคู่)
+  useEffect(() => {
+    if (!open) return
     function handleClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false)
-      }
+      const target = e.target as Node
+      if (wrapRef.current?.contains(target)) return
+      if (menuRef.current?.contains(target)) return
+      setOpen(false)
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
+  }, [open])
+
+  // ปิดด้วย Escape
+  useEffect(() => {
+    if (!open) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open])
+
+  // คำนวณตำแหน่งเมนูจาก rect ของ button — รี-คำนวณตอน open/resize/scroll
+  useLayoutEffect(() => {
+    if (!open) return
+    function updatePosition() {
+      const el = buttonRef.current
+      if (!el) return
+      const r = el.getBoundingClientRect()
+      setMenuRect({ left: r.left, top: r.bottom + 6, width: r.width })
+    }
+    updatePosition()
+    window.addEventListener('resize', updatePosition)
+    window.addEventListener('scroll', updatePosition, true) // true = capture, จับ scroll ของ ancestor ทุกตัว
+    return () => {
+      window.removeEventListener('resize', updatePosition)
+      window.removeEventListener('scroll', updatePosition, true)
+    }
+  }, [open])
 
   const selectedLabel = options.find((o) => String(o.value) === String(value))?.label ?? placeholder ?? ''
 
@@ -52,20 +92,21 @@ export default function CustomSelect({
       : 'rounded-xl px-4 py-2.5 text-sm'
 
   const defaultButton =
-    'border border-[var(--line)] bg-white text-slate-900 hover:border-slate-300 focus:border-[var(--primary)]'
+    'border border-[var(--line)] bg-[var(--surface)] text-[var(--text)] hover:border-[var(--line-strong)] focus:border-[var(--primary)]'
 
   const sizeMenuItem = size === 'sm' ? 'px-2 py-1.5 text-[11px]' : 'px-4 py-2.5 text-sm'
 
   return (
-    <div className={`relative ${className}`} ref={ref}>
+    <div className={`relative ${className}`} ref={wrapRef}>
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={`flex w-full items-center justify-between text-left outline-none transition focus:ring-0 ${sizeButton} ${
           buttonClassName ?? defaultButton
         }`}
       >
-        <span className={isPlaceholder && !buttonClassName ? 'text-slate-400' : ''}>
+        <span className={isPlaceholder && !buttonClassName ? 'text-[var(--muted)]' : ''}>
           {selectedLabel || '-'}
         </span>
         <ChevronDown
@@ -75,33 +116,39 @@ export default function CustomSelect({
           }`}
         />
       </button>
-      {open && (
-        <div className="absolute left-0 right-0 top-full z-50 mt-1.5 max-h-60 overflow-auto rounded-xl border border-[var(--line)] bg-white py-1 shadow-lg">
-          {options.map((opt) => {
-            const isSelected = String(opt.value) === String(value)
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => {
-                  onChange(opt.value)
-                  setOpen(false)
-                }}
-                className={`flex w-full items-center justify-between text-left transition-colors ${sizeMenuItem} ${
-                  isSelected
-                    ? 'bg-blue-50 font-medium text-blue-700'
-                    : 'text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                <span>{opt.label}</span>
-                {isSelected && (
-                  <Check size={size === 'sm' ? 12 : 16} className="flex-shrink-0 text-blue-600" />
-                )}
-              </button>
-            )
-          })}
-        </div>
-      )}
+      {mounted && open && menuRect &&
+        createPortal(
+          <div
+            ref={menuRef}
+            className="fixed z-[1000] max-h-60 overflow-auto rounded-xl border border-[var(--line)] bg-[var(--surface)] py-1 shadow-[var(--shadow-lg)]"
+            style={{ left: menuRect.left, top: menuRect.top, width: menuRect.width }}
+          >
+            {options.map((opt) => {
+              const isSelected = String(opt.value) === String(value)
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => {
+                    onChange(opt.value)
+                    setOpen(false)
+                  }}
+                  className={`flex w-full items-center justify-between text-left transition-colors ${sizeMenuItem} ${
+                    isSelected
+                      ? 'bg-[var(--primary-ghost)] font-medium text-[var(--primary-strong)]'
+                      : 'text-[var(--text-soft)] hover:bg-[var(--surface-muted)]'
+                  }`}
+                >
+                  <span>{opt.label}</span>
+                  {isSelected && (
+                    <Check size={size === 'sm' ? 12 : 16} className="flex-shrink-0 text-[var(--primary)]" />
+                  )}
+                </button>
+              )
+            })}
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }

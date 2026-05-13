@@ -15,6 +15,7 @@ import {
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const Database = require('better-sqlite3')
 import path from 'path'
+import { toLocalISO, formatLocalDateTime } from './local-date'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let db: any = null
@@ -758,7 +759,7 @@ export function autoPurgeOldTrash(retentionDays = 30): { purged: number } {
   const tx = d.transaction(() => {
     const cutoff = new Date()
     cutoff.setDate(cutoff.getDate() - retentionDays)
-    const cutoffStr = cutoff.toISOString().slice(0, 19).replace('T', ' ')
+    const cutoffStr = formatLocalDateTime(cutoff)
     const ids = d
       .prepare(
         "SELECT id FROM students WHERE is_active = 0 AND deleted_at IS NOT NULL AND deleted_at < ?"
@@ -867,7 +868,7 @@ export function getDashboardStats(classroomId?: number | null) {
   // Top 5 absent students (last 30 days)
   const thirtyDaysAgo = new Date()
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-  const cutoff = thirtyDaysAgo.toISOString().slice(0, 10)
+  const cutoff = toLocalISO(thirtyDaysAgo)
 
   const topAbsent = d
     .prepare(
@@ -1389,8 +1390,17 @@ export function importData(data: {
   try {
     const d = getDb()
     const transaction = d.transaction(() => {
+      // ลบ child tables ก่อน parent (FK เปิดอยู่ ไม่มี ON DELETE CASCADE)
+      // ลำดับ: health_check / grades / attendance / student_notes / schedules → students → classrooms
+      if (data.health_check) d.prepare('DELETE FROM health_check').run()
+      if (data.grades) d.prepare('DELETE FROM grades').run()
+      if (data.attendance) d.prepare('DELETE FROM attendance').run()
+      if (data.students) d.prepare('DELETE FROM student_notes').run()
+      if (data.schedule) d.prepare('DELETE FROM schedules').run()
+      if (data.students) d.prepare('DELETE FROM students').run()
+      if (data.classrooms) d.prepare('DELETE FROM classrooms').run()
+
       if (data.classrooms) {
-        d.prepare('DELETE FROM classrooms').run()
         const insert = d.prepare(
           'INSERT INTO classrooms (id, name, level, academic_year, color, archived_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
         )
@@ -1407,7 +1417,6 @@ export function importData(data: {
         }
       }
       if (data.students) {
-        d.prepare('DELETE FROM students').run()
         const insert = d.prepare(
           `INSERT INTO students (
             id, student_id, national_id, student_number, title,
@@ -1449,7 +1458,6 @@ export function importData(data: {
         }
       }
       if (data.schedule) {
-        d.prepare('DELETE FROM schedules').run()
         const insert = d.prepare(
           'INSERT INTO schedules (classroom_id, day_of_week, period, subject_code, subject_name, class_level, room) VALUES (?, ?, ?, ?, ?, ?, ?)'
         )
@@ -1458,7 +1466,6 @@ export function importData(data: {
         }
       }
       if (data.grades) {
-        d.prepare('DELETE FROM grades').run()
         const insert = d.prepare(
           'INSERT INTO grades (student_id, classroom_id, subject_code, score, midterm_score, final_score, semester, academic_year) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
         )
@@ -1467,7 +1474,6 @@ export function importData(data: {
         }
       }
       if (data.attendance) {
-        d.prepare('DELETE FROM attendance').run()
         const insert = d.prepare(
           'INSERT INTO attendance (student_id, classroom_id, date, status, note) VALUES (?, ?, ?, ?, ?)'
         )
@@ -1476,7 +1482,6 @@ export function importData(data: {
         }
       }
       if (data.health_check) {
-        d.prepare('DELETE FROM health_check').run()
         const insert = d.prepare(
           'INSERT INTO health_check (student_id, classroom_id, date, brushed_teeth, drank_milk, weight_kg, height_cm) VALUES (?, ?, ?, ?, ?, ?, ?)'
         )

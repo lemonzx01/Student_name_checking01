@@ -2,19 +2,7 @@
 
 import { useMemo } from 'react'
 import { BarChart3, CheckCircle2, AlertCircle } from 'lucide-react'
-
-// ซิงค์กับ SUBJECTS ใน /app/schedule/page.tsx
-const SUBJECTS = [
-  { code: 'TH', name: 'ภาษาไทย', color: '#3B82F6' },
-  { code: 'MA', name: 'คณิตศาสตร์', color: '#EF4444' },
-  { code: 'EN', name: 'ภาษาอังกฤษ', color: '#8B5CF6' },
-  { code: 'SC', name: 'วิทยาศาสตร์', color: '#10B981' },
-  { code: 'SO', name: 'สังคมศึกษา', color: '#F59E0B' },
-  { code: 'HI', name: 'ประวัติศาสตร์', color: '#D97706' },
-  { code: 'HE', name: 'สุขศึกษา/พละ', color: '#EC4899' },
-  { code: 'AR', name: 'ศิลปะ', color: '#06B6D4' },
-  { code: 'WO', name: 'การงานฯ', color: '#84CC16' },
-]
+import { useSubjects } from '@/lib/hooks/useSubjects'
 
 // ค่ามาตรฐานสพฐ. (คาบ/สัปดาห์) สำหรับอ้างอิง
 const TARGET_P13: Record<string, number> = {
@@ -30,6 +18,9 @@ interface ScheduleHoursCounterProps {
 }
 
 export default function ScheduleHoursCounter({ schedule, level }: ScheduleHoursCounterProps) {
+  // ดึงรายการวิชาจริงที่ครูตั้งไว้ — ให้ sync กับ Settings/useSubjects
+  const { subjects: SUBJECTS } = useSubjects()
+
   // เลือก target ตามระดับชั้น
   const target = useMemo(() => {
     if (!level) return TARGET_P46

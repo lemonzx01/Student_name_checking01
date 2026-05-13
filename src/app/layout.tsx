@@ -5,6 +5,10 @@ import ClientLayout from '@/components/ClientLayout'
 export const metadata: Metadata = {
   title: 'ระบบจัดการนักเรียน',
   description: 'จัดการห้องเรียน รายชื่อนักเรียน และการเช็คชื่อ',
+  icons: {
+    icon: [{ url: '/icon.svg', type: 'image/svg+xml' }],
+    shortcut: '/icon.svg',
+  },
 }
 
 export default function RootLayout({
