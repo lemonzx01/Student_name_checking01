@@ -8,8 +8,6 @@ import {
   Award,
   Download,
   FileText,
-  NotebookPen,
-  Printer,
   User,
 } from 'lucide-react'
 import CustomSelect from '@/components/CustomSelect'
@@ -18,50 +16,77 @@ import {
   getClassrooms,
   getGradesData,
   getPhotoDataUrl,
-  getStudentNotes,
   getStudents,
 } from '@/lib/client-data'
+import { useSubjects, type SubjectWithMeta } from '@/lib/hooks/useSubjects'
 import {
   Classroom,
-  DEFAULT_SUBJECTS,
   Student,
-  StudentNote,
   calculateGrade,
 } from '@/types/index'
 
-type SemGrade = { midterm: number; final: number }
-type SubjectGrades = Record<string, SemGrade>
+type SemScore = { midterm: number; final: number }
+// เก็บคะแนนทั้งปีเป็นโครงสร้างเดียว — แยกตามภาคเรียน เพื่อให้ตรงกับหน้า /grades
+// ซึ่งคิดเกรด "ทั้งปี" จากการรวม sem1 + sem2 (ต่อวิชาคะแนนเต็ม 100)
+type AnnualGrade = { sem1: SemScore; sem2: SemScore }
+type SubjectGrades = Record<string, AnnualGrade>
 type StudentGrades = Record<number, SubjectGrades>
+
+const EMPTY_ANNUAL: AnnualGrade = {
+  sem1: { midterm: 0, final: 0 },
+  sem2: { midterm: 0, final: 0 },
+}
 
 function displayName(student: Student) {
   return [student.title, student.first_name, student.last_name].filter(Boolean).join(' ')
 }
 
-function computeSubjectTotal(g: SemGrade): number {
-  return (Number(g.midterm) || 0) + (Number(g.final) || 0)
+function computeAnnualTotal(g: AnnualGrade): number {
+  return (
+    (Number(g.sem1.midterm) || 0) +
+    (Number(g.sem1.final) || 0) +
+    (Number(g.sem2.midterm) || 0) +
+    (Number(g.sem2.final) || 0)
+  )
 }
 
-// รายวิชาที่ "ครูคนนี้ใช้จริง" = มีคะแนนอย่างน้อย 1 คนในห้อง
-function deriveActiveSubjectCodes(allGrades: StudentGrades): string[] {
+// รายวิชาที่ "ครูคนนี้ใช้จริง" = มีคะแนนอย่างน้อย 1 คนในห้อง (ทั้งปี)
+function deriveActiveSubjectCodes(
+  allGrades: StudentGrades,
+  subjects: SubjectWithMeta[]
+): string[] {
   const codes = new Set<string>()
-  for (const subjects of Object.values(allGrades)) {
-    for (const [code, g] of Object.entries(subjects)) {
-      if (computeSubjectTotal(g) > 0) {
+  for (const subjectGrades of Object.values(allGrades)) {
+    for (const [code, g] of Object.entries(subjectGrades)) {
+      if (computeAnnualTotal(g) > 0) {
         codes.add(code)
       }
     }
   }
-  // เรียงตามลำดับใน DEFAULT_SUBJECTS
-  return DEFAULT_SUBJECTS.filter((s) => codes.has(s.code)).map((s) => s.code)
+  // เรียงตามลำดับใน live subjects (เผื่อครูเปลี่ยนชื่อ/ลำดับวิชา)
+  return subjects.filter((s) => codes.has(s.code)).map((s) => s.code)
 }
 
-function computeSummary(subjects: SubjectGrades, activeCodes: string[]) {
+function computeSummary(
+  subjectGrades: SubjectGrades,
+  activeCodes: string[],
+  subjects: SubjectWithMeta[]
+) {
   const activeSet = new Set(activeCodes)
-  const entries = DEFAULT_SUBJECTS.filter((s) => activeSet.has(s.code)).map((subj) => {
-    const g = subjects[subj.code] || { midterm: 0, final: 0 }
-    const total = computeSubjectTotal(g)
+  const entries = subjects.filter((s) => activeSet.has(s.code)).map((subj) => {
+    const g = subjectGrades[subj.code] || EMPTY_ANNUAL
+    const total = computeAnnualTotal(g)
     const grade = total > 0 ? calculateGrade(total) : '-'
-    return { code: subj.code, name: subj.name, midterm: g.midterm, final: g.final, total, grade }
+    return {
+      code: subj.code,
+      name: subj.name,
+      s1m: g.sem1.midterm,
+      s1f: g.sem1.final,
+      s2m: g.sem2.midterm,
+      s2f: g.sem2.final,
+      total,
+      grade,
+    }
   })
   const graded = entries.filter((e) => e.total > 0)
   const gpa =
@@ -71,17 +96,29 @@ function computeSummary(subjects: SubjectGrades, activeCodes: string[]) {
   return { entries, gpa }
 }
 
-function parseGrades(rows: any[]): StudentGrades {
+// รวม rows ของ sem1 และ sem2 เป็น StudentGrades โครงสร้างเดียว
+function mergeAnnualGrades(sem1Rows: any[], sem2Rows: any[]): StudentGrades {
   const map: StudentGrades = {}
-  for (const r of rows) {
-    const sid = Number(r.student_id)
-    const code = r.subject_code
-    if (!map[sid]) map[sid] = {}
-    map[sid][code] = {
-      midterm: Number(r.midterm_score) || 0,
-      final: Number(r.final_score) || 0,
+  const apply = (rows: any[], semKey: 'sem1' | 'sem2') => {
+    for (const r of rows) {
+      const sid = Number(r.student_id)
+      const code = r.subject_code
+      if (!sid || !code) continue
+      if (!map[sid]) map[sid] = {}
+      if (!map[sid][code]) {
+        map[sid][code] = {
+          sem1: { midterm: 0, final: 0 },
+          sem2: { midterm: 0, final: 0 },
+        }
+      }
+      map[sid][code][semKey] = {
+        midterm: Number(r.midterm_score) || 0,
+        final: Number(r.final_score) || 0,
+      }
     }
   }
+  apply(sem1Rows, 'sem1')
+  apply(sem2Rows, 'sem2')
   return map
 }
 
@@ -92,11 +129,9 @@ function ReportCardContent() {
   const [classrooms, setClassrooms] = useState<Classroom[]>([])
   const [students, setStudents] = useState<Student[]>([])
   const [grades, setGrades] = useState<StudentGrades>({})
-  const [notes, setNotes] = useState<StudentNote[]>([])
   const [selectedClassroom, setSelectedClassroom] = useState<number | null>(
     classroomFromUrl ? Number(classroomFromUrl) : null
   )
-  const [semester, setSemester] = useState<number>(1)
   const [academicYear, setAcademicYear] = useState<string>(
     String(new Date().getFullYear() + 543)
   )
@@ -104,6 +139,7 @@ function ReportCardContent() {
   const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const { subjects } = useSubjects()
 
   useEffect(() => {
     getClassrooms().then(setClassrooms).catch(console.error)
@@ -126,13 +162,15 @@ function ReportCardContent() {
       return
     }
     setLoading(true)
+    // โหลด sem1 + sem2 พร้อมกัน — รวมเป็นโครงสร้าง annual (ตรงกับหน้า /grades)
     Promise.all([
       getStudents(selectedClassroom),
-      getGradesData(selectedClassroom, semester, academicYear),
+      getGradesData(selectedClassroom, 1, academicYear),
+      getGradesData(selectedClassroom, 2, academicYear),
     ])
-      .then(([studentRows, gradeRows]) => {
+      .then(([studentRows, sem1Rows, sem2Rows]) => {
         setStudents(studentRows)
-        setGrades(parseGrades(gradeRows))
+        setGrades(mergeAnnualGrades(sem1Rows, sem2Rows))
         // เลือกนักเรียนคนแรกถ้ายังไม่ได้เลือก
         if (studentRows.length > 0 && !studentRows.some((s) => s.id === selectedStudentId)) {
           setSelectedStudentId(studentRows[0].id)
@@ -140,16 +178,7 @@ function ReportCardContent() {
       })
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [selectedClassroom, semester, academicYear])
-
-  // โหลดบันทึกประจำตัวของนักเรียนที่เลือก
-  useEffect(() => {
-    if (!selectedStudentId) {
-      setNotes([])
-      return
-    }
-    getStudentNotes(selectedStudentId).then(setNotes).catch(() => setNotes([]))
-  }, [selectedStudentId])
+  }, [selectedClassroom, academicYear])
 
   const selectedStudent = useMemo(
     () => students.find((s) => s.id === selectedStudentId) ?? null,
@@ -162,13 +191,16 @@ function ReportCardContent() {
   )
 
   // รายวิชาที่ครูใช้จริง (มีคะแนน) — คำนวณจาก grades ของห้องปัจจุบัน
-  const activeSubjectCodes = useMemo(() => deriveActiveSubjectCodes(grades), [grades])
+  const activeSubjectCodes = useMemo(
+    () => deriveActiveSubjectCodes(grades, subjects),
+    [grades, subjects]
+  )
 
   const summary = useMemo(() => {
     if (!selectedStudent) return null
-    const subjects = grades[selectedStudent.id] || {}
-    return computeSummary(subjects, activeSubjectCodes)
-  }, [grades, selectedStudent, activeSubjectCodes])
+    const studentSubjectGrades = grades[selectedStudent.id] || {}
+    return computeSummary(studentSubjectGrades, activeSubjectCodes, subjects)
+  }, [grades, selectedStudent, activeSubjectCodes, subjects])
 
   useEffect(() => {
     if (!message) return
@@ -218,8 +250,8 @@ function ReportCardContent() {
         const student = studentsToRender[index]
         if (index > 0) doc.addPage()
 
-        const subjects = grades[student.id] || {}
-        const { entries, gpa } = computeSummary(subjects, activeSubjectCodes)
+        const studentSubjectGrades = grades[student.id] || {}
+        const { entries, gpa } = computeSummary(studentSubjectGrades, activeSubjectCodes, subjects)
 
         // Header
         doc.setFont('NotoSansThai', 'bold')
@@ -239,12 +271,7 @@ function ReportCardContent() {
 
         doc.setFontSize(11)
         doc.setFont('NotoSansThai', 'normal')
-        doc.text(
-          `ภาคเรียนที่ ${semester} / ปีการศึกษา ${academicYear}`,
-          105,
-          25,
-          { align: 'center' }
-        )
+        doc.text(`ปีการศึกษา ${academicYear}`, 105, 25, { align: 'center' })
 
         // Student info box
         const fullName = displayName(student)
@@ -268,14 +295,26 @@ function ReportCardContent() {
         doc.text(classLabel, 130, 39)
         doc.text(String(student.student_id || '-'), 140, 46)
 
-        // Subjects table
+        // Subjects table — แสดงคะแนนทั้ง 2 ภาคเรียน + รวมทั้งปี + เกรด (ตรงกับหน้า /grades)
         ;(autoTable as any)(doc, {
-          head: [['รหัส', 'รายวิชา', 'กลางภาค', 'ปลายภาค', 'รวม', 'เกรด']],
+          head: [
+            [
+              { content: 'รหัส', rowSpan: 2 },
+              { content: 'รายวิชา', rowSpan: 2 },
+              { content: 'ภาคเรียนที่ 1', colSpan: 2 },
+              { content: 'ภาคเรียนที่ 2', colSpan: 2 },
+              { content: 'รวม', rowSpan: 2 },
+              { content: 'เกรด', rowSpan: 2 },
+            ],
+            ['กลาง', 'ปลาย', 'กลาง', 'ปลาย'],
+          ],
           body: entries.map((e) => [
             e.code,
             e.name,
-            e.total > 0 ? String(e.midterm) : '-',
-            e.total > 0 ? String(e.final) : '-',
+            e.total > 0 ? String(e.s1m || '-') : '-',
+            e.total > 0 ? String(e.s1f || '-') : '-',
+            e.total > 0 ? String(e.s2m || '-') : '-',
+            e.total > 0 ? String(e.s2f || '-') : '-',
             e.total > 0 ? String(e.total) : '-',
             e.grade,
           ]),
@@ -283,11 +322,12 @@ function ReportCardContent() {
           theme: 'grid',
           styles: {
             font: 'NotoSansThai',
-            fontSize: 10,
-            cellPadding: 2.5,
+            fontSize: 9,
+            cellPadding: 2,
             lineColor: [0, 0, 0],
             lineWidth: 0.2,
             halign: 'center',
+            valign: 'middle',
           },
           headStyles: {
             fillColor: [235, 240, 250],
@@ -296,12 +336,14 @@ function ReportCardContent() {
             font: 'NotoSansThai',
           },
           columnStyles: {
-            0: { cellWidth: 18 },
-            1: { cellWidth: 60, halign: 'left' },
-            2: { cellWidth: 26 },
-            3: { cellWidth: 26 },
-            4: { cellWidth: 26 },
-            5: { cellWidth: 26, fontStyle: 'bold' },
+            0: { cellWidth: 14 },
+            1: { cellWidth: 50, halign: 'left' },
+            2: { cellWidth: 18 },
+            3: { cellWidth: 18 },
+            4: { cellWidth: 18 },
+            5: { cellWidth: 18 },
+            6: { cellWidth: 24, fontStyle: 'bold' },
+            7: { cellWidth: 22, fontStyle: 'bold' },
           },
         })
 
@@ -316,37 +358,6 @@ function ReportCardContent() {
         doc.setFontSize(14)
         doc.text(gpa > 0 ? gpa.toFixed(2) : '-', 180, tableEndY + 15, { align: 'right' })
 
-        // Teacher notes (ใช้ notes เฉพาะเมื่อ single, ถ้า all ก็ข้าม เพราะโหลดไม่หมด)
-        if (mode === 'single' && notes.length > 0) {
-          const noteStartY = tableEndY + 26
-          doc.setFont('NotoSansThai', 'bold')
-          doc.setFontSize(11)
-          doc.text('บันทึกประจำตัวนักเรียน (ล่าสุด 5 รายการ)', 14, noteStartY)
-
-          ;(autoTable as any)(doc, {
-            head: [['วันที่', 'บันทึก']],
-            body: notes.slice(0, 5).map((n) => [formatThaiShortDate(n.date), n.note]),
-            startY: noteStartY + 3,
-            theme: 'grid',
-            styles: {
-              font: 'NotoSansThai',
-              fontSize: 9,
-              cellPadding: 2,
-              lineColor: [0, 0, 0],
-              lineWidth: 0.2,
-            },
-            headStyles: {
-              fillColor: [245, 240, 255],
-              textColor: [0, 0, 0],
-              fontStyle: 'bold',
-              font: 'NotoSansThai',
-            },
-            columnStyles: {
-              0: { cellWidth: 35, halign: 'center' },
-              1: { cellWidth: 147 },
-            },
-          })
-        }
 
         // Signature line
         const pageHeight = doc.internal.pageSize.getHeight()
@@ -360,8 +371,8 @@ function ReportCardContent() {
 
       const filename =
         mode === 'single' && selectedStudent
-          ? `report-card_${displayName(selectedStudent).replace(/\s+/g, '_')}_ภาค${semester}_${academicYear}.pdf`
-          : `report-card_ห้อง${selectedClassroomObj.name}_ภาค${semester}_${academicYear}.pdf`
+          ? `report-card_${displayName(selectedStudent).replace(/\s+/g, '_')}_ปี${academicYear}.pdf`
+          : `report-card_ห้อง${selectedClassroomObj.name}_ปี${academicYear}.pdf`
 
       doc.save(filename)
       setMessage({ type: 'success', text: 'ดาวน์โหลด PDF สำเร็จ' })
@@ -394,7 +405,7 @@ function ReportCardContent() {
 
       {/* Controls */}
       <section className="card animate-slide-up mb-5 p-6">
-        <div className="grid gap-3 md:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-3">
           <div>
             <label className="mb-1 block text-xs font-semibold text-[var(--text-soft)]">ห้องเรียน</label>
             <CustomSelect
@@ -406,17 +417,6 @@ function ReportCardContent() {
               }}
               options={classrooms.map((c) => ({ value: c.id, label: c.name }))}
               placeholder="เลือกห้อง"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-semibold text-[var(--text-soft)]">ภาคเรียน</label>
-            <CustomSelect
-              value={semester}
-              onChange={(v) => setSemester(Number(v))}
-              options={[
-                { value: 1, label: 'ภาคเรียนที่ 1' },
-                { value: 2, label: 'ภาคเรียนที่ 2' },
-              ]}
             />
           </div>
           <div>
@@ -461,14 +461,6 @@ function ReportCardContent() {
             <FileText size={16} />
             ดาวน์โหลด PDF (ทั้งห้อง {students.length} คน)
           </button>
-          <button
-            type="button"
-            onClick={() => window.print()}
-            className="btn btn-secondary btn-lg"
-          >
-            <Printer size={16} />
-            พิมพ์หน้านี้
-          </button>
         </div>
 
         {message ? (
@@ -479,39 +471,21 @@ function ReportCardContent() {
           </div>
         ) : null}
 
-        {/* Info banner - บอกว่ากำลังแสดงกี่วิชา */}
-        {!loading && selectedClassroom ? (
-          activeSubjectCodes.length > 0 ? (
-            <div className="mt-4 flex items-start gap-3 rounded-[var(--radius-lg)] border border-[var(--line-soft)] bg-[var(--primary-ghost)] px-4 py-3 text-sm text-[var(--text)]">
-              <FileText size={18} className="mt-0.5 flex-shrink-0 text-[var(--primary)]" />
-              <div>
-                <span className="font-semibold text-[var(--primary-strong)]">
-                  แสดง {activeSubjectCodes.length} วิชา
-                </span>{' '}
-                ที่คุณกรอกคะแนนในภาคเรียนนี้ —{' '}
-                <Link
-                  href={`/grades?classroom=${selectedClassroom}`}
-                  className="font-semibold text-[var(--primary)] underline underline-offset-2 hover:text-[var(--primary-strong)]"
-                >
-                  เพิ่ม/แก้ไขคะแนนที่เมนูคะแนน/เกรด
-                </Link>
-              </div>
+        {/* Warning banner - เฉพาะกรณียังไม่มีวิชาที่กรอกคะแนน */}
+        {!loading && selectedClassroom && activeSubjectCodes.length === 0 ? (
+          <div className="mt-4 flex items-start gap-3 rounded-[var(--radius-lg)] border border-[var(--line-soft)] bg-[var(--warning-soft)] px-4 py-3 text-sm text-[var(--text)]">
+            <AlertTriangle size={18} className="mt-0.5 flex-shrink-0 text-[var(--warning)]" />
+            <div>
+              <span className="font-semibold text-[var(--warning-strong)]">ยังไม่มีวิชาที่กรอกคะแนน</span>{' '}
+              สำหรับห้องนี้ ปีการศึกษา {academicYear} —{' '}
+              <Link
+                href={`/grades?classroom=${selectedClassroom}`}
+                className="font-semibold text-[var(--primary)] underline underline-offset-2 hover:text-[var(--primary-strong)]"
+              >
+                ไปกรอกคะแนนก่อน
+              </Link>
             </div>
-          ) : (
-            <div className="mt-4 flex items-start gap-3 rounded-[var(--radius-lg)] border border-[var(--line-soft)] bg-[var(--warning-soft)] px-4 py-3 text-sm text-[var(--text)]">
-              <AlertTriangle size={18} className="mt-0.5 flex-shrink-0 text-[var(--warning)]" />
-              <div>
-                <span className="font-semibold text-[var(--warning-strong)]">ยังไม่มีวิชาที่กรอกคะแนน</span>{' '}
-                สำหรับห้องนี้ ภาคเรียน {semester}/{academicYear} —{' '}
-                <Link
-                  href={`/grades?classroom=${selectedClassroom}`}
-                  className="font-semibold text-[var(--primary)] underline underline-offset-2 hover:text-[var(--primary-strong)]"
-                >
-                  ไปกรอกคะแนนก่อน
-                </Link>
-              </div>
-            </div>
-          )
+          </div>
         ) : null}
       </section>
 
@@ -545,7 +519,7 @@ function ReportCardContent() {
               ใบรายงานคะแนนนักเรียน
             </p>
             <p className="mt-1 text-center text-sm text-[var(--muted)]">
-              ภาคเรียนที่ {semester} / ปีการศึกษา {academicYear}
+              ปีการศึกษา {academicYear}
             </p>
           </div>
 
@@ -582,36 +556,48 @@ function ReportCardContent() {
             </div>
           </div>
 
-          {/* ตารางคะแนน */}
+          {/* ตารางคะแนน — แสดงทั้ง 2 ภาคเรียน + รวมทั้งปี + เกรด */}
           <div className="overflow-x-auto px-6 py-4">
             <table className="min-w-full border-separate border-spacing-0 text-sm">
               <thead>
-                <tr className="bg-[var(--primary-ghost)] text-left text-xs font-bold uppercase tracking-wider text-[var(--text-soft)]">
-                  <th className="border border-[var(--line)] px-3 py-2">รหัส</th>
-                  <th className="border border-[var(--line)] px-3 py-2">รายวิชา</th>
-                  <th className="border border-[var(--line)] px-3 py-2 text-center">กลางภาค</th>
-                  <th className="border border-[var(--line)] px-3 py-2 text-center">ปลายภาค</th>
-                  <th className="border border-[var(--line)] px-3 py-2 text-center">รวม</th>
-                  <th className="border border-[var(--line)] px-3 py-2 text-center">เกรด</th>
+                <tr className="bg-[var(--primary-ghost)] text-xs font-bold uppercase tracking-wider text-[var(--text-soft)]">
+                  <th className="border border-[var(--line)] px-2 py-2 text-left" rowSpan={2}>รหัส</th>
+                  <th className="border border-[var(--line)] px-2 py-2 text-left" rowSpan={2}>รายวิชา</th>
+                  <th className="border border-[var(--line)] px-2 py-1 text-center" colSpan={2}>ภาคเรียนที่ 1</th>
+                  <th className="border border-[var(--line)] px-2 py-1 text-center" colSpan={2}>ภาคเรียนที่ 2</th>
+                  <th className="border border-[var(--line)] px-2 py-2 text-center" rowSpan={2}>รวม</th>
+                  <th className="border border-[var(--line)] px-2 py-2 text-center" rowSpan={2}>เกรด</th>
+                </tr>
+                <tr className="bg-[var(--primary-ghost)] text-[11px] font-semibold text-[var(--text-soft)]">
+                  <th className="border border-[var(--line)] px-2 py-1 text-center">กลาง</th>
+                  <th className="border border-[var(--line)] px-2 py-1 text-center">ปลาย</th>
+                  <th className="border border-[var(--line)] px-2 py-1 text-center">กลาง</th>
+                  <th className="border border-[var(--line)] px-2 py-1 text-center">ปลาย</th>
                 </tr>
               </thead>
               <tbody>
                 {summary.entries.map((e) => (
                   <tr key={e.code}>
-                    <td className="border border-[var(--line)] px-3 py-2 font-mono text-xs text-[var(--text-soft)]">
+                    <td className="border border-[var(--line)] px-2 py-2 font-mono text-xs text-[var(--text-soft)]">
                       {e.code}
                     </td>
-                    <td className="border border-[var(--line)] px-3 py-2 text-[var(--text)]">{e.name}</td>
-                    <td className="border border-[var(--line)] px-3 py-2 text-center text-[var(--text)]">
-                      {e.total > 0 ? e.midterm : '-'}
+                    <td className="border border-[var(--line)] px-2 py-2 text-[var(--text)]">{e.name}</td>
+                    <td className="border border-[var(--line)] px-2 py-2 text-center text-[var(--text)]">
+                      {e.total > 0 ? (e.s1m || '-') : '-'}
                     </td>
-                    <td className="border border-[var(--line)] px-3 py-2 text-center text-[var(--text)]">
-                      {e.total > 0 ? e.final : '-'}
+                    <td className="border border-[var(--line)] px-2 py-2 text-center text-[var(--text)]">
+                      {e.total > 0 ? (e.s1f || '-') : '-'}
                     </td>
-                    <td className="border border-[var(--line)] px-3 py-2 text-center font-semibold text-[var(--text)]">
+                    <td className="border border-[var(--line)] px-2 py-2 text-center text-[var(--text)]">
+                      {e.total > 0 ? (e.s2m || '-') : '-'}
+                    </td>
+                    <td className="border border-[var(--line)] px-2 py-2 text-center text-[var(--text)]">
+                      {e.total > 0 ? (e.s2f || '-') : '-'}
+                    </td>
+                    <td className="border border-[var(--line)] px-2 py-2 text-center font-semibold text-[var(--text)]">
                       {e.total > 0 ? e.total : '-'}
                     </td>
-                    <td className="border border-[var(--line)] px-3 py-2 text-center font-bold text-[var(--text)]">
+                    <td className="border border-[var(--line)] px-2 py-2 text-center font-bold text-[var(--text)]">
                       {e.grade}
                     </td>
                   </tr>
@@ -631,45 +617,10 @@ function ReportCardContent() {
             </div>
           </div>
 
-          {/* บันทึกประจำตัว */}
-          <div className="border-t border-[var(--line)] px-6 py-4">
-            <div className="mb-3 flex items-center gap-2">
-              <NotebookPen size={16} className="text-[var(--accent)]" />
-              <span className="section-title">
-                บันทึกประจำตัวนักเรียน (ล่าสุด 5 รายการ)
-              </span>
-            </div>
-            {notes.length === 0 ? (
-              <p className="rounded-[var(--radius-lg)] bg-[var(--surface-muted)] px-4 py-3 text-sm text-[var(--muted)]">
-                ยังไม่มีบันทึกประจำตัวสำหรับนักเรียนคนนี้
-              </p>
-            ) : (
-              <ul className="space-y-2">
-                {notes.slice(0, 5).map((n) => (
-                  <li
-                    key={n.id}
-                    className="flex items-start gap-3 rounded-[var(--radius-lg)] border border-[var(--line)] px-4 py-2.5"
-                  >
-                    <span className="pill pill-accent min-w-[90px] justify-center">
-                      {formatThaiShortDate(n.date)}
-                    </span>
-                    <span className="flex-1 text-sm text-[var(--text-soft)]">{n.note}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
         </div>
       )}
     </div>
   )
-}
-
-function formatThaiShortDate(iso: string): string {
-  const [y, m, d] = iso.split('-').map(Number)
-  if (!y || !m || !d) return iso
-  const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.']
-  return `${d} ${months[m - 1]} ${y + 543}`
 }
 
 export default function ReportCardPage() {

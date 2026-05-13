@@ -8,12 +8,13 @@ import {
   CheckCircle,
   FileSpreadsheet,
   Pencil,
+  School,
 } from 'lucide-react'
 import AutoSaveIndicator from '@/components/AutoSaveIndicator'
 import CustomSelect from '@/components/CustomSelect'
 import PageHeader from '@/components/PageHeader'
 import SubjectEditModal from '@/components/SubjectEditModal'
-import { Classroom, Student, calculateGrade } from '@/types/index'
+import { Classroom, Student, calculateGrade, getClassroomColor } from '@/types/index'
 import { getClassrooms } from '@/lib/client-data'
 import { useAutoSave } from '@/lib/hooks/useAutoSave'
 import { useBeforeUnloadWarning } from '@/lib/hooks/useBeforeUnloadWarning'
@@ -69,6 +70,10 @@ function GradesPageContent() {
   // ป้องกัน auto-save ยิงตอนที่เพิ่งโหลดข้อมูลจาก DB
   const [isLoading, setIsLoading] = useState(true)
   const [editingSubjects, setEditingSubjects] = useState(false)
+  // dirty flag — auto-save ส่งเฉพาะเมื่อ user แก้เอง (ไม่ใช่จาก reload)
+  // กัน race: ตอน reload เปลี่ยน sem1/sem2 จาก setState — value เปลี่ยน ถ้าไม่มี dirty flag
+  // จะมีโอกาส save ซ้ำด้วยข้อมูลห้องเก่าก่อน enabled flip
+  const [isDirty, setIsDirty] = useState(false)
 
   const subjectDef = SUBJECTS.find(s => s.code === selectedSubject) || SUBJECTS[0] || { code: '', name: '', color: '#64748B' }
   const activeClassroom = classrooms.find((c) => c.id === selectedClassroom) || null
@@ -87,22 +92,46 @@ function GradesPageContent() {
     router.replace(`/grades?classroom=${id}`)
   }
 
-  useEffect(() => {
-    if (selectedClassroom) {
-      reloadAll()
-    } else {
-      setIsLoading(false)
+  // โหลด students — useCallback เพื่อให้ identity คงที่ตาม selectedClassroom
+  const loadStudents = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/students?classroom=${selectedClassroom}`)
+      if (!res.ok) {
+        console.error(`[grades] loadStudents failed: ${res.status}`)
+        setStudents([])
+        return
+      }
+      const data = await res.json()
+      setStudents(Array.isArray(data) ? data : [])
+    } catch (e) {
+      console.error('[grades] loadStudents error:', e)
+      setStudents([])
+    }
+  }, [selectedClassroom])
+
+  const loadAllGrades = useCallback(async () => {
+    try {
+      const [r1, r2] = await Promise.all([
+        fetch(`/api/grades?classroom=${selectedClassroom}&semester=1&year=${academicYear}`),
+        fetch(`/api/grades?classroom=${selectedClassroom}&semester=2&year=${academicYear}`),
+      ])
+      if (!r1.ok || !r2.ok) {
+        console.error(`[grades] loadAllGrades failed: sem1=${r1.status}, sem2=${r2.status}`)
+        setSem1({})
+        setSem2({})
+        return
+      }
+      const [d1, d2] = await Promise.all([r1.json(), r2.json()])
+      setSem1(parseGrades(Array.isArray(d1) ? d1 : []))
+      setSem2(parseGrades(Array.isArray(d2) ? d2 : []))
+    } catch (e) {
+      console.error('[grades] loadAllGrades error:', e)
+      setSem1({})
+      setSem2({})
     }
   }, [selectedClassroom, academicYear])
 
-  useEffect(() => {
-    if (toast) {
-      const t = setTimeout(() => setToast(null), 2500)
-      return () => clearTimeout(t)
-    }
-  }, [toast])
-
-  async function reloadAll() {
+  const reloadAll = useCallback(async () => {
     setIsLoading(true)
     setIsDirty(false)
     try {
@@ -110,25 +139,22 @@ function GradesPageContent() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [loadStudents, loadAllGrades])
 
-  const loadStudents = async () => {
-    try {
-      const res = await fetch(`/api/students?classroom=${selectedClassroom}`)
-      setStudents(await res.json())
-    } catch (e) { console.error(e) }
-  }
+  useEffect(() => {
+    if (selectedClassroom) {
+      reloadAll()
+    } else {
+      setIsLoading(false)
+    }
+  }, [selectedClassroom, academicYear, reloadAll])
 
-  const loadAllGrades = async () => {
-    try {
-      const [r1, r2] = await Promise.all([
-        fetch(`/api/grades?classroom=${selectedClassroom}&semester=1&year=${academicYear}`),
-        fetch(`/api/grades?classroom=${selectedClassroom}&semester=2&year=${academicYear}`),
-      ])
-      setSem1(parseGrades(await r1.json()))
-      setSem2(parseGrades(await r2.json()))
-    } catch (e) { console.error(e) }
-  }
+  useEffect(() => {
+    if (toast) {
+      const t = setTimeout(() => setToast(null), 2500)
+      return () => clearTimeout(t)
+    }
+  }, [toast])
 
   function parseGrades(rows: any[]): GradeMap {
     const map: GradeMap = {}
@@ -164,10 +190,6 @@ function GradesPageContent() {
   }
 
   // ─── Auto-save ────────────────────────────────────────────
-  // dirty flag — auto-save ส่งเฉพาะเมื่อ user แก้เอง (ไม่ใช่จาก reload)
-  // กัน race: ตอน reload เปลี่ยน sem1/sem2 จาก setState — value เปลี่ยน ถ้าไม่มี dirty flag
-  // จะมีโอกาส save ซ้ำด้วยข้อมูลห้องเก่าก่อน enabled flip
-  const [isDirty, setIsDirty] = useState(false)
   // รวม sem1 + sem2 เป็น value เดียว — เปลี่ยนเมื่อใดจะ trigger auto-save
   const gradesValue = useMemo(() => ({ sem1, sem2 }), [sem1, sem2])
 
@@ -378,22 +400,33 @@ function GradesPageContent() {
         {/* ── แถว 1: ห้องเรียน (ซ้าย) + ปีการศึกษา (ขวา) ── */}
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
           {classrooms.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-semibold text-slate-700">ห้องเรียน</span>
-              <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="flex items-center gap-1.5">
+                <School className="h-3.5 w-3.5 text-slate-500" />
+                <span className="text-xs font-semibold text-slate-700">ห้องเรียน</span>
+                <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">
+                  {classrooms.length}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-2">
                 {classrooms.map((cls) => {
                   const isSelected = selectedClassroom === cls.id
+                  const color = getClassroomColor(cls)
                   return (
                     <button
                       key={cls.id}
                       type="button"
                       onClick={() => switchClassroom(cls.id)}
-                      className={`btn-press inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                      className={`btn-press inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all duration-200 ${
                         isSelected
-                          ? 'bg-[var(--primary)] text-white shadow-sm'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                          ? `${color.bg} text-white shadow-md ring-1 ring-white/40`
+                          : 'border border-slate-200 bg-white text-slate-700 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-sm'
                       }`}
+                      aria-pressed={isSelected}
                     >
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${isSelected ? 'bg-white' : color.bg}`}
+                      />
                       {cls.name}
                     </button>
                   )
