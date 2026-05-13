@@ -3,25 +3,94 @@
 // key format: "day-period"  (day 1=จันทร์ ... 5=ศุกร์ | period 1-6)
 // FIXED_SLOTS: 3-6=ลูกเสือ, 4-6=ชุมนุม, 5-6=สวดมนต์
 //
+// คาบคู่: วิชาเดียวอาจติดกัน 2 คาบ แต่ห้าม 3 ติด และห้ามคร่อมพักเที่ยง (3↔4)
+//
 // ใช้รหัสวิชาเดียวกับ SUBJECTS ใน /app/schedule/page.tsx
 //   TH, MA, EN, SC, SO, HI, HE, AR, WO
+
+import { DEFAULT_SUBJECTS } from '@/lib/constants/subjects'
 
 // ─── ค่าคงที่ที่ใช้ทั้งไฟล์ ───────────────────────────────────────
 const CORE_SUBJECTS = new Set(['TH', 'MA', 'EN', 'SC'])
 const FIXED_TEMPLATE_KEYS = new Set(['3-6', '4-6', '5-6'])
 
-// map จาก subject_code → subject_name (ซิงค์กับ SUBJECTS ใน schedule page)
-export const TEMPLATE_SUBJECT_NAMES: Record<string, string> = {
-  TH: 'ภาษาไทย',
-  MA: 'คณิตศาสตร์',
-  EN: 'ภาษาอังกฤษ',
-  SC: 'วิทยาศาสตร์',
-  SO: 'สังคมศึกษา',
-  HI: 'ประวัติศาสตร์',
-  HE: 'สุขศึกษา/พละ',
-  AR: 'ศิลปะ',
-  WO: 'การงานฯ',
+// คืน true ถ้าวาง `candidate` แล้วจะทำให้เกิด 3 คาบติดของวิชาเดียวกัน (ใน pool เดียวกัน)
+// — ใช้เป็น hard filter (เอาออกจาก available pool)
+function wouldFormTriple(candidate: string, ownPicks: string[]): boolean {
+  const [dStr, pStr] = candidate.split('-')
+  const d = Number(dStr)
+  const p = Number(pStr)
+  const sameDayPeriods = ownPicks
+    .filter((s) => Number(s.split('-')[0]) === d)
+    .map((s) => Number(s.split('-')[1]))
+
+  const samePool = (a: number, b: number) => (a <= 3 && b <= 3) || (a >= 4 && b >= 4)
+
+  // candidate อยู่กลาง: p-1 และ p+1 อยู่แล้ว (และอยู่ pool เดียวกับ p)
+  if (
+    sameDayPeriods.includes(p - 1) &&
+    sameDayPeriods.includes(p + 1) &&
+    samePool(p, p - 1) &&
+    samePool(p, p + 1)
+  ) {
+    return true
+  }
+  // candidate ขยายต่อจาก 2 ที่มีอยู่: p-2, p-1 แล้ว → (p-2, p-1, p)
+  if (
+    sameDayPeriods.includes(p - 1) &&
+    sameDayPeriods.includes(p - 2) &&
+    samePool(p, p - 1) &&
+    samePool(p - 1, p - 2)
+  ) {
+    return true
+  }
+  // candidate ขยายต่อจาก 2 ที่มีอยู่: p+1, p+2 แล้ว → (p, p+1, p+2)
+  if (
+    sameDayPeriods.includes(p + 1) &&
+    sameDayPeriods.includes(p + 2) &&
+    samePool(p, p + 1) &&
+    samePool(p + 1, p + 2)
+  ) {
+    return true
+  }
+  return false
 }
+
+// คืน true ถ้าวาง `candidate` แล้วจะเกิด "คาบคู่" กับ slot ที่วิชานี้ใช้ไปแล้ว
+// — ไม่คำนึงถึง 3 ติด (ใช้คู่กับ wouldFormTriple ในฝั่ง caller)
+// — ห้ามคู่ข้ามพักเที่ยง (period 3 ↔ 4)
+function wouldFormPair(candidate: string, ownPicks: string[]): boolean {
+  const [dStr, pStr] = candidate.split('-')
+  const d = Number(dStr)
+  const p = Number(pStr)
+  const sameDayPicks = ownPicks
+    .map((s) => {
+      const [edStr, epStr] = s.split('-')
+      return { day: Number(edStr), period: Number(epStr) }
+    })
+    .filter((x) => x.day === d)
+
+  for (const ex of sameDayPicks) {
+    if (Math.abs(p - ex.period) !== 1) continue
+    // pool boundary: 3↔4 ข้ามพักเที่ยง → ไม่ถือเป็นคู่
+    if (!((p <= 3 && ex.period <= 3) || (p >= 4 && ex.period >= 4))) continue
+    return true
+  }
+  return false
+}
+
+// map จาก subject_code → subject_name
+// derive จาก DEFAULT_SUBJECTS (single source of truth)
+// — ครูแก้ชื่อวิชาผ่าน Settings (useSubjects) จะ override ใน UI อีกชั้นหนึ่ง
+//   แต่ตัว template generator นี้ใช้ default mapping เพื่อให้ schedule
+//   ที่ generate ออกมา fallback ไปชื่อ default ก่อน
+export const TEMPLATE_SUBJECT_NAMES: Record<string, string> = DEFAULT_SUBJECTS.reduce(
+  (acc, s) => {
+    acc[s.code] = s.name
+    return acc
+  },
+  {} as Record<string, string>,
+)
 
 // คำนวณจำนวนคาบของแต่ละวิชา จาก schedule map
 export function countSubjectHours(schedule: Record<string, { subject_code: string }>): Record<string, number> {
@@ -37,7 +106,8 @@ export function countSubjectHours(schedule: Record<string, { subject_code: strin
 // สร้าง slot mapping จากจำนวนคาบที่กำหนดเอง
 // - วิชาหลัก (TH, MA, EN, SC) → คาบเช้า (1-3) ก่อน
 // - วิชารอง (SO, HI, HE, AR, WO) → คาบบ่าย (4-6) ก่อน
-// - กระจายข้ามวันจันทร์-ศุกร์ (period-major ordering)
+// - กระจายข้ามวันจันทร์-ศุกร์ (shuffle slot pool ให้ดูสุ่มจริง ไม่เป็นบล็อก)
+// - บางวิชาอาจติดกัน 2 คาบในวันเดียวกัน (คาบคู่) แต่ไม่เกิน 2 ติด และไม่คร่อมพักเที่ยง (คาบ 3↔4)
 // CORE_SUBJECTS / FIXED_TEMPLATE_KEYS ถูกประกาศไว้ด้านบนของไฟล์แล้ว
 
 export function generateScheduleFromHours(
@@ -54,7 +124,6 @@ export function generateScheduleFromHours(
       else afternoonSlots.push(key)
     }
   }
-
   // เรียงวิชา: วิชาหลักก่อน แล้วเรียงตามจำนวนมากไปน้อย
   const sorted = Object.entries(counts)
     .filter(([, n]) => n > 0)
@@ -62,37 +131,50 @@ export function generateScheduleFromHours(
       const aCore = CORE_SUBJECTS.has(aCode) ? 0 : 1
       const bCore = CORE_SUBJECTS.has(bCode) ? 0 : 1
       if (aCore !== bCore) return aCore - bCore
-      return bN - aN
+      if (aN !== bN) return bN - aN
+      return Math.random() - 0.5
     })
 
   const schedule: Record<string, string> = {}
-  let morningIdx = 0
-  let afternoonIdx = 0
+  const morningUsed = new Set<string>()
+  const afternoonUsed = new Set<string>()
 
   for (const [code, count] of sorted) {
     const useMorningFirst = CORE_SUBJECTS.has(code)
     const primary = useMorningFirst ? morningSlots : afternoonSlots
+    const primaryUsed = useMorningFirst ? morningUsed : afternoonUsed
     const fallback = useMorningFirst ? afternoonSlots : morningSlots
-    let placed = 0
-    // ใส่ใน primary ก่อน
-    while (placed < count) {
-      const pIdx = useMorningFirst ? morningIdx : afternoonIdx
-      if (pIdx < primary.length) {
-        schedule[primary[pIdx]] = code
-        if (useMorningFirst) morningIdx = pIdx + 1
-        else afternoonIdx = pIdx + 1
-        placed++
-      } else break
+    const fallbackUsed = useMorningFirst ? afternoonUsed : morningUsed
+    const ownPicks: string[] = []
+
+    const pickFrom = (pool: string[], used: Set<string>): string | null => {
+      const allAvailable = pool.filter((s) => !used.has(s))
+      if (allAvailable.length === 0) return null
+      // hard-filter slot ที่จะทำให้เกิด 3 ติด
+      const safe = allAvailable.filter((s) => !wouldFormTriple(s, ownPicks))
+      // ถ้าทั้ง pool ทำให้เกิด triple (case extreme) → fallback ใช้ allAvailable
+      const available = safe.length > 0 ? safe : allAvailable
+      const pairExtenders = available.filter((s) => wouldFormPair(s, ownPicks))
+      const candidates = pairExtenders.length > 0 ? pairExtenders : available
+      return candidates[Math.floor(Math.random() * candidates.length)]
     }
-    // ถ้ายังไม่ครบ ไป fallback
+
+    let placed = 0
     while (placed < count) {
-      const fIdx = useMorningFirst ? afternoonIdx : morningIdx
-      if (fIdx < fallback.length) {
-        schedule[fallback[fIdx]] = code
-        if (useMorningFirst) afternoonIdx = fIdx + 1
-        else morningIdx = fIdx + 1
-        placed++
-      } else break
+      const pick = pickFrom(primary, primaryUsed)
+      if (!pick) break
+      schedule[pick] = code
+      primaryUsed.add(pick)
+      ownPicks.push(pick)
+      placed++
+    }
+    while (placed < count) {
+      const pick = pickFrom(fallback, fallbackUsed)
+      if (!pick) break
+      schedule[pick] = code
+      fallbackUsed.add(pick)
+      ownPicks.push(pick)
+      placed++
     }
   }
 
@@ -112,7 +194,7 @@ export const TOTAL_AVAILABLE_SLOTS = 5 * 6 - 3 // = 27
 //   subjectUsage["1-1|TH"] = จำนวนห้องที่ใช้ "ภาษาไทยที่จันทร์ คาบ 1"
 // แต่ละห้องวางวิชา X จะหลบ slot ที่ห้องก่อนหน้าวางวิชา X ไว้แล้ว
 //
-// เลือก slot ตามลำดับ: subject usage ↑ → core/secondary preference → base index
+// เลือก slot ตามลำดับ: subject usage ↑ → slot usage ↑ → pair preference → random
 export function generateScheduleAvoidingClashes(
   counts: Record<string, number>,
   /** จำนวนห้องที่ใช้ slot นั้นแล้ว (ใช้ตอน fallback, ไม่ใช่ตัวหลัก) */
@@ -131,7 +213,6 @@ export function generateScheduleAvoidingClashes(
       else afternoonSlotsBase.push(key)
     }
   }
-
   // เรียงวิชา: หลักก่อน แล้วตามจำนวนคาบจากมากไปน้อย
   const sorted = Object.entries(counts)
     .filter(([, n]) => n > 0)
@@ -139,7 +220,8 @@ export function generateScheduleAvoidingClashes(
       const aCore = CORE_SUBJECTS.has(aCode) ? 0 : 1
       const bCore = CORE_SUBJECTS.has(bCode) ? 0 : 1
       if (aCore !== bCore) return aCore - bCore
-      return bN - aN
+      if (aN !== bN) return bN - aN
+      return Math.random() - 0.5
     })
 
   const schedule: Record<string, string> = {}
@@ -150,27 +232,36 @@ export function generateScheduleAvoidingClashes(
   // ฟังก์ชันเลือก slot สำหรับวิชาหนึ่ง — เรียงตาม:
   //   1. subject usage ↑ (slot ที่วิชานี้ยังไม่ถูกใช้ในห้องอื่น มาก่อน) — กันคาบซ้ำเดียวกัน
   //   2. usage ทั่วไป ↑ (slot ที่ห้องอื่นใช้น้อย มาก่อน) — กันความหนาแน่น
-  //   3. base index (ลำดับเริ่มต้น)
+  //   3. ภายใน tier เดียวกัน ถ้ามี slot ที่ทำให้เกิด "คาบคู่" ของวิชานี้ ให้เลือกอันนั้นก่อน
+  //   4. random tiebreaker
   function pickSlotsFor(code: string, count: number, pool: string[]): number {
-    const ranked = pool
-      .filter((s) => !usedInThisRoom.has(s))
-      .map((s, i) => ({
+    const ownPicks: string[] = []
+    let placed = 0
+
+    while (placed < count) {
+      const allAvailable = pool.filter((s) => !usedInThisRoom.has(s))
+      if (allAvailable.length === 0) break
+      // hard-filter slot ที่จะทำให้เกิด 3 ติด
+      const safe = allAvailable.filter((s) => !wouldFormTriple(s, ownPicks))
+      const available = safe.length > 0 ? safe : allAvailable
+
+      const scored = available.map((s) => ({
         slot: s,
         subjUsage: subjectUsage[`${s}|${code}`] || 0,
         slotUsage: usage[s] || 0,
-        baseIdx: i,
       }))
-      .sort((a, b) => {
-        if (a.subjUsage !== b.subjUsage) return a.subjUsage - b.subjUsage
-        if (a.slotUsage !== b.slotUsage) return a.slotUsage - b.slotUsage
-        return a.baseIdx - b.baseIdx
-      })
+      const minSubj = Math.min(...scored.map((r) => r.subjUsage))
+      const tier1 = scored.filter((r) => r.subjUsage === minSubj)
+      const minSlot = Math.min(...tier1.map((r) => r.slotUsage))
+      const tier2 = tier1.filter((r) => r.slotUsage === minSlot)
 
-    let placed = 0
-    for (const { slot } of ranked) {
-      if (placed >= count) break
-      schedule[slot] = code
-      usedInThisRoom.add(slot)
+      const pairExtenders = tier2.filter((r) => wouldFormPair(r.slot, ownPicks))
+      const candidates = pairExtenders.length > 0 ? pairExtenders : tier2
+
+      const pick = candidates[Math.floor(Math.random() * candidates.length)].slot
+      schedule[pick] = code
+      usedInThisRoom.add(pick)
+      ownPicks.push(pick)
       placed++
     }
     return placed
@@ -244,9 +335,6 @@ export interface ScheduleClash {
   classroomIds: number[]
 }
 
-// คีย์ที่เป็นกิจกรรมกลาง (ลูกเสือ/ชุมนุม/สวดมนต์) ไม่ถือเป็นคาบสอนจริง ไม่ชน
-const FIXED_KEYS = new Set(['3-6', '4-6', '5-6'])
-
 export function detectScheduleClashes(
   allSchedules: Record<number, Record<string, { subject_code?: string }>>
 ): ScheduleClash[] {
@@ -257,7 +345,7 @@ export function detectScheduleClashes(
     const id = Number(idStr)
     if (!sched) continue
     for (const [key, slot] of Object.entries(sched)) {
-      if (FIXED_KEYS.has(key)) continue
+      if (FIXED_TEMPLATE_KEYS.has(key)) continue
       const code = slot?.subject_code
       if (!code) continue
       const groupKey = `${key}|${code}`
