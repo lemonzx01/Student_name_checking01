@@ -1,7 +1,7 @@
 'use client'
 
 import { ReactNode, useCallback, useEffect, useRef, useState } from 'react'
-import { GraduationCap, Lock, ShieldCheck } from 'lucide-react'
+import { Eye, EyeOff, GraduationCap, Lock, ShieldCheck } from 'lucide-react'
 
 const PIN_HASH_KEY = 'pinHash'
 const PIN_ENABLED_KEY = 'pinEnabled'
@@ -253,6 +253,7 @@ export default function PinGate({ children }: { children: ReactNode }) {
   // ใช้ undefined = ยังไม่ตรวจสอบ; true = ปลดล็อกแล้ว/ไม่ต้องใช้; false = ต้องกรอก PIN
   const [unlocked, setUnlocked] = useState<boolean | undefined>(undefined)
   const [pinInput, setPinInput] = useState('')
+  const [showPin, setShowPin] = useState(false)
   const [error, setError] = useState('')
   const [lockoutUntil, setLockoutUntil] = useState<number>(0)
   const [now, setNow] = useState(Date.now())
@@ -369,7 +370,7 @@ export default function PinGate({ children }: { children: ReactNode }) {
             />
             <input
               ref={inputRef}
-              type="password"
+              type={showPin ? 'text' : 'password'}
               inputMode="numeric"
               pattern="[0-9]*"
               autoComplete="off"
@@ -382,8 +383,18 @@ export default function PinGate({ children }: { children: ReactNode }) {
                 setError('')
               }}
               placeholder="พิมพ์ PIN 4-6 หลัก"
-              className="w-full rounded-xl border border-[var(--line)] bg-white px-10 py-3 text-center text-xl font-bold tracking-[0.4em] outline-none transition focus:border-[var(--primary)] disabled:opacity-50"
+              className="w-full rounded-xl border border-[var(--line)] bg-white px-10 py-3 text-center text-xl font-bold tracking-[0.4em] outline-none transition placeholder:text-sm placeholder:font-normal placeholder:tracking-normal focus:border-[var(--primary)] disabled:opacity-50"
             />
+            <button
+              type="button"
+              onClick={() => setShowPin((v) => !v)}
+              disabled={isLockedOut}
+              tabIndex={-1}
+              aria-label={showPin ? 'ซ่อน PIN' : 'แสดง PIN'}
+              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40"
+            >
+              {showPin ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
           </div>
 
           {error && (

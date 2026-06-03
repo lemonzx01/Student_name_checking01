@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { Archive, Calendar, ClipboardCheck, Copy, MoreVertical, Pencil, School, Trash2, Users } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import { Classroom, getClassroomColor } from '@/types'
+import { markClassroomVisited } from '@/lib/recent-classrooms'
 
 interface ClassroomCardProps {
   classroom: Classroom
@@ -43,7 +44,11 @@ export default function ClassroomCard({
       <div className="p-5">
         {/* Header */}
         <div className="mb-4 flex items-start justify-between gap-3">
-          <Link href={`/students?classroom=${classroom.id}`} className="flex-1">
+          <Link
+            href={`/students?classroom=${classroom.id}`}
+            className="flex-1"
+            onClick={() => markClassroomVisited(classroom.id)}
+          >
             <div className={`mb-3 flex h-12 w-12 items-center justify-center rounded-xl ${color} text-white shadow-[var(--shadow-sm)]`}>
               <School size={22} />
             </div>
@@ -129,6 +134,7 @@ export default function ClassroomCard({
           <Link
             href={`/students?classroom=${classroom.id}`}
             className="btn btn-secondary btn-sm"
+            onClick={() => markClassroomVisited(classroom.id)}
           >
             <Users size={13} />
             รายชื่อ
@@ -136,6 +142,7 @@ export default function ClassroomCard({
           <Link
             href={`/attendance?classroom=${classroom.id}`}
             className="btn btn-secondary btn-sm"
+            onClick={() => markClassroomVisited(classroom.id)}
           >
             <ClipboardCheck size={13} />
             เช็คชื่อ

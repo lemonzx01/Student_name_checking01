@@ -300,7 +300,7 @@ function ExportPageContent() {
     const students = await fetchGradeData()
     const workbook = XLSX.utils.book_new()
 
-    const headers = ['#', 'รหัส', 'ชื่อ-นามสกุล', ...subjects.map((s) => s.name), 'เฉลี่ย', 'เกรดเฉลี่ย']
+    const headers = ['#', 'รหัส', 'ชื่อ-นามสกุล', ...subjects.map((s) => `${s.name} (/100)`), 'คะแนนเฉลี่ย (/100)', 'เกรดเฉลี่ย']
     const dataRows = students.map((student, i) => {
       const scores = subjects.map((s) => student.scores[s.code] ?? '')
       const validScores = subjects.map((s) => student.scores[s.code]).filter((v) => v !== undefined && v !== null)
@@ -460,7 +460,7 @@ function ExportPageContent() {
     doc.setFontSize(10)
     doc.text(`ปีการศึกษา ${gradeYear} (รวมภาคเรียนที่ 1 และ 2)`, 14, 22)
 
-    const headers = [['#', 'รหัส', 'ชื่อ-นามสกุล', ...subjects.map((s) => s.name), 'เฉลี่ย', 'เกรด']]
+    const headers = [['#', 'รหัส', 'ชื่อ-นามสกุล', ...subjects.map((s) => `${s.name} (/100)`), 'คะแนนเฉลี่ย (/100)', 'เกรด']]
     const rows = students.map((student, i) => {
       const scores = subjects.map((s) => student.scores[s.code] !== undefined ? String(student.scores[s.code]) : '-')
       const validScores = subjects.map((s) => student.scores[s.code]).filter((v) => v !== undefined && v !== null)
@@ -667,7 +667,7 @@ function ExportPageContent() {
 
   const exportGradesCSV = async () => {
     const students = await fetchGradeData()
-    const headers = ['ลำดับ', 'รหัส', 'ชื่อ-นามสกุล', ...subjects.map((s) => s.name), 'เฉลี่ย', 'เกรดเฉลี่ย']
+    const headers = ['ลำดับ', 'รหัส', 'ชื่อ-นามสกุล', ...subjects.map((s) => `${s.name} (/100)`), 'คะแนนเฉลี่ย (/100)', 'เกรดเฉลี่ย']
     const rows = students.map((student, i) => {
       const scores = subjects.map((s) => student.scores[s.code] !== undefined ? student.scores[s.code] : '')
       const validScores = subjects.map((s) => student.scores[s.code]).filter((v) => v !== undefined && v !== null)

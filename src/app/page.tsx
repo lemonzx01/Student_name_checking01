@@ -8,13 +8,19 @@ import {
   ClipboardCheck,
   Download,
   FileBarChart,
+  LayoutGrid,
+  List,
   Plus,
   School,
+  Search,
   Users,
+  X,
 } from 'lucide-react'
 import AttendanceCalendar from '@/components/AttendanceCalendar'
 import BackupStatusCard from '@/components/BackupStatusCard'
 import ClassroomCard from '@/components/ClassroomCard'
+import ClassroomRow from '@/components/ClassroomRow'
+import Pagination from '@/components/Pagination'
 import CreateClassroomModal from '@/components/CreateClassroomModal'
 import DuplicateClassroomModal from '@/components/DuplicateClassroomModal'
 import ExcelImportButton from '@/components/ExcelImportButton'
@@ -29,6 +35,7 @@ import {
 } from '@/lib/client-data'
 import { useDialog } from '@/lib/hooks/useConfirm'
 import { formatThaiDate } from '@/lib/constants/thai-date'
+import { getRecentClassroomIds } from '@/lib/recent-classrooms'
 
 interface QuickActionProps {
   href: string
@@ -65,11 +72,17 @@ export default function HomePage() {
   const [editingClassroom, setEditingClassroom] = useState<Classroom | null>(null)
   const [duplicateSource, setDuplicateSource] = useState<Classroom | null>(null)
   const [lastClassroomId, setLastClassroomId] = useState<number | null>(null)
+  const [recentIds, setRecentIds] = useState<number[]>([])
   const [nowTick, setNowTick] = useState(0)
+  const [classroomSearch, setClassroomSearch] = useState('')
+  const [levelFilter, setLevelFilter] = useState<string>('')
+  const [viewMode, setViewMode] = useState<'card' | 'list'>('card')
+  const [currentPage, setCurrentPage] = useState(1)
   const { confirm, alert } = useDialog()
 
   // Keep "วันนี้" label fresh — re-tick every 60s + when tab regains focus,
   // so the date doesn't get stuck on yesterday past midnight.
+  // ใช้โอกาสนี้ refresh recent classrooms list ด้วย — ตอนกลับมาจากเปิดห้องอื่น
   useEffect(() => {
     const interval = setInterval(() => {
       setNowTick((n) => n + 1)
@@ -77,12 +90,16 @@ export default function HomePage() {
     const onVisibility = () => {
       if (document.visibilityState === 'visible') {
         setNowTick((n) => n + 1)
+        setRecentIds(getRecentClassroomIds())
       }
     }
+    const onFocus = () => setRecentIds(getRecentClassroomIds())
     document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('focus', onFocus)
     return () => {
       clearInterval(interval)
       document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('focus', onFocus)
     }
   }, [])
 
@@ -99,9 +116,21 @@ export default function HomePage() {
   useEffect(() => {
     loadClassrooms()
     // โหลดห้องล่าสุดที่ครูเปิด (เก็บไว้ตอน navigate ใน ClientLayout)
-    const saved = typeof window !== 'undefined' ? localStorage.getItem('selectedClassroom') : null
-    if (saved) setLastClassroomId(Number(saved))
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('selectedClassroom')
+      if (saved) setLastClassroomId(Number(saved))
+      const savedView = localStorage.getItem('classroomViewMode')
+      if (savedView === 'list' || savedView === 'card') setViewMode(savedView)
+      setRecentIds(getRecentClassroomIds())
+    }
   }, [])
+
+  function handleViewModeChange(mode: 'card' | 'list') {
+    setViewMode(mode)
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('classroomViewMode', mode)
+    }
+  }
 
   async function handleArchive(classroom: Classroom) {
     const ok = await confirm({
@@ -186,6 +215,62 @@ export default function HomePage() {
   }, [lastClassroomId, classrooms])
   const quickClassroomId = quickClassroom?.id
 
+  // ตัวเลือกกรองตามระดับชั้น (อนุบาล/ประถม/มัธยม ฯลฯ) — ดึงจาก data จริง
+  const availableLevels = useMemo(() => {
+    const set = new Set<string>()
+    for (const c of classrooms) {
+      if (c.level) set.add(c.level)
+    }
+    return Array.from(set)
+  }, [classrooms])
+
+  // โชว์ filter UI เฉพาะตอนห้องเริ่มมีหลายห้อง — 1-3 ห้องเห็นได้หมดอยู่แล้ว
+  const SHOW_FILTER_THRESHOLD = 4
+  const showFilterBar = classrooms.length >= SHOW_FILTER_THRESHOLD
+
+  // เรียงตาม MRU — ห้องที่กดเข้าล่าสุดอยู่บนสุด, ที่เหลือคงลำดับเดิมจาก DB
+  // ใช้กับทั้ง filtered list และตอนไม่มี filter (classrooms ดิบ ๆ)
+  const sortByRecency = useMemo(() => {
+    const rank = new Map<number, number>()
+    recentIds.forEach((id, idx) => rank.set(id, idx))
+    return (list: Classroom[]) => {
+      return [...list].sort((a, b) => {
+        const ra = rank.get(a.id)
+        const rb = rank.get(b.id)
+        if (ra === undefined && rb === undefined) return 0
+        if (ra === undefined) return 1
+        if (rb === undefined) return -1
+        return ra - rb
+      })
+    }
+  }, [recentIds])
+
+  const filteredClassrooms = useMemo(() => {
+    if (!showFilterBar) return sortByRecency(classrooms)
+    const q = classroomSearch.trim().toLowerCase()
+    const matched = classrooms.filter((c) => {
+      if (levelFilter && c.level !== levelFilter) return false
+      if (!q) return true
+      const haystack = `${c.name} ${c.level} ${c.academic_year}`.toLowerCase()
+      return haystack.includes(q)
+    })
+    return sortByRecency(matched)
+  }, [classrooms, classroomSearch, levelFilter, showFilterBar, sortByRecency])
+
+  // Pagination — card view โชว์ 6 ใบ/หน้า, list view โชว์ 15 บรรทัด/หน้า
+  const pageSize = viewMode === 'card' ? 6 : 15
+  const totalPages = Math.max(1, Math.ceil(filteredClassrooms.length / pageSize))
+  const safePage = Math.min(currentPage, totalPages)
+  const pagedClassrooms = useMemo(
+    () => filteredClassrooms.slice((safePage - 1) * pageSize, safePage * pageSize),
+    [filteredClassrooms, safePage, pageSize],
+  )
+
+  // รีเซ็ตหน้าตอน search/filter/viewMode เปลี่ยน — กันไม่ให้ค้างที่หน้าที่หายไป
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [classroomSearch, levelFilter, viewMode])
+
   return (
     <div className="mx-auto max-w-7xl animate-fade-in">
       {/* ─── 1. Welcome Hero — ทักทาย + วันที่ + ค้นหา + สถิติย่อ ─── */}
@@ -256,6 +341,82 @@ export default function HomePage() {
           </div>
         </div>
 
+        {showFilterBar && (
+          <div className="mb-4 flex flex-wrap items-center gap-3">
+            <div className="flex min-w-[240px] flex-1 items-center gap-3 rounded-[var(--radius-lg)] border border-[var(--line)] bg-[var(--surface)] px-4 py-2.5 shadow-[var(--shadow-xs)] transition-all focus-within:border-[var(--primary)] focus-within:shadow-[0_0_0_3px_var(--primary-soft)]">
+              <Search size={18} className="flex-shrink-0 text-[var(--muted-soft)]" />
+              <input
+                value={classroomSearch}
+                onChange={(e) => setClassroomSearch(e.target.value)}
+                placeholder="ค้นหาห้อง — ชื่อห้อง, ระดับชั้น หรือปีการศึกษา"
+                className="w-full border-0 bg-transparent text-sm text-[var(--text)] outline-none placeholder:text-[var(--muted-soft)]"
+              />
+              {classroomSearch && (
+                <button
+                  type="button"
+                  onClick={() => setClassroomSearch('')}
+                  className="flex-shrink-0 rounded-md p-0.5 text-[var(--muted-soft)] transition hover:text-[var(--text-soft)]"
+                  aria-label="ล้างคำค้นหา"
+                >
+                  <X size={16} />
+                </button>
+              )}
+            </div>
+            {availableLevels.length > 1 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setLevelFilter('')}
+                  className={`pill ${levelFilter === '' ? 'pill-brand' : 'pill-muted'} btn-press`}
+                >
+                  ทั้งหมด
+                </button>
+                {availableLevels.map((level) => (
+                  <button
+                    key={level}
+                    type="button"
+                    onClick={() => setLevelFilter(level)}
+                    className={`pill ${levelFilter === level ? 'pill-brand' : 'pill-muted'} btn-press`}
+                  >
+                    {level}
+                  </button>
+                ))}
+              </div>
+            )}
+            {/* View toggle: card ↔ list — เปลี่ยน layout ตอนห้องเริ่มเยอะ */}
+            <div className="flex flex-shrink-0 items-center rounded-[var(--radius)] border border-[var(--line)] bg-[var(--surface)] p-0.5 shadow-[var(--shadow-xs)]">
+              <button
+                type="button"
+                onClick={() => handleViewModeChange('card')}
+                className={`flex h-8 items-center gap-1.5 rounded-[calc(var(--radius)-2px)] px-2.5 text-xs font-medium transition ${
+                  viewMode === 'card'
+                    ? 'bg-[var(--primary-ghost)] text-[var(--primary-strong)]'
+                    : 'text-[var(--muted)] hover:text-[var(--text-soft)]'
+                }`}
+                title="แสดงแบบการ์ด"
+                aria-pressed={viewMode === 'card'}
+              >
+                <LayoutGrid size={14} />
+                การ์ด
+              </button>
+              <button
+                type="button"
+                onClick={() => handleViewModeChange('list')}
+                className={`flex h-8 items-center gap-1.5 rounded-[calc(var(--radius)-2px)] px-2.5 text-xs font-medium transition ${
+                  viewMode === 'list'
+                    ? 'bg-[var(--primary-ghost)] text-[var(--primary-strong)]'
+                    : 'text-[var(--muted)] hover:text-[var(--text-soft)]'
+                }`}
+                title="แสดงแบบรายการ — เห็นห้องเยอะในจอเดียว"
+                aria-pressed={viewMode === 'list'}
+              >
+                <List size={14} />
+                รายการ
+              </button>
+            </div>
+          </div>
+        )}
+
         {loading ? (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {[1, 2, 3].map((i) => (
@@ -294,22 +455,66 @@ export default function HomePage() {
               <ExcelImportButton onImported={loadClassrooms} />
             </div>
           </div>
-        ) : (
-          <div className="grid gap-4 stagger-children md:grid-cols-2 xl:grid-cols-3">
-            {classrooms.map((classroom) => (
-              <ClassroomCard
-                key={classroom.id}
-                classroom={classroom}
-                onEdit={(item) => {
-                  setEditingClassroom(item)
-                  setModalOpen(true)
+        ) : filteredClassrooms.length === 0 ? (
+          <div className="empty-state">
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-[var(--surface-muted)] text-[var(--muted-soft)]">
+              <Search size={28} />
+            </div>
+            <h3 className="text-lg font-bold text-[var(--text)]">ไม่พบห้องที่ตรงกับการค้นหา</h3>
+            <p className="mx-auto mt-2 max-w-sm text-sm text-[var(--muted)]">
+              ลองเปลี่ยนคำค้นหา หรือกดปุ่ม &quot;ทั้งหมด&quot; เพื่อยกเลิกตัวกรอง
+            </p>
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setClassroomSearch('')
+                  setLevelFilter('')
                 }}
-                onDelete={handleDelete}
-                onDuplicate={(item) => setDuplicateSource(item)}
-                onArchive={handleArchive}
-              />
-            ))}
+                className="btn btn-ghost btn-press"
+              >
+                ล้างตัวกรอง
+              </button>
+            </div>
           </div>
+        ) : viewMode === 'list' && showFilterBar ? (
+          <>
+            <div className="stagger-children flex flex-col gap-2">
+              {pagedClassrooms.map((classroom) => (
+                <ClassroomRow
+                  key={classroom.id}
+                  classroom={classroom}
+                  onEdit={(item) => {
+                    setEditingClassroom(item)
+                    setModalOpen(true)
+                  }}
+                  onDelete={handleDelete}
+                  onDuplicate={(item) => setDuplicateSource(item)}
+                  onArchive={handleArchive}
+                />
+              ))}
+            </div>
+            <Pagination current={safePage} total={totalPages} onChange={setCurrentPage} />
+          </>
+        ) : (
+          <>
+            <div className="grid gap-4 stagger-children md:grid-cols-2 xl:grid-cols-3">
+              {pagedClassrooms.map((classroom) => (
+                <ClassroomCard
+                  key={classroom.id}
+                  classroom={classroom}
+                  onEdit={(item) => {
+                    setEditingClassroom(item)
+                    setModalOpen(true)
+                  }}
+                  onDelete={handleDelete}
+                  onDuplicate={(item) => setDuplicateSource(item)}
+                  onArchive={handleArchive}
+                />
+              ))}
+            </div>
+            <Pagination current={safePage} total={totalPages} onChange={setCurrentPage} />
+          </>
         )}
       </section>
 

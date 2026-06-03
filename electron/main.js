@@ -785,7 +785,7 @@ function setupIpcHandlers() {
         LEFT JOIN students s ON s.classroom_id = c.id AND s.is_active = 1
         WHERE c.archived_at IS NULL
         GROUP BY c.id
-        ORDER BY c.name
+        ORDER BY c.created_at DESC, c.id DESC
       `)
       .all()
   })

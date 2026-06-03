@@ -372,3 +372,55 @@ export function detectScheduleClashes(
   clashes.sort((a, b) => (a.day - b.day) || (a.period - b.period))
   return clashes
 }
+
+// ─── Smart Suggestions: หาคาบว่างที่ย้ายไปได้ ─────────────────
+export interface SlotSuggestion {
+  day: number
+  period: number
+}
+
+/**
+ * แนะนำ slot ว่างที่ครูสามารถย้ายคาบนี้ไปแทนได้ โดยไม่ชนกับห้องอื่นในขอบเขต
+ *
+ * เงื่อนไข slot ที่จะ recommend:
+ * - ไม่ใช่ FIXED_TEMPLATE_KEYS (ลูกเสือ/ชุมนุม/สวดมนต์)
+ * - ห้องนี้ยังว่างอยู่ (ไม่มี subject ใส่อยู่ก่อน)
+ * - วิชาเดียวกันยังไม่ถูกใช้ในห้องอื่นใน scope ณ เวลานั้น
+ *
+ * เรียงตามวันแล้วตามคาบ — ผลลัพธ์ deterministic อ่านง่าย
+ */
+export function suggestAlternativeSlots(
+  classroomId: number,
+  subjectCode: string,
+  scopedSchedules: Record<number, Record<string, { subject_code?: string }>>,
+  daysCount: number,
+  periodsCount: number,
+  limit = 6,
+): SlotSuggestion[] {
+  const mySchedule = scopedSchedules[classroomId] || {}
+
+  const result: SlotSuggestion[] = []
+  for (let day = 1; day <= daysCount; day++) {
+    for (let period = 1; period <= periodsCount; period++) {
+      const key = `${day}-${period}`
+      if (FIXED_TEMPLATE_KEYS.has(key)) continue
+      if (mySchedule[key]?.subject_code) continue
+
+      // เช็คว่าห้องอื่นใน scope ใช้วิชานี้ที่ slot เดียวกันหรือไม่
+      let occupied = false
+      for (const [otherIdStr, otherSched] of Object.entries(scopedSchedules)) {
+        if (Number(otherIdStr) === classroomId) continue
+        if (otherSched[key]?.subject_code === subjectCode) {
+          occupied = true
+          break
+        }
+      }
+      if (occupied) continue
+
+      result.push({ day, period })
+      if (result.length >= limit) return result
+    }
+  }
+
+  return result
+}

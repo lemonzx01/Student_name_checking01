@@ -642,6 +642,16 @@ input, select, textarea {
 
 .input::placeholder { color: var(--muted-soft); }
 
+/* ซ่อน browser-native password reveal icon — เราใส่ Eye toggle เองในหน้า PIN
+   - Edge/IE: ::-ms-reveal, ::-ms-clear
+   - WebKit Safari (อนาคต): ::-webkit-credentials-auto-fill-button */
+input[type='password']::-ms-reveal,
+input[type='password']::-ms-clear,
+input[type='text']::-ms-reveal,
+input[type='text']::-ms-clear {
+  display: none;
+}
+
 /* Section header — ใช้ใน card */
 .section-title {
   font-size: 14px;

@@ -7,13 +7,11 @@ import {
   BookOpen,
   CheckCircle,
   FileSpreadsheet,
-  Pencil,
   School,
 } from 'lucide-react'
 import AutoSaveIndicator from '@/components/AutoSaveIndicator'
 import CustomSelect from '@/components/CustomSelect'
 import PageHeader from '@/components/PageHeader'
-import SubjectEditModal from '@/components/SubjectEditModal'
 import { Classroom, Student, calculateGrade, getClassroomColor } from '@/types/index'
 import { getClassrooms } from '@/lib/client-data'
 import { useAutoSave } from '@/lib/hooks/useAutoSave'
@@ -50,15 +48,8 @@ function GradesPageContent() {
     if (stored) setSelectedClassroom(Number(stored))
   }, [urlClassroomId])
 
-  // ─── รายวิชา (custom ผ่าน localStorage) ───
-  const {
-    subjects: SUBJECTS,
-    updateSubject,
-    renameCode,
-    addSubject,
-    removeSubject,
-    resetToDefaults,
-  } = useSubjects()
+  // ─── รายวิชา (custom ผ่าน localStorage) — จัดการในหน้า /settings ───
+  const { subjects: SUBJECTS } = useSubjects()
 
   const [classrooms, setClassrooms] = useState<Classroom[]>([])
   const [students, setStudents] = useState<Student[]>([])
@@ -69,7 +60,6 @@ function GradesPageContent() {
   const [toast, setToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   // ป้องกัน auto-save ยิงตอนที่เพิ่งโหลดข้อมูลจาก DB
   const [isLoading, setIsLoading] = useState(true)
-  const [editingSubjects, setEditingSubjects] = useState(false)
   // dirty flag — auto-save ส่งเฉพาะเมื่อ user แก้เอง (ไม่ใช่จาก reload)
   // กัน race: ตอน reload เปลี่ยน sem1/sem2 จาก setState — value เปลี่ยน ถ้าไม่มี dirty flag
   // จะมีโอกาส save ซ้ำด้วยข้อมูลห้องเก่าก่อน enabled flip
@@ -171,6 +161,10 @@ function GradesPageContent() {
   }
 
   function updateGrade(sem: 1 | 2, studentId: number, subject: string, field: 'midterm' | 'final', value: number) {
+    // Clamp ตาม max ของช่อง — กันครู input garbage (เช่น พิมพ์ 163 ในช่องเต็ม 35)
+    // midterm = คะแนนเก็บ /35, final = สอบ /15 → รวม sem = 50 → รวมปี = 100
+    const max = field === 'midterm' ? 35 : 15
+    const clamped = Math.max(0, Math.min(max, value))
     const setter = sem === 1 ? setSem1 : setSem2
     setter(prev => ({
       ...prev,
@@ -178,7 +172,7 @@ function GradesPageContent() {
         ...prev[studentId],
         [subject]: {
           ...(prev[studentId]?.[subject] || { midterm: 0, final: 0 }),
-          [field]: value,
+          [field]: clamped,
         },
       },
     }))
@@ -451,17 +445,8 @@ function GradesPageContent() {
 
         {/* ── แถว 2: รายวิชา ── */}
         <div>
-          <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="mb-2">
             <label className="block text-xs font-semibold text-slate-700">รายวิชา</label>
-            <button
-              type="button"
-              onClick={() => setEditingSubjects(true)}
-              className="btn-press inline-flex items-center gap-1 rounded-lg border border-[var(--line)] bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 transition hover:border-violet-300 hover:text-violet-600"
-              title="แก้ไขชื่อวิชาและสี"
-            >
-              <Pencil size={11} />
-              แก้ไขรายวิชา
-            </button>
           </div>
           <div className="flex flex-wrap gap-1.5">
             {SUBJECTS.map((s) => {
@@ -653,18 +638,6 @@ function GradesPageContent() {
           <span className="pill pill-danger">ต่ำกว่า 50 = 0</span>
         </div>
       </div>
-
-      {/* Subject edit modal */}
-      <SubjectEditModal
-        open={editingSubjects}
-        subjects={SUBJECTS}
-        onClose={() => setEditingSubjects(false)}
-        onUpdate={updateSubject}
-        onRenameCode={renameCode}
-        onAdd={addSubject}
-        onRemove={removeSubject}
-        onReset={resetToDefaults}
-      />
 
       {/* Auto-save indicator (มุมล่างขวา) */}
       <AutoSaveIndicator

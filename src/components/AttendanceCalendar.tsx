@@ -82,16 +82,35 @@ export default function AttendanceCalendar({ classroomId, classroomName }: Atten
   const goToToday = () => setViewDate(new Date())
   const isThisMonth = today.getFullYear() === year && today.getMonth() === month0
 
+  const okStyle = {
+    backgroundColor: 'var(--success-soft)',
+    color: 'var(--success-strong)',
+    borderColor: 'var(--success-soft)',
+  }
+  const warnStyle = {
+    backgroundColor: 'var(--warning-soft)',
+    color: 'var(--warning-strong)',
+    borderColor: 'var(--warning-soft)',
+  }
+  const mutedStyle = {
+    backgroundColor: 'var(--surface-muted)',
+    color: 'var(--muted)',
+    borderColor: 'var(--line-soft, var(--line))',
+  }
+
   return (
-    <section className="rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-5 shadow-[var(--shadow-sm)] md:p-6">
+    <section className="rounded-[var(--radius-lg)] border border-[var(--line)] bg-[var(--surface)] p-5 shadow-[var(--shadow-sm)] md:p-6">
       {/* Header + สถานะวันนี้ */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+          <div
+            className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl"
+            style={{ backgroundColor: 'var(--primary-ghost)', color: 'var(--primary)' }}
+          >
             <CalendarCheck size={22} />
           </div>
           <div>
-            <p className="text-base font-bold text-slate-900 md:text-lg">ปฏิทินเช็คชื่อ</p>
+            <p className="text-base font-bold text-[var(--text)] md:text-lg">ปฏิทินเช็คชื่อ</p>
             <p className="mt-0.5 text-[13px] text-[var(--muted)]">
               ห้อง <span className="font-semibold">{classroomName}</span>
             </p>
@@ -103,7 +122,8 @@ export default function AttendanceCalendar({ classroomId, classroomName }: Atten
           todayChecked ? (
             <Link
               href={`/attendance?classroom=${classroomId}&date=${todayISO}`}
-              className="btn-press inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100"
+              className="btn-press inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition hover:opacity-80"
+              style={okStyle}
             >
               <Check size={14} />
               วันนี้เช็คชื่อแล้ว
@@ -111,14 +131,18 @@ export default function AttendanceCalendar({ classroomId, classroomName }: Atten
           ) : (
             <Link
               href={`/attendance?classroom=${classroomId}&date=${todayISO}`}
-              className="btn-press inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 transition hover:bg-amber-100"
+              className="btn-press inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition hover:opacity-80"
+              style={warnStyle}
             >
               <AlertCircle size={14} />
               ยังไม่เช็คชื่อ — เช็คเลย
             </Link>
           )
         ) : (
-          <span className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
+          <span
+            className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold"
+            style={mutedStyle}
+          >
             <Info size={14} />
             วันนี้เสาร์/อาทิตย์
           </span>
@@ -130,20 +154,20 @@ export default function AttendanceCalendar({ classroomId, classroomName }: Atten
         <button
           type="button"
           onClick={goToPrev}
-          className="btn-press flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--line)] bg-white text-slate-600 transition hover:border-blue-300 hover:text-blue-600"
+          className="btn-press flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface)] text-[var(--muted)] transition hover:border-[var(--primary)] hover:text-[var(--primary)]"
           title="เดือนก่อน"
         >
           <ChevronLeft size={16} />
         </button>
         <div className="flex items-center gap-2">
-          <p className="text-sm font-bold text-slate-900">
+          <p className="text-sm font-bold text-[var(--text)]">
             {THAI_MONTHS[month0]} {thaiYear}
           </p>
           {!isThisMonth && (
             <button
               type="button"
               onClick={goToToday}
-              className="rounded-md border border-[var(--line)] px-2 py-0.5 text-[10px] font-semibold text-[var(--muted)] hover:border-blue-300 hover:text-blue-600"
+              className="rounded-md border border-[var(--line)] px-2 py-0.5 text-[10px] font-semibold text-[var(--muted)] hover:border-[var(--primary)] hover:text-[var(--primary)]"
             >
               กลับมาวันนี้
             </button>
@@ -152,7 +176,7 @@ export default function AttendanceCalendar({ classroomId, classroomName }: Atten
         <button
           type="button"
           onClick={goToNext}
-          className="btn-press flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--line)] bg-white text-slate-600 transition hover:border-blue-300 hover:text-blue-600"
+          className="btn-press flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface)] text-[var(--muted)] transition hover:border-[var(--primary)] hover:text-[var(--primary)]"
           title="เดือนถัดไป"
         >
           <ChevronRight size={16} />
@@ -164,9 +188,8 @@ export default function AttendanceCalendar({ classroomId, classroomName }: Atten
         {DAY_LABELS.map((label, i) => (
           <div
             key={label}
-            className={`py-1 text-center text-xs font-bold ${
-              i === 0 || i === 6 ? 'text-slate-400' : 'text-slate-500'
-            }`}
+            className="py-1 text-center text-xs font-bold"
+            style={{ color: i === 0 || i === 6 ? 'var(--muted-soft)' : 'var(--muted)' }}
           >
             {label}
           </div>
@@ -183,58 +206,62 @@ export default function AttendanceCalendar({ classroomId, classroomName }: Atten
           const checked = checkedDates.has(iso)
           const isSchoolDay = !weekend
 
-          let bg = 'bg-white hover:bg-blue-50/50'
-          let text = 'text-slate-800'
-          let ring = 'border-transparent'
+          let cellStyle: React.CSSProperties = {
+            backgroundColor: 'var(--surface)',
+            color: 'var(--text)',
+            borderColor: 'var(--line)',
+          }
           let badge: React.ReactNode = null
           let title = `${cell.date.getDate()} ${THAI_MONTHS[month0]}`
 
           if (weekend) {
-            bg = 'bg-slate-50'
-            text = 'text-slate-400'
+            cellStyle = { ...mutedStyle }
           }
 
           if (isSchoolDay && isPast) {
             if (checked) {
-              bg = 'bg-emerald-50 hover:bg-emerald-100'
-              text = 'text-emerald-800'
-              badge = <Check size={11} className="text-emerald-600" strokeWidth={3} />
+              cellStyle = { ...okStyle }
+              badge = <Check size={11} style={{ color: 'var(--success)' }} strokeWidth={3} />
               title += ' ✓ เช็คแล้ว'
             } else {
-              bg = 'bg-amber-50 hover:bg-amber-100'
-              text = 'text-amber-800'
-              badge = <X size={11} className="text-amber-600" strokeWidth={3} />
+              cellStyle = { ...warnStyle }
+              badge = <X size={11} style={{ color: 'var(--warning)' }} strokeWidth={3} />
               title += ' ! ยังไม่เช็ค'
             }
           } else if (isSchoolDay && isToday && checked) {
-            bg = 'bg-emerald-100'
-            text = 'text-emerald-800'
-            badge = <Check size={11} className="text-emerald-700" strokeWidth={3} />
+            cellStyle = { ...okStyle }
+            badge = <Check size={11} style={{ color: 'var(--success)' }} strokeWidth={3} />
             title += ' ✓ เช็คแล้ว'
           } else if (isSchoolDay && checked) {
-            badge = <Check size={11} className="text-emerald-600" strokeWidth={3} />
+            badge = <Check size={11} style={{ color: 'var(--success)' }} strokeWidth={3} />
           }
 
           if (isToday) {
-            ring = 'border-[var(--primary)] ring-2 ring-blue-200'
+            cellStyle.borderColor = 'var(--primary)'
+            cellStyle.boxShadow = '0 0 0 2px var(--primary-soft, var(--primary-ghost))'
           }
+
+          const clickable = isSchoolDay && !isFuture
 
           const content = (
             <div
-              className={`relative flex h-12 items-center justify-center rounded-lg border-2 text-sm font-semibold transition ${bg} ${text} ${ring}`}
-              title={title}
+              className={`relative flex h-12 items-center justify-center rounded-lg border-2 text-sm font-semibold transition ${
+                clickable ? 'hover:brightness-110 dark:hover:brightness-125' : ''
+              }`}
+              style={cellStyle}
+              title={title + (clickable ? ' — คลิกเพื่อเช็คชื่อ' : '')}
             >
               <span className={isToday ? 'font-bold' : ''}>{cell.date.getDate()}</span>
               {badge && <span className="absolute right-1 top-1">{badge}</span>}
             </div>
           )
 
-          if (isSchoolDay && !isFuture) {
+          if (clickable) {
             return (
               <Link
                 key={iso}
                 href={`/attendance?classroom=${classroomId}&date=${iso}`}
-                className="btn-press block"
+                className="btn-press block cursor-pointer"
               >
                 {content}
               </Link>
@@ -245,10 +272,10 @@ export default function AttendanceCalendar({ classroomId, classroomName }: Atten
       </div>
 
       {/* Legend */}
-      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-slate-100 pt-3 text-[11px] text-[var(--muted)]">
-        <LegendSwatch color="bg-emerald-50 border-emerald-200" label="เช็คแล้ว" />
-        <LegendSwatch color="bg-amber-50 border-amber-200" label="ยังไม่เช็ค" />
-        <LegendSwatch color="bg-slate-50 border-slate-200" label="เสาร์/อาทิตย์" />
+      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-[var(--line-soft)] pt-3 text-[11px] text-[var(--muted)]">
+        <LegendSwatch style={okStyle} label="เช็คแล้ว" />
+        <LegendSwatch style={warnStyle} label="ยังไม่เช็ค" />
+        <LegendSwatch style={mutedStyle} label="เสาร์/อาทิตย์" />
       </div>
 
       {loading && <div className="mt-2 text-center text-[11px] text-[var(--muted)]">กำลังโหลด...</div>}
@@ -256,10 +283,10 @@ export default function AttendanceCalendar({ classroomId, classroomName }: Atten
   )
 }
 
-function LegendSwatch({ color, label }: { color: string; label: string }) {
+function LegendSwatch({ style, label }: { style: React.CSSProperties; label: string }) {
   return (
     <span className="inline-flex items-center gap-1.5">
-      <span className={`h-3 w-3 rounded border ${color}`} />
+      <span className="h-3 w-3 rounded border" style={style} />
       {label}
     </span>
   )

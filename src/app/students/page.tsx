@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ChevronLeft, Eye, Pencil, Phone, Plus, Search, Trash2, UserSquare2, Users, X } from 'lucide-react'
+import { ChevronLeft, Eye, Pencil, Plus, Search, Trash2, UserSquare2, Users, X } from 'lucide-react'
 import CustomSelect from '@/components/CustomSelect'
 import ExcelImportButton from '@/components/ExcelImportButton'
 import PageHeader from '@/components/PageHeader'
@@ -434,20 +434,11 @@ function StudentsPageContent() {
                   ผู้ปกครอง
                 </h3>
 
-                {/* เบอร์โทรผู้ปกครอง - โชว์เด่น + ปุ่มโทร */}
+                {/* เบอร์โทรผู้ปกครอง - โชว์เด่น */}
                 {selectedStudent.guardian_phone ? (
-                  <div className="mb-4 flex items-center justify-between gap-3 rounded-[var(--radius-md)] border border-[var(--success-soft)] bg-[var(--success-soft)] px-4 py-3">
-                    <div>
-                      <p className="text-xs font-medium text-[var(--success-strong)]">เบอร์โทรผู้ปกครอง</p>
-                      <p className="mt-0.5 text-lg font-bold text-[var(--text)]">{selectedStudent.guardian_phone}</p>
-                    </div>
-                    <a
-                      href={`tel:${selectedStudent.guardian_phone}`}
-                      className="btn-press inline-flex items-center gap-2 rounded-[var(--radius)] bg-[var(--success)] px-4 py-2.5 text-sm font-bold text-white shadow-[var(--shadow-xs)] transition hover:bg-[var(--success-strong)]"
-                    >
-                      <Phone size={16} />
-                      โทรเลย
-                    </a>
+                  <div className="mb-4 rounded-[var(--radius-md)] border border-[var(--success-soft)] bg-[var(--success-soft)] px-4 py-3">
+                    <p className="text-xs font-medium text-[var(--success-strong)]">เบอร์โทรผู้ปกครอง</p>
+                    <p className="mt-0.5 text-lg font-bold text-[var(--text)]">{selectedStudent.guardian_phone}</p>
                   </div>
                 ) : (
                   <div className="mb-4 rounded-[var(--radius-md)] border border-dashed border-[var(--line)] bg-[var(--surface-soft)] px-4 py-3 text-center text-sm text-[var(--muted)]">

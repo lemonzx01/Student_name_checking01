@@ -15,6 +15,7 @@ import CustomSelect from '@/components/CustomSelect'
 import StudentAvatar from '@/components/StudentAvatar'
 import { invalidatePhotoCache } from '@/lib/hooks/usePhotoUrl'
 import { useDialog } from '@/lib/hooks/useConfirm'
+import { DISADVANTAGE_OPTIONS, isPredefinedDisadvantage } from '@/lib/disadvantage'
 
 interface Props {
   isOpen: boolean
@@ -140,6 +141,8 @@ export default function StudentModal({
   const [formData, setFormData] = useState<StudentFormInput>(getInitialFormData(classroomId))
   const [saving, setSaving] = useState(false)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  // โหมด "อื่นๆ" ของช่องความด้อยโอกาส — เปิดเมื่อเลือก "อื่นๆ" หรือค่าเดิมไม่ตรงกับ predefined options
+  const [showDisadvantageOther, setShowDisadvantageOther] = useState(false)
   const { alert } = useDialog()
 
   const activeClassroomName = useMemo(
@@ -195,10 +198,12 @@ export default function StudentModal({
         source_payload: student.source_payload ?? null,
         photo_path: student.photo_path ?? null,
       })
+      setShowDisadvantageOther(!!student.disadvantage && !isPredefinedDisadvantage(student.disadvantage))
       return
     }
 
     setFormData(getInitialFormData(classroomId))
+    setShowDisadvantageOther(false)
   }, [classroomId, isOpen, student])
 
   if (!isOpen) {
@@ -417,7 +422,10 @@ export default function StudentModal({
               <FormField label="เลข 13 หลัก">
                 <input
                   value={formData.national_id ?? ''}
-                  onChange={(e) => updateField('national_id', e.target.value)}
+                  onChange={(e) => updateField('national_id', e.target.value.replace(/\D/g, '').slice(0, 13))}
+                  inputMode="numeric"
+                  maxLength={13}
+                  placeholder="กรอกเลขบัตรประชาชน 13 หลัก"
                   className={inputClass}
                 />
               </FormField>
@@ -539,11 +547,42 @@ export default function StudentModal({
                 />
               </FormField>
               <FormField label="ความด้อยโอกาส">
-                <input
-                  value={formData.disadvantage ?? ''}
-                  onChange={(e) => updateField('disadvantage', e.target.value)}
-                  className={inputClass}
-                />
+                <div className="space-y-2">
+                  <CustomSelect
+                    value={
+                      showDisadvantageOther
+                        ? '__other__'
+                        : (formData.disadvantage ?? '')
+                    }
+                    onChange={(v) => {
+                      const val = String(v)
+                      if (val === '__other__') {
+                        setShowDisadvantageOther(true)
+                        // ถ้าค่าเดิมเป็น predefined ให้ล้างเพื่อให้พิมพ์ใหม่
+                        if (isPredefinedDisadvantage(formData.disadvantage)) {
+                          updateField('disadvantage', '')
+                        }
+                      } else {
+                        setShowDisadvantageOther(false)
+                        updateField('disadvantage', val)
+                      }
+                    }}
+                    options={[
+                      { value: '', label: '(ไม่ระบุ)' },
+                      ...DISADVANTAGE_OPTIONS.map((o) => ({ value: o, label: o })),
+                      { value: '__other__', label: 'อื่นๆ (ระบุเอง)' },
+                    ]}
+                    placeholder="เลือกประเภท"
+                  />
+                  {showDisadvantageOther && (
+                    <input
+                      value={formData.disadvantage ?? ''}
+                      onChange={(e) => updateField('disadvantage', e.target.value)}
+                      className={inputClass}
+                      placeholder="ระบุประเภทความด้อยโอกาส"
+                    />
+                  )}
+                </div>
               </FormField>
             </div>
           </div>

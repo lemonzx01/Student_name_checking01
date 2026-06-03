@@ -10,7 +10,6 @@ import {
   CheckCircle,
   ChevronDown,
   ChevronLeft,
-  Copy,
   Eraser,
   FileText,
   Filter,
@@ -30,7 +29,7 @@ import {
 import { useSubjects, type SubjectWithMeta } from '@/lib/hooks/useSubjects'
 import ScheduleHoursCounter from '@/components/ScheduleHoursCounter'
 import ScheduleTemplateDialog from '@/components/ScheduleTemplateDialog'
-import ScheduleClashPanel, { Clash } from '@/components/ScheduleClashPanel'
+import ScheduleClashPanel, { Clash, SuggestionTarget } from '@/components/ScheduleClashPanel'
 import AutoSaveIndicator from '@/components/AutoSaveIndicator'
 import UndoToast from '@/components/Toast'
 import PageHeader from '@/components/PageHeader'
@@ -38,6 +37,7 @@ import { useAutoSave } from '@/lib/hooks/useAutoSave'
 import {
   detectScheduleClashes,
   generateMultiClassroomSchedules,
+  suggestAlternativeSlots,
 } from '@/lib/schedule-templates'
 
 const loadThaiFont = () => import('@/lib/thai-font').then((m) => m.NotoSansThai)
@@ -123,19 +123,20 @@ function SchedulePageContent() {
   const [editingSlot, setEditingSlot] = useState<{ day: number; period: number } | null>(null)
   const [editForm, setEditForm] = useState<Slot>({ subject_code: '', subject_name: '', class_level: '', room: '' })
   const [showConfirmClear, setShowConfirmClear] = useState(false)
-  const [showCopyDialog, setShowCopyDialog] = useState(false)
   const [showTemplateDialog, setShowTemplateDialog] = useState(false)
 
-  // ── Undo สำหรับลบช่อง / ล้างทั้งห้อง ──
+  // ── Undo สำหรับลบช่อง / ล้างห้อง / ล้างทุกห้อง ──
   // เก็บ snapshot ของช่องล่าสุดที่ถูกลบ — กด "กู้คืน" ใน toast / Ctrl+Z จะ restore
   interface UndoEntry {
-    type: 'cell' | 'clearRoom'
-    classroomId: number
+    type: 'cell' | 'clearRoom' | 'clearAll'
+    classroomId?: number
     // cell: data ของ cell เดิม
     cellKey?: string
     prevSlot?: Slot
     // clearRoom: ทั้งห้อง
     prevSchedule?: ScheduleMap
+    // clearAll: ทุกห้อง — snapshot ทั้งหมด
+    prevAllSchedules?: AllSchedules
   }
   const [undoEntry, setUndoEntry] = useState<UndoEntry | null>(null)
 
@@ -392,11 +393,34 @@ function SchedulePageContent() {
     // ไม่ต้อง setToast — UndoToast จะแสดงพร้อมปุ่ม "กู้คืน" แทน
   }
 
+  const handleClearAll = () => {
+    if (classrooms.length === 0) return
+    // snapshot ทั้งหมดเพื่อ undo
+    const prevAllSchedules: AllSchedules = {}
+    for (const c of classrooms) {
+      prevAllSchedules[c.id] = { ...(allSchedules[c.id] || {}) }
+    }
+    setUndoEntry({
+      type: 'clearAll',
+      prevAllSchedules,
+    })
+    // เคลียร์ทุกห้อง + mark dirty ทุกห้องที่มีตาราง
+    const cleared: AllSchedules = {}
+    for (const c of classrooms) {
+      cleared[c.id] = {}
+      if (Object.keys(prevAllSchedules[c.id]).length > 0) {
+        markDirty(c.id)
+      }
+    }
+    setAllSchedules(cleared)
+    setShowConfirmClear(false)
+  }
+
   // คืนค่าจาก undoEntry
   const handleUndo = useCallback(() => {
     if (!undoEntry) return
     const { classroomId, type } = undoEntry
-    if (type === 'cell' && undoEntry.cellKey && undoEntry.prevSlot) {
+    if (type === 'cell' && classroomId && undoEntry.cellKey && undoEntry.prevSlot) {
       setAllSchedules((prev) => ({
         ...prev,
         [classroomId]: {
@@ -406,12 +430,20 @@ function SchedulePageContent() {
       }))
       markDirty(classroomId)
       setUndoEntry(null)
-    } else if (type === 'clearRoom' && undoEntry.prevSchedule) {
+    } else if (type === 'clearRoom' && classroomId && undoEntry.prevSchedule) {
       setAllSchedules((prev) => ({
         ...prev,
         [classroomId]: undoEntry.prevSchedule!,
       }))
       markDirty(classroomId)
+      setUndoEntry(null)
+    } else if (type === 'clearAll' && undoEntry.prevAllSchedules) {
+      const restored = undoEntry.prevAllSchedules
+      setAllSchedules(restored)
+      for (const idStr of Object.keys(restored)) {
+        const id = Number(idStr)
+        if (Object.keys(restored[id]).length > 0) markDirty(id)
+      }
       setUndoEntry(null)
     }
   }, [undoEntry, markDirty])
@@ -432,17 +464,6 @@ function SchedulePageContent() {
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
   }, [undoEntry, handleUndo])
-
-  const handleCopyFrom = (sourceId: number) => {
-    if (!selectedId || sourceId === selectedId) return
-    const source = allSchedules[sourceId] || {}
-    const cloned: ScheduleMap = {}
-    for (const [k, v] of Object.entries(source)) cloned[k] = { ...v }
-    setAllSchedules((prev) => ({ ...prev, [selectedId]: cloned }))
-    markDirty(selectedId)
-    setShowCopyDialog(false)
-    setToast({ type: 'success', text: 'คัดลอกตารางสำเร็จ' })
-  }
 
   const handleApplyTemplate = (
     slots: Record<string, string>,
@@ -628,6 +649,136 @@ function SchedulePageContent() {
     setToast({ type: 'error', text: `สลับไปห้องที่ชนกัน — ตรวจเช็คคาบซ้ำ` })
   }
 
+  // Smart Suggestions: แนะนำ slot ว่างที่ห้องปัจจุบันย้ายไปได้โดยไม่ชน
+  const getClashSuggestions = useCallback(
+    (clash: Clash): SuggestionTarget[] => {
+      if (!selectedId) return []
+      const subjectCode = clash.subjectCode
+      if (!subjectCode) return []
+      return suggestAlternativeSlots(
+        selectedId,
+        subjectCode,
+        scopedSchedules,
+        DAYS.length,
+        PERIODS.length,
+        6,
+      )
+    },
+    [selectedId, scopedSchedules],
+  )
+
+  // ย้ายคาบของห้องปัจจุบันจาก slot ที่ clash ไปยัง target ที่แนะนำ
+  const handleMoveClashSlot = useCallback(
+    (clash: Clash, target: SuggestionTarget) => {
+      if (!selectedId) return
+      const fromKey = `${clash.day}-${clash.period}`
+      const toKey = `${target.day}-${target.period}`
+      const prev = (allSchedules[selectedId] || {})[fromKey]
+      if (!prev) return
+
+      setAllSchedules((current) => {
+        const room = { ...(current[selectedId] || {}) }
+        // ย้าย: ลบช่องเดิม, ใส่ช่องใหม่
+        delete room[fromKey]
+        room[toKey] = prev
+        return { ...current, [selectedId]: room }
+      })
+      markDirty(selectedId)
+      setToast({
+        type: 'success',
+        text: `ย้าย ${prev.subject_code || 'คาบ'} ไป ${DAYS[target.day - 1]} คาบ ${target.period}`,
+      })
+    },
+    [selectedId, allSchedules, markDirty],
+  )
+
+  // Auto-fix: ลูป suggest+move ทุก clash ใน scope (current = ห้องนี้, all = ทุกห้อง)
+  // Greedy — เลือก slot แนะนำตัวแรกของแต่ละ clash; หลัง move ก็ re-detect แล้วทำซ้ำ
+  const handleAutoFix = useCallback(
+    (mode: 'current' | 'all') => {
+      if (mode === 'current' && !selectedId) return
+
+      // Clone schedules ทุกห้องใน scope แบบ deep (slot เป็น plain object)
+      const draft: AllSchedules = {}
+      for (const id of scopedClassroomIds) {
+        draft[id] = JSON.parse(JSON.stringify(allSchedules[id] || {}))
+      }
+
+      let fixed = 0
+      let unresolved = 0
+      const MAX_ITER = 200 // กัน infinite loop ในเคสที่ detect แต่ resolve ไม่ได้
+
+      for (let iter = 0; iter < MAX_ITER; iter++) {
+        const clashesNow = detectScheduleClashes(draft)
+        const filtered =
+          mode === 'current'
+            ? clashesNow.filter((c) => c.classroomIds.includes(selectedId!))
+            : clashesNow
+
+        if (filtered.length === 0) break
+
+        let resolved = false
+        for (const clash of filtered) {
+          if (!clash.subjectCode) continue
+
+          // เลือกห้องที่จะย้าย: 'current' → ห้องนี้, 'all' → ห้องแรกใน clash
+          const moveFromId =
+            mode === 'current' ? selectedId! : clash.classroomIds[0]
+
+          const suggestions = suggestAlternativeSlots(
+            moveFromId,
+            clash.subjectCode,
+            draft,
+            DAYS.length,
+            PERIODS.length,
+            1,
+          )
+          if (suggestions.length === 0) continue
+
+          const fromKey = `${clash.day}-${clash.period}`
+          const toKey = `${suggestions[0].day}-${suggestions[0].period}`
+          const slot = draft[moveFromId]?.[fromKey]
+          if (!slot) continue
+
+          delete draft[moveFromId][fromKey]
+          draft[moveFromId][toKey] = slot
+          fixed++
+          resolved = true
+          break
+        }
+
+        if (!resolved) {
+          unresolved = filtered.length
+          break
+        }
+      }
+
+      if (fixed === 0) {
+        setToast({
+          type: 'error',
+          text: 'ไม่พบ slot ว่างที่ย้ายได้ — ตารางอาจเต็มเกินไป',
+        })
+        return
+      }
+
+      setAllSchedules((current) => ({ ...current, ...draft }))
+      for (const idStr of Object.keys(draft)) markDirty(Number(idStr))
+
+      if (unresolved > 0) {
+        setToast({
+          type: 'error',
+          text: `แก้แล้ว ${fixed} จุด · ยังเหลือ ${unresolved} จุดที่หา slot ว่างไม่ได้`,
+        })
+      } else {
+        setToast({
+          type: 'success',
+          text: `แก้คาบซ้ำสำเร็จ ${fixed} จุด`,
+        })
+      }
+    },
+    [selectedId, allSchedules, scopedClassroomIds, markDirty],
+  )
+
   // ── PDF Export ──
   const exportPDF = async () => {
     try {
@@ -787,139 +938,16 @@ function SchedulePageContent() {
         }
       />
 
-      {/* Classroom selector + Actions — แยกเป็น section อิสระ */}
+      {/* Toolbar — classroom selector + actions + clash-scope toggle */}
       {classrooms.length > 0 && (
         <section
-          className="card animate-slide-up mb-4 p-4"
+          className="card animate-slide-up mb-4 p-3"
           style={{ animationDelay: '60ms' }}
         >
-          {/* ── ขอบเขตตรวจคาบซ้ำ (Clash Scope) ── */}
-          <div className="mb-3 border-b border-[var(--line-soft)] pb-3">
-            {/* summary + toggle */}
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1 text-xs text-[var(--muted)]">
-                <Filter size={12} />
-                {clashScope === 'grade'
-                  ? gradeScope
-                    ? `ตรวจคาบซ้ำกับห้องระดับเดียวกัน (ป.${gradeScope} · ${scopedClassroomIds.size} ห้อง)`
-                    : 'ตรวจคาบซ้ำกับห้องระดับเดียวกัน'
-                  : `ตรวจคาบซ้ำกับ ${scopedClassroomIds.size} ห้องที่เลือก`}
-              </span>
-              <button
-                type="button"
-                onClick={() => setShowScopeSettings((v) => !v)}
-                className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold text-[var(--muted)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--text)]"
-              >
-                ตั้งค่าขั้นสูง
-                <ChevronDown
-                  size={12}
-                  className={`transition-transform ${showScopeSettings ? 'rotate-180' : ''}`}
-                />
-              </button>
-            </div>
-
-            {/* expanded controls */}
-            {showScopeSettings && (
-              <div className="mt-3 rounded-lg bg-[var(--surface-muted)] p-3">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="mr-1 text-[11px] font-semibold text-[var(--muted)]">รูปแบบ</span>
-                  <ScopeButton
-                    label="ระดับชั้น"
-                    active={clashScope === 'grade'}
-                    onClick={() => {
-                      if (gradeScope == null && selectedClassroom) {
-                        const g = parseGradeNum(selectedClassroom.level)
-                        if (g) setGradeScope(g)
-                      }
-                      setClashScope('grade')
-                    }}
-                  />
-                  <ScopeButton
-                    label="เลือกเอง"
-                    active={clashScope === 'custom'}
-                    onClick={() => {
-                      if (clashScope !== 'custom' && customScope.size === 0 && selectedId) {
-                        setCustomScope(new Set([selectedId]))
-                      }
-                      setClashScope('custom')
-                    }}
-                  />
-                </div>
-
-                {/* custom mode: checkboxes per classroom */}
-                {clashScope === 'custom' && (
-                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                    <span className="mr-1 text-[11px] text-[var(--muted)]">เลือกห้องที่จะตรวจ:</span>
-                    {classrooms.map((c) => {
-                      const checked = customScope.has(c.id)
-                      return (
-                        <button
-                          key={c.id}
-                          type="button"
-                          onClick={() => {
-                            setCustomScope((prev) => {
-                              const next = new Set(prev)
-                              if (next.has(c.id)) next.delete(c.id)
-                              else next.add(c.id)
-                              return next
-                            })
-                          }}
-                          className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold transition ${
-                            checked
-                              ? 'border-[var(--primary)] bg-[var(--primary-ghost)] text-[var(--primary-strong)]'
-                              : 'border-[var(--line)] bg-[var(--surface)] text-[var(--muted)] hover:border-[var(--primary-soft)]'
-                          }`}
-                        >
-                          {checked && <Check size={10} strokeWidth={3} />}
-                          {c.name}
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
-
-                {/* grade mode: เลือกระดับชั้น 1-6 */}
-                {clashScope === 'grade' && (
-                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                    <span className="mr-1 text-[11px] text-[var(--muted)]">เลือกระดับชั้น:</span>
-                    {[1, 2, 3, 4, 5, 6].map((g) => {
-                      const active = gradeScope === g
-                      const count = classrooms.filter((c) => parseGradeNum(c.level) === g).length
-                      const disabled = count === 0
-                      return (
-                        <button
-                          key={g}
-                          type="button"
-                          disabled={disabled}
-                          onClick={() => setGradeScope(g)}
-                          className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold transition ${
-                            active
-                              ? 'border-[var(--primary)] bg-[var(--primary-ghost)] text-[var(--primary-strong)]'
-                              : disabled
-                              ? 'cursor-not-allowed border-[var(--line-soft)] bg-[var(--surface-muted)] text-[var(--muted-soft)]'
-                              : 'border-[var(--line)] bg-[var(--surface)] text-[var(--muted)] hover:border-[var(--primary-soft)]'
-                          }`}
-                          title={disabled ? 'ไม่มีห้องในระดับนี้' : `${count} ห้อง`}
-                        >
-                          ป.{g}
-                          <span className="text-[9px] opacity-70">({count})</span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
-
-                <p className="mt-2 text-[10px] text-[var(--muted)]">
-                  default ตรวจกับห้องระดับเดียวกันอัตโนมัติ — เปลี่ยนเป็น &quot;เลือกเอง&quot; เฉพาะตอนที่ต้องการตรวจข้ามระดับ
-                </p>
-              </div>
-            )}
-          </div>
-
+          {/* แถวหลัก: เลือกห้อง (ซ้าย) + actions (ขวา) */}
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            {/* ห้องเรียน */}
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="mr-1 text-xs font-semibold text-[var(--muted)]">เลือกห้อง</span>
+            {/* ห้องเรียน — pill ที่กระชับขึ้น */}
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
               {classrooms.map((cls) => {
                 const isSelected = selectedId === cls.id
                 const pct = classroomFillMap[cls.id] || 0
@@ -929,32 +957,25 @@ function SchedulePageContent() {
                     key={cls.id}
                     type="button"
                     onClick={() => setSelectedId(cls.id)}
-                    className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                    title={`${cls.name} · ${pct}%${clashCount > 0 ? ` · ชน ${clashCount} คาบ` : ''}`}
+                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition ${
                       isSelected
                         ? 'bg-[var(--primary)] text-white shadow-sm'
                         : 'bg-[var(--surface-muted)] text-[var(--text-soft)] hover:bg-[var(--surface-soft)]'
                     }`}
                   >
                     <span>{cls.name}</span>
-                    <span
-                      className={`rounded-full px-1.5 py-0.5 text-[10px] ${
-                        isSelected
-                          ? 'bg-white/20'
-                          : 'bg-[var(--surface)] text-[var(--muted)]'
-                      }`}
-                    >
+                    <span className={`text-[10px] opacity-75 ${isSelected ? 'text-white' : ''}`}>
                       {pct}%
                     </span>
                     {clashCount > 0 && (
                       <span
-                        className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${
+                        className={`inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[9px] font-bold ${
                           isSelected
                             ? 'bg-white text-[var(--danger-strong)]'
                             : 'bg-[var(--danger-soft)] text-[var(--danger-strong)]'
                         }`}
-                        title={`ชนกับห้องอื่น ${clashCount} คาบ`}
                       >
-                        <AlertTriangle size={9} strokeWidth={2.5} />
                         {clashCount}
                       </span>
                     )}
@@ -963,8 +984,8 @@ function SchedulePageContent() {
               })}
             </div>
 
-            {/* Quick actions */}
-            <div className="flex flex-wrap items-center gap-1.5">
+            {/* Actions — รวม clash-scope toggle ในแถวเดียว */}
+            <div className="flex flex-shrink-0 flex-wrap items-center gap-1">
               <button
                 type="button"
                 onClick={() => setShowTemplateDialog(true)}
@@ -973,27 +994,7 @@ function SchedulePageContent() {
                 className="btn btn-brand-ghost btn-sm"
               >
                 <Sparkles size={14} />
-                สร้างอัตโนมัติ
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowCopyDialog(true)}
-                disabled={!selectedId || classrooms.length < 2}
-                title="คัดลอกตารางจากห้องอื่น"
-                className="btn btn-secondary btn-sm"
-              >
-                <Copy size={14} />
-                คัดลอก
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowConfirmClear(true)}
-                disabled={!selectedId}
-                title="ล้างตารางห้องนี้ทั้งหมด"
-                className="btn btn-danger-ghost btn-sm"
-              >
-                <Eraser size={14} />
-                ล้าง
+                <span className="hidden md:inline">สร้างอัตโนมัติ</span>
               </button>
               <button
                 type="button"
@@ -1003,10 +1004,134 @@ function SchedulePageContent() {
                 className="btn btn-secondary btn-sm"
               >
                 <FileText size={14} />
-                PDF
+                <span className="hidden md:inline">PDF</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowConfirmClear(true)}
+                disabled={classrooms.length === 0}
+                title="ล้างตารางสอน (เลือกได้: ห้องนี้ / ทุกห้อง)"
+                className="btn btn-danger-ghost btn-sm"
+              >
+                <Eraser size={14} />
+              </button>
+              <span className="mx-1 hidden h-5 w-px bg-[var(--line)] sm:block" />
+              <button
+                type="button"
+                onClick={() => setShowScopeSettings((v) => !v)}
+                title={
+                  clashScope === 'grade'
+                    ? gradeScope
+                      ? `ตรวจกับ ป.${gradeScope} · ${scopedClassroomIds.size} ห้อง`
+                      : 'ตั้งค่าขอบเขตตรวจคาบซ้ำ'
+                    : `ตรวจกับ ${scopedClassroomIds.size} ห้องที่เลือก`
+                }
+                className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition ${
+                  showScopeSettings
+                    ? 'border-[var(--primary)] bg-[var(--primary-ghost)] text-[var(--primary-strong)]'
+                    : 'border-[var(--line)] text-[var(--muted)] hover:border-[var(--primary-soft)] hover:text-[var(--text-soft)]'
+                }`}
+              >
+                <Filter size={11} />
+                <span className="hidden md:inline">ตรวจคาบซ้ำ</span>
+                <ChevronDown
+                  size={10}
+                  className={`transition-transform ${showScopeSettings ? 'rotate-180' : ''}`}
+                />
               </button>
             </div>
           </div>
+
+          {/* Clash-scope panel — ซ่อนเป็น default, กางเฉพาะตอนกด */}
+          {showScopeSettings && (
+            <div className="mt-3 rounded-lg border border-[var(--line-soft)] bg-[var(--surface-muted)] p-3">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="mr-1 text-[11px] font-semibold text-[var(--muted)]">รูปแบบ</span>
+                <ScopeButton
+                  label="ระดับชั้น"
+                  active={clashScope === 'grade'}
+                  onClick={() => {
+                    if (gradeScope == null && selectedClassroom) {
+                      const g = parseGradeNum(selectedClassroom.level)
+                      if (g) setGradeScope(g)
+                    }
+                    setClashScope('grade')
+                  }}
+                />
+                <ScopeButton
+                  label="เลือกเอง"
+                  active={clashScope === 'custom'}
+                  onClick={() => {
+                    if (clashScope !== 'custom' && customScope.size === 0 && selectedId) {
+                      setCustomScope(new Set([selectedId]))
+                    }
+                    setClashScope('custom')
+                  }}
+                />
+              </div>
+
+              {clashScope === 'custom' && (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <span className="mr-1 text-[11px] text-[var(--muted)]">เลือกห้องที่จะตรวจ:</span>
+                  {classrooms.map((c) => {
+                    const checked = customScope.has(c.id)
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => {
+                          setCustomScope((prev) => {
+                            const next = new Set(prev)
+                            if (next.has(c.id)) next.delete(c.id)
+                            else next.add(c.id)
+                            return next
+                          })
+                        }}
+                        className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold transition ${
+                          checked
+                            ? 'border-[var(--primary)] bg-[var(--primary-ghost)] text-[var(--primary-strong)]'
+                            : 'border-[var(--line)] bg-[var(--surface)] text-[var(--muted)] hover:border-[var(--primary-soft)]'
+                        }`}
+                      >
+                        {checked && <Check size={10} strokeWidth={3} />}
+                        {c.name}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+
+              {clashScope === 'grade' && (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <span className="mr-1 text-[11px] text-[var(--muted)]">เลือกระดับชั้น:</span>
+                  {[1, 2, 3, 4, 5, 6].map((g) => {
+                    const active = gradeScope === g
+                    const count = classrooms.filter((c) => parseGradeNum(c.level) === g).length
+                    const disabled = count === 0
+                    return (
+                      <button
+                        key={g}
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => setGradeScope(g)}
+                        className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold transition ${
+                          active
+                            ? 'border-[var(--primary)] bg-[var(--primary-ghost)] text-[var(--primary-strong)]'
+                            : disabled
+                            ? 'cursor-not-allowed border-[var(--line-soft)] bg-[var(--surface-muted)] text-[var(--muted-soft)]'
+                            : 'border-[var(--line)] bg-[var(--surface)] text-[var(--muted)] hover:border-[var(--primary-soft)]'
+                        }`}
+                        title={disabled ? 'ไม่มีห้องในระดับนี้' : `${count} ห้อง`}
+                      >
+                        ป.{g}
+                        <span className="text-[9px] opacity-70">({count})</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </section>
       )}
 
@@ -1038,59 +1163,58 @@ function SchedulePageContent() {
           className="animate-slide-up grid gap-4 lg:grid-cols-[1fr_280px]"
           style={{ animationDelay: '100ms' }}
         >
-          {/* Main grid + Palette */}
+          {/* Main: palette + grid ใน card เดียว */}
           <div className="space-y-4">
-            {/* Subject palette (paint mode) */}
-            <section className="card p-4">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <Paintbrush size={14} className="text-[var(--muted)]" />
-                  <span className="section-title text-xs">โหมดระบาย</span>
-                  <span className="hidden text-[11px] text-[var(--muted)] sm:inline">
-                    — กดวิชา แล้วคลิกช่องที่ต้องการ
-                  </span>
-                </div>
-                {activePaint && (
-                  <button
-                    type="button"
-                    onClick={() => setActivePaint(null)}
-                    className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] text-[var(--muted)] hover:bg-[var(--surface-muted)]"
-                  >
-                    <X size={12} />
-                    ออก (Esc)
-                  </button>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {subjects.map((s) => {
-                  const isActive = activePaint?.code === s.code
-                  return (
+            <section className="card overflow-hidden p-0">
+              {/* Subject palette — แถบบางบนสุด ติดกับ grid */}
+              <div className="border-b border-[var(--line-soft)] px-4 py-3">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 text-xs text-[var(--muted)]">
+                    <Paintbrush size={13} />
+                    <span className="font-semibold">โหมดระบาย</span>
+                    <span className="hidden text-[10px] opacity-75 sm:inline">
+                      — กดวิชา แล้วคลิกช่องในตาราง · คลิกขวาเพื่อลบ
+                    </span>
+                  </div>
+                  {activePaint && (
                     <button
-                      key={s.code}
                       type="button"
-                      onClick={() => setActivePaint(isActive ? null : s)}
-                      className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition ${
-                        isActive ? 'shadow-md' : 'hover:shadow-sm'
-                      }`}
-                      style={{
-                        borderColor: isActive ? s.color : 'var(--line)',
-                        // soft tint เมื่อ active (alpha ~12%)
-                        backgroundColor: isActive ? `${s.color}1F` : 'var(--surface)',
-                        color: isActive ? s.color : 'var(--text-soft)',
-                      }}
+                      onClick={() => setActivePaint(null)}
+                      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-[var(--muted)] hover:bg-[var(--surface-muted)]"
                     >
-                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: s.color }} />
-                      <span className="font-bold">{s.code}</span>
-                      <span className="text-[10px] opacity-75">{s.name}</span>
+                      <X size={11} />
+                      ออก (Esc)
                     </button>
-                  )
-                })}
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {subjects.map((s) => {
+                    const isActive = activePaint?.code === s.code
+                    return (
+                      <button
+                        key={s.code}
+                        type="button"
+                        onClick={() => setActivePaint(isActive ? null : s)}
+                        className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px] font-semibold transition ${
+                          isActive ? 'shadow-sm' : ''
+                        }`}
+                        style={{
+                          borderColor: isActive ? s.color : 'var(--line)',
+                          backgroundColor: isActive ? `${s.color}1F` : 'transparent',
+                          color: isActive ? s.color : 'var(--text-soft)',
+                        }}
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: s.color }} />
+                        <span className="font-bold">{s.code}</span>
+                        <span className="opacity-70">{s.name}</span>
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
-            </section>
 
-            {/* Grid */}
-            <section className="card p-4">
-              <div className="overflow-x-auto">
+              {/* Grid */}
+              <div className="overflow-x-auto p-4">
                 <div
                   className="min-w-[800px]"
                   style={{
@@ -1236,11 +1360,6 @@ function SchedulePageContent() {
                 </div>
               </div>
 
-              {/* Tip */}
-              <div className="mt-3 text-[11px] text-[var(--muted)]">
-                <span className="font-semibold">ทิป:</span> คลิกเพิ่ม/แก้ไข • คลิกขวาลบ •{' '}
-                กดวิชาจากแถบด้านบนเพื่อระบายเร็ว
-              </div>
             </section>
           </div>
 
@@ -1252,7 +1371,7 @@ function SchedulePageContent() {
                   <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
                   <div>
                     ห้องนี้<span className="font-semibold">ไม่อยู่ในขอบเขตตรวจ</span> —
-                    ปรับขอบเขต &quot;ตรวจคาบซ้ำระหว่าง&quot; ด้านบนให้ครอบคลุมห้องนี้
+                    กดปุ่ม &quot;ตรวจคาบซ้ำ&quot; ด้านบนเพื่อตั้งค่าให้ครอบคลุมห้องนี้
                   </div>
                 </div>
               </div>
@@ -1262,6 +1381,10 @@ function SchedulePageContent() {
               currentClassroomId={selectedId}
               onJumpTo={handleJumpToClash}
               scopeLabel={`เฉพาะ ${scopedClassroomIds.size} ห้อง`}
+              getSuggestions={getClashSuggestions}
+              onMoveSlot={handleMoveClashSlot}
+              onAutoFixCurrent={() => handleAutoFix('current')}
+              onAutoFixAll={() => handleAutoFix('all')}
             />
             <ScheduleHoursCounter
               schedule={currentSchedule}
@@ -1291,24 +1414,22 @@ function SchedulePageContent() {
         />
       )}
 
-      {/* Confirm Clear */}
+      {/* Confirm Clear — เลือกขอบเขต (ห้องนี้ / ทุกห้อง) */}
       {showConfirmClear && (
-        <ConfirmDialog
-          title="ล้างตารางห้องนี้?"
-          description={`ตารางสอนของ ${selectedClassroom?.name || 'ห้องนี้'} จะถูกล้างทั้งหมด — ระบบจะบันทึกการล้างนี้อัตโนมัติภายใน 1-2 วินาที`}
-          confirmLabel="ล้างเลย"
-          onConfirm={handleClearCurrent}
+        <ClearScopeDialog
+          currentName={selectedClassroom?.name || 'ห้องนี้'}
+          currentCount={Object.keys(currentSchedule).length}
+          totalCount={Object.values(allSchedules).reduce(
+            (sum, s) => sum + Object.keys(s).length,
+            0,
+          )}
+          roomCount={
+            Object.values(allSchedules).filter((s) => Object.keys(s).length > 0).length
+          }
+          canClearCurrent={!!selectedId}
+          onClearCurrent={handleClearCurrent}
+          onClearAll={handleClearAll}
           onCancel={() => setShowConfirmClear(false)}
-        />
-      )}
-
-      {/* Copy From Dialog */}
-      {showCopyDialog && selectedId && (
-        <CopyFromDialog
-          classrooms={classrooms.filter((c) => c.id !== selectedId)}
-          allSchedules={allSchedules}
-          onPick={handleCopyFrom}
-          onClose={() => setShowCopyDialog(false)}
         />
       )}
 
@@ -1329,11 +1450,13 @@ function SchedulePageContent() {
         hidden={classrooms.length === 0}
       />
 
-      {/* Undo toast — แสดงตอน user ลบช่องคาบ หรือ ล้างห้อง */}
+      {/* Undo toast — แสดงตอน user ลบช่องคาบ / ล้างห้อง / ล้างทุกห้อง */}
       <UndoToast
         open={!!undoEntry}
         message={
-          undoEntry?.type === 'clearRoom'
+          undoEntry?.type === 'clearAll'
+            ? 'ล้างตารางทุกห้องแล้ว'
+            : undoEntry?.type === 'clearRoom'
             ? 'ล้างตารางห้องนี้แล้ว'
             : 'ลบช่องคาบแล้ว'
         }
@@ -1465,99 +1588,87 @@ function EditModal({
   )
 }
 
-function ConfirmDialog({
-  title,
-  description,
-  confirmLabel,
-  onConfirm,
+function ClearScopeDialog({
+  currentName,
+  currentCount,
+  totalCount,
+  roomCount,
+  canClearCurrent,
+  onClearCurrent,
+  onClearAll,
   onCancel,
 }: {
-  title: string
-  description: string
-  confirmLabel: string
-  onConfirm: () => void
+  currentName: string
+  currentCount: number
+  totalCount: number
+  roomCount: number
+  canClearCurrent: boolean
+  onClearCurrent: () => void
+  onClearAll: () => void
   onCancel: () => void
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="card animate-slide-up w-full max-w-sm p-7 text-center shadow-xl">
-        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--danger-soft)] text-[var(--danger-strong)]">
-          <AlertTriangle size={26} />
+      <div className="card animate-slide-up w-full max-w-sm p-6 shadow-xl">
+        <div className="mb-4 flex items-center gap-3">
+          <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-[var(--danger-soft)] text-[var(--danger-strong)]">
+            <Eraser size={20} />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-[var(--text)]">ล้างตารางสอน</h3>
+            <p className="mt-0.5 text-xs text-[var(--muted)]">
+              เลือกขอบเขตที่ต้องการล้าง — กู้คืนได้ทันทีหลังจากนี้
+            </p>
+          </div>
         </div>
-        <h3 className="text-lg font-bold text-[var(--text)]">{title}</h3>
-        <p className="mt-2 text-sm text-[var(--muted)]">{description}</p>
-        <div className="mt-5 flex items-center justify-center gap-2">
+
+        <div className="space-y-2">
+          <button
+            type="button"
+            onClick={onClearCurrent}
+            disabled={!canClearCurrent || currentCount === 0}
+            className="group flex w-full items-center justify-between gap-3 rounded-lg border border-[var(--line)] p-3 text-left transition hover:border-[var(--danger)] hover:bg-[var(--danger-soft)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-[var(--line)] disabled:hover:bg-transparent"
+          >
+            <div>
+              <p className="text-sm font-semibold text-[var(--text)]">
+                ห้องนี้ — {currentName}
+              </p>
+              <p className="mt-0.5 text-[11px] text-[var(--muted)]">
+                {currentCount > 0 ? `${currentCount} คาบจะถูกล้าง` : 'ห้องนี้ไม่มีคาบให้ล้าง'}
+              </p>
+            </div>
+            <span className="rounded-full bg-[var(--surface-muted)] px-2 py-0.5 text-[11px] font-bold text-[var(--text-soft)] group-hover:bg-[var(--danger)] group-hover:text-white">
+              {currentCount}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onClearAll}
+            disabled={totalCount === 0}
+            className="group flex w-full items-center justify-between gap-3 rounded-lg border border-[var(--line)] p-3 text-left transition hover:border-[var(--danger)] hover:bg-[var(--danger-soft)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-[var(--line)] disabled:hover:bg-transparent"
+          >
+            <div>
+              <p className="text-sm font-semibold text-[var(--text)]">ทุกห้องเรียน</p>
+              <p className="mt-0.5 text-[11px] text-[var(--muted)]">
+                {totalCount > 0
+                  ? `${totalCount} คาบ จาก ${roomCount} ห้องจะถูกล้าง`
+                  : 'ไม่มีตารางสอนให้ล้าง'}
+              </p>
+            </div>
+            <span className="rounded-full bg-[var(--surface-muted)] px-2 py-0.5 text-[11px] font-bold text-[var(--text-soft)] group-hover:bg-[var(--danger)] group-hover:text-white">
+              {totalCount}
+            </span>
+          </button>
+        </div>
+
+        <div className="mt-5 flex justify-end">
           <button
             type="button"
             onClick={onCancel}
             className="btn btn-secondary"
           >
             ยกเลิก
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="btn btn-danger"
-          >
-            <Check size={16} />
-            {confirmLabel}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function CopyFromDialog({
-  classrooms,
-  allSchedules,
-  onPick,
-  onClose,
-}: {
-  classrooms: Classroom[]
-  allSchedules: AllSchedules
-  onPick: (id: number) => void
-  onClose: () => void
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="card animate-slide-up w-full max-w-md p-6 shadow-xl">
-        <div className="mb-4 flex items-center gap-2">
-          <Copy size={18} className="text-[var(--primary)]" />
-          <h3 className="text-lg font-bold text-[var(--text)]">คัดลอกจากห้องอื่น</h3>
-        </div>
-        {classrooms.length === 0 ? (
-          <p className="py-6 text-center text-sm text-[var(--muted)]">ไม่มีห้องอื่นให้คัดลอก</p>
-        ) : (
-          <div className="grid max-h-[360px] gap-2 overflow-y-auto">
-            {classrooms.map((cls) => {
-              const filled = Object.keys(allSchedules[cls.id] || {}).length
-              return (
-                <button
-                  key={cls.id}
-                  type="button"
-                  onClick={() => onPick(cls.id)}
-                  className="card-interactive btn-press flex items-center justify-between p-4 text-left transition hover:border-[var(--primary)]"
-                >
-                  <div>
-                    <div className="text-sm font-semibold text-[var(--text)]">ห้อง {cls.name}</div>
-                    <div className="text-xs text-[var(--muted)]">{cls.level}</div>
-                  </div>
-                  <span className="pill pill-muted">
-                    {filled} คาบ
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-        )}
-        <div className="mt-5 flex justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            className="btn btn-secondary"
-          >
-            ปิด
           </button>
         </div>
       </div>

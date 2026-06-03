@@ -35,13 +35,23 @@ function statusButtonStyle(status: AttendanceStatus, active: boolean): React.CSS
   return { backgroundColor: meta.bg, color: meta.text }
 }
 
+// validate YYYY-MM-DD จาก URL กัน input แปลก ๆ (XSS/typo/วันที่ไม่ valid)
+function isValidISODate(s: string | null): s is string {
+  if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false
+  const d = new Date(s)
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s
+}
+
 function AttendancePageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const classroomFromUrl = searchParams.get('classroom')
+  const dateFromUrl = searchParams.get('date')
   const [classrooms, setClassrooms] = useState<Classroom[]>([])
   const [rows, setRows] = useState<any[]>([])
-  const [date, setDate] = useState(todayISO())
+  const [date, setDate] = useState(() =>
+    isValidISODate(dateFromUrl) ? dateFromUrl : todayISO(),
+  )
   const [search, setSearch] = useState('')
   const [markedDates, setMarkedDates] = useState<Set<string>>(new Set())
   // flag กัน auto-save ยิงตอนที่เรากำลังโหลดข้อมูลใหม่จาก DB (เปลี่ยนห้อง/วันที่)
@@ -81,6 +91,16 @@ function AttendancePageContent() {
     },
     [activeClassroomId, date]
   )
+
+  // sync date ↔ URL: ถ้า URL มี ?date= ใหม่ (จาก soft-navigation) ให้อัปเดต state
+  useEffect(() => {
+    if (isValidISODate(dateFromUrl) && dateFromUrl !== date) {
+      setDate(dateFromUrl)
+    }
+    // ไม่ใส่ date ใน deps เพราะเราอยาก react ต่อ URL change เท่านั้น —
+    // การเปลี่ยน date ผ่าน CalendarPicker จะไม่ remount หรือเปลี่ยน URL
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateFromUrl])
 
   // โหลดข้อมูล + จุดสีบนปฏิทิน พร้อมกันในรอบเดียว
   // - deps เป็น primitives [activeClassroomId, date] ตรง ๆ เพื่อกันการยิงซ้ำจาก

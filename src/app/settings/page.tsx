@@ -6,13 +6,17 @@ import {
   Upload,
   Database,
   AlertTriangle,
+  BookOpen,
   CheckCircle,
   GraduationCap,
   Calendar,
+  Eye,
+  EyeOff,
   Laptop,
   Lock,
   Moon,
   Palette,
+  Pencil,
   Settings as SettingsIcon,
   ShieldCheck,
   Sun,
@@ -29,6 +33,7 @@ import { useSubjects } from '@/lib/hooks/useSubjects'
 import { useTheme, type FontSize, type ThemeMode } from '@/lib/hooks/useTheme'
 import { disablePin, hashPin, isPinEnabled, getStoredPinHash, setStoredPin } from '@/components/PinGate'
 import PageHeader from '@/components/PageHeader'
+import SubjectEditModal from '@/components/SubjectEditModal'
 import { todayISO } from '@/lib/local-date'
 import { THAI_MONTHS_SHORT } from '@/lib/constants/thai-date'
 
@@ -71,7 +76,15 @@ export default function SettingsPage() {
     typeof window !== 'undefined' && typeof window.electronAPI !== 'undefined'
   const { confirm, alert } = useDialog()
   const { mode: themeMode, fontSize, setMode: setThemeMode, setFontSize, ready: themeReady } = useTheme()
-  const { subjects: liveSubjects } = useSubjects()
+  const {
+    subjects: liveSubjects,
+    updateSubject,
+    renameCode,
+    addSubject,
+    removeSubject,
+    resetToDefaults,
+  } = useSubjects()
+  const [editingSubjects, setEditingSubjects] = useState(false)
 
   // PIN state
   const [pinEnabled, setPinEnabled] = useState(false)
@@ -79,6 +92,7 @@ export default function SettingsPage() {
   const [pinNew, setPinNew] = useState('')
   const [pinConfirm, setPinConfirm] = useState('')
   const [pinCurrent, setPinCurrent] = useState('')
+  const [showPins, setShowPins] = useState(false)
   const [pinError, setPinError] = useState('')
   const [pinSaving, setPinSaving] = useState(false)
 
@@ -99,6 +113,7 @@ export default function SettingsPage() {
     setPinConfirm('')
     setPinCurrent('')
     setPinError('')
+    setShowPins(false)
   }
 
   async function handlePinSubmit() {
@@ -170,8 +185,6 @@ export default function SettingsPage() {
     setMessage(null)
 
     try {
-      const isElectron = typeof window !== 'undefined' && window.electronAPI
-
       let data: any
       if (isElectron) {
         data = await window.electronAPI!.exportData()
@@ -223,8 +236,6 @@ export default function SettingsPage() {
       if (!data.version || !data.classrooms || !data.students) {
         throw new Error('Invalid backup file format')
       }
-
-      const isElectron = typeof window !== 'undefined' && window.electronAPI
 
       if (isElectron) {
         const result = await window.electronAPI!.importData(data)
@@ -545,6 +556,45 @@ export default function SettingsPage() {
         )}
       </div>
 
+      {/* Subjects management */}
+      <div className="card mt-6 p-6">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--primary-ghost)] text-[var(--primary)]">
+              <BookOpen size={18} />
+            </div>
+            <div>
+              <h2 className="section-title text-lg">จัดการรายวิชา</h2>
+              <p className="section-subtitle">
+                แก้ชื่อ/รหัส/สี เพิ่ม-ลบวิชา — มีผลกับหน้ากรอกคะแนนและตารางสอน
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setEditingSubjects(true)}
+            className="btn btn-secondary"
+          >
+            <Pencil size={14} />
+            แก้ไขรายวิชา
+          </button>
+        </div>
+
+        <div className="flex flex-wrap gap-1.5">
+          {liveSubjects.map((s) => (
+            <span
+              key={s.code}
+              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white shadow-sm"
+              style={{ backgroundColor: s.color }}
+              title={`รหัส: ${s.code}`}
+            >
+              <span className="inline-block h-2 w-2 rounded-full bg-white/60" />
+              {s.name}
+            </span>
+          ))}
+        </div>
+      </div>
+
       {/* Appearance (theme + font size) */}
       <div className="card mt-6 p-6">
         <div className="mb-4 flex items-center gap-3">
@@ -670,32 +720,54 @@ export default function SettingsPage() {
             {pinForm === 'change' && (
               <label className="block">
                 <span className="mb-1 block text-xs font-semibold text-[var(--text-soft)]">PIN ปัจจุบัน</span>
-                <input
-                  type="password"
-                  inputMode="numeric"
-                  maxLength={6}
-                  value={pinCurrent}
-                  onChange={(e) =>
-                    setPinCurrent(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))
-                  }
-                  className="input text-lg tracking-[0.3em]"
-                />
+                <div className="relative">
+                  <input
+                    type={showPins ? 'text' : 'password'}
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={pinCurrent}
+                    onChange={(e) =>
+                      setPinCurrent(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))
+                    }
+                    className="input pr-10 text-lg tracking-[0.3em]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPins((v) => !v)}
+                    tabIndex={-1}
+                    aria-label={showPins ? 'ซ่อน PIN' : 'แสดง PIN'}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-[var(--muted-soft)] transition hover:bg-[var(--surface)] hover:text-[var(--text-soft)]"
+                  >
+                    {showPins ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
               </label>
             )}
 
             {pinForm === 'disable' && (
               <label className="block">
                 <span className="mb-1 block text-xs font-semibold text-[var(--text-soft)]">PIN ปัจจุบัน (เพื่อยืนยันปิด)</span>
-                <input
-                  type="password"
-                  inputMode="numeric"
-                  maxLength={6}
-                  value={pinCurrent}
-                  onChange={(e) =>
-                    setPinCurrent(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))
-                  }
-                  className="input text-lg tracking-[0.3em]"
-                />
+                <div className="relative">
+                  <input
+                    type={showPins ? 'text' : 'password'}
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={pinCurrent}
+                    onChange={(e) =>
+                      setPinCurrent(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))
+                    }
+                    className="input pr-10 text-lg tracking-[0.3em]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPins((v) => !v)}
+                    tabIndex={-1}
+                    aria-label={showPins ? 'ซ่อน PIN' : 'แสดง PIN'}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-[var(--muted-soft)] transition hover:bg-[var(--surface)] hover:text-[var(--text-soft)]"
+                  >
+                    {showPins ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
               </label>
             )}
 
@@ -703,29 +775,51 @@ export default function SettingsPage() {
               <>
                 <label className="block">
                   <span className="mb-1 block text-xs font-semibold text-[var(--text-soft)]">PIN ใหม่ (4-6 หลัก)</span>
-                  <input
-                    type="password"
-                    inputMode="numeric"
-                    maxLength={6}
-                    value={pinNew}
-                    onChange={(e) =>
-                      setPinNew(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))
-                    }
-                    className="input text-lg tracking-[0.3em]"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showPins ? 'text' : 'password'}
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={pinNew}
+                      onChange={(e) =>
+                        setPinNew(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))
+                      }
+                      className="input pr-10 text-lg tracking-[0.3em]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPins((v) => !v)}
+                      tabIndex={-1}
+                      aria-label={showPins ? 'ซ่อน PIN' : 'แสดง PIN'}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-[var(--muted-soft)] transition hover:bg-[var(--surface)] hover:text-[var(--text-soft)]"
+                    >
+                      {showPins ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
                 </label>
                 <label className="block">
                   <span className="mb-1 block text-xs font-semibold text-[var(--text-soft)]">ยืนยัน PIN ใหม่อีกครั้ง</span>
-                  <input
-                    type="password"
-                    inputMode="numeric"
-                    maxLength={6}
-                    value={pinConfirm}
-                    onChange={(e) =>
-                      setPinConfirm(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))
-                    }
-                    className="input text-lg tracking-[0.3em]"
-                  />
+                  <div className="relative">
+                    <input
+                      type={showPins ? 'text' : 'password'}
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={pinConfirm}
+                      onChange={(e) =>
+                        setPinConfirm(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))
+                      }
+                      className="input pr-10 text-lg tracking-[0.3em]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPins((v) => !v)}
+                      tabIndex={-1}
+                      aria-label={showPins ? 'ซ่อน PIN' : 'แสดง PIN'}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-[var(--muted-soft)] transition hover:bg-[var(--surface)] hover:text-[var(--text-soft)]"
+                    >
+                      {showPins ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
                 </label>
               </>
             )}
@@ -824,6 +918,18 @@ export default function SettingsPage() {
           ลบข้อมูลทั้งหมด
         </button>
       </div>
+
+      {/* Subject edit modal */}
+      <SubjectEditModal
+        open={editingSubjects}
+        subjects={liveSubjects}
+        onClose={() => setEditingSubjects(false)}
+        onUpdate={updateSubject}
+        onRenameCode={renameCode}
+        onAdd={addSubject}
+        onRemove={removeSubject}
+        onReset={resetToDefaults}
+      />
     </div>
   )
 }
