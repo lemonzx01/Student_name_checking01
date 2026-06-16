@@ -412,7 +412,7 @@ export default function PinGate({ children }: { children: ReactNode }) {
           <button
             type="submit"
             disabled={isLockedOut || pinInput.length < 4}
-            className="btn-press flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-[var(--primary-strong)] disabled:cursor-not-allowed disabled:opacity-50"
+            className="btn btn-primary btn-press w-full rounded-xl py-3 text-sm font-bold"
           >
             <ShieldCheck size={16} />
             ปลดล็อก

@@ -203,10 +203,17 @@
 }
 
 html {
+  /* พื้นหลังสีเรียบ — ตามหลัก flat design ไม่ใช้ไล่สี ให้เนื้อหาเด่นกว่าพื้นหลัง */
   background: var(--bg);
   min-height: 100vh;
   /* ขยายฟอนต์ให้ครูรุ่นใหญ่อ่านง่าย: base 17px (เดิม 16px) */
   font-size: 17px;
+}
+
+/* สี selection ให้เข้าธีม */
+::selection {
+  background: var(--primary-soft);
+  color: var(--primary-strong);
 }
 
 body {
@@ -320,19 +327,22 @@ textarea {
   to { opacity: 1; }
 }
 
+/* หมายเหตุ: keyframe สุดท้ายต้องเป็น transform: none (ไม่ใช่ translateY(0))
+   เพราะ fill-mode: both จะคง transform ค้างไว้ถาวร → สร้าง stacking context
+   ทำให้ element ที่มาทีหลังใน DOM วาดทับ dropdown/popup ของ element ก่อนหน้า */
 @keyframes slideUp {
   from { opacity: 0; transform: translateY(16px); }
-  to { opacity: 1; transform: translateY(0); }
+  to { opacity: 1; transform: none; }
 }
 
 @keyframes slideDown {
   from { opacity: 0; transform: translateY(-10px); }
-  to { opacity: 1; transform: translateY(0); }
+  to { opacity: 1; transform: none; }
 }
 
 @keyframes slideInLeft {
   from { transform: translateX(-100%); }
-  to { transform: translateX(0); }
+  to { transform: none; }
 }
 
 @keyframes slideOutLeft {
@@ -342,7 +352,7 @@ textarea {
 
 @keyframes scaleIn {
   from { opacity: 0; transform: scale(0.95); }
-  to { opacity: 1; transform: scale(1); }
+  to { opacity: 1; transform: none; }
 }
 
 @keyframes shimmer {
@@ -357,7 +367,7 @@ textarea {
 
 @keyframes toast-in {
   from { opacity: 0; transform: translateY(20px) scale(0.95); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 1; transform: none; }
 }
 
 @keyframes toast-out {
@@ -365,24 +375,30 @@ textarea {
   to { opacity: 0; transform: translateY(20px) scale(0.95); }
 }
 
+/* fill-mode ต้องเป็น backwards (ไม่ใช่ both/forwards):
+   - backwards = ซ่อนตัวระหว่างรอ animation-delay (จำเป็นกับ stagger-children)
+   - แต่พอเล่นจบ animation จะเลิก apply → stacking context จาก transform/opacity สลายไป
+   ถ้าใช้ both จะคง stacking context ค้างถาวร ทำให้ element ที่มาทีหลังใน DOM
+   วาดทับ dropdown (เช่น ปฏิทิน) ของ element ก่อนหน้า — ค่า keyframe สุดท้าย
+   (opacity:1, transform:none) เท่ากับค่าธรรมชาติอยู่แล้ว จึงไม่มีภาพกระตุก */
 .animate-fade-in {
-  animation: fadeIn 0.3s ease-out both;
+  animation: fadeIn 0.3s ease-out backwards;
 }
 
 .animate-slide-up {
-  animation: slideUp 0.4s ease-out both;
+  animation: slideUp 0.4s ease-out backwards;
 }
 
 .animate-slide-down {
-  animation: slideDown 0.3s ease-out both;
+  animation: slideDown 0.3s ease-out backwards;
 }
 
 .animate-scale-in {
-  animation: scaleIn 0.25s ease-out both;
+  animation: scaleIn 0.25s ease-out backwards;
 }
 
 .animate-slide-in-left {
-  animation: slideInLeft 0.3s ease-out both;
+  animation: slideInLeft 0.3s ease-out backwards;
 }
 
 /* Stagger children animations */
@@ -567,6 +583,7 @@ input, select, textarea {
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .btn-primary {
+  /* สีพื้นเดียวตามหลัก flat design — แยกชั้นด้วยเงาบางๆ ไม่ใช้ไล่สี */
   background: var(--primary);
   color: #ffffff;
   box-shadow: var(--shadow-xs);
@@ -678,6 +695,38 @@ input[type='text']::-ms-clear {
   border-radius: var(--radius-lg);
   background: var(--surface);
   color: var(--muted);
+}
+
+/* ─── Decorative surfaces ─────────────────────────────── */
+
+/* Hero card — การ์ดหัวหน้า สีพื้นเรียบตามหลัก flat design (ไม่ใช้ไล่สี)
+   ห้ามใส่ overflow: hidden ที่นี่ — PageHeader มี dropdown (ปฏิทิน/เลือกห้อง) อยู่ข้างใน
+   ถ้าต้องการ clip องค์ประกอบตกแต่ง (เช่น hero-ring) ให้ใส่ overflow-hidden ที่ JSX เอง */
+.hero-card {
+  position: relative;
+  background: var(--surface);
+}
+
+/* Sidebar — สีพื้นเดียว ตามหลัก flat design */
+.nav-surface {
+  background: var(--nav);
+}
+
+/* Active menu item — สีพื้นเดียว เน้นด้วยความต่างของสีและเงาบางๆ พอ */
+.nav-item-active {
+  background: var(--nav-active);
+  box-shadow: var(--shadow-md);
+}
+
+/* ─── Reduced motion (accessibility) ──────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* ─── Print layout (สำหรับพิมพ์ผ่านเบราว์เซอร์) ─── */

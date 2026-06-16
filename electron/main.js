@@ -261,6 +261,62 @@ function tableColumns(name) {
   return new Set(db.prepare(`PRAGMA table_info(${name})`).all().map((c) => c.name))
 }
 
+// ─── Default subjects (canonical) ────────────────────────────
+// **ต้อง sync กับ src/lib/constants/subjects.ts (DEFAULT_SUBJECTS) เสมอ**
+// main.js เป็น CommonJS import TS ไม่ได้ จึง mirror ไว้ที่นี่ — ถ้าแก้ที่นั่นต้องแก้ที่นี่ด้วย
+const CANONICAL_SUBJECTS = [
+  ['ภาษาไทย', 'TH', '#3B82F6'],
+  ['คณิตศาสตร์', 'MA', '#EF4444'],
+  ['ภาษาอังกฤษ', 'EN', '#8B5CF6'],
+  ['วิทยาศาสตร์', 'SC', '#10B981'],
+  ['สังคมศึกษา', 'SO', '#F59E0B'],
+  ['ประวัติศาสตร์', 'HI', '#D97706'],
+  ['สุขศึกษา/พละ', 'HE', '#EC4899'],
+  ['ศิลปะ', 'AR', '#06B6D4'],
+  ['การงานฯ', 'WO', '#84CC16'],
+]
+
+// รหัสวิชาเก่า (seed รุ่นก่อน) → รหัส canonical — ต้อง sync กับ LEGACY_SUBJECT_CODE_MAP ใน src/lib/db.ts
+const LEGACY_SUBJECT_CODE_MAP = {
+  MATH: 'MA',
+  SCI: 'SC',
+  SOC: 'SO',
+  HIS: 'HI',
+  PE: 'HE',
+  ART: 'AR',
+  WORK: 'WO',
+  ENG: 'EN',
+}
+
+// Heal ฐานข้อมูลที่เคย seed/migrate ด้วยรหัสวิชาเก่า (MATH/SCI/...) ให้ตรง canonical (MA/SC/...)
+// กัน palette/ตัวนับคาบในหน้าตารางสอนจับคู่ไม่ได้ (ช่องคาบกลายเป็นเทา + โชว์รหัสดิบ + ตัวนับขึ้น 0)
+// Idempotent: ถ้าไม่มีรหัสเก่าก็ไม่ทำอะไร — เรียกหลัง CREATE TABLE + seed + migrateLegacySchema
+function healSubjectCodes() {
+  try {
+    const tx = db.transaction(() => {
+      for (const [oldCode, newCode] of Object.entries(LEGACY_SUBJECT_CODE_MAP)) {
+        // schedules + grades: remap ตรง ๆ (ไม่มี UNIQUE constraint)
+        db.prepare('UPDATE schedules SET subject_code = ? WHERE subject_code = ?').run(newCode, oldCode)
+        db.prepare('UPDATE grades SET subject_code = ? WHERE subject_code = ?').run(newCode, oldCode)
+        // subjects: code เป็น UNIQUE — ถ้ารหัสใหม่มีแล้วให้ลบตัวเก่า ไม่งั้น rename
+        const hasNew = db.prepare('SELECT 1 FROM subjects WHERE code = ?').get(newCode)
+        if (hasNew) {
+          db.prepare('DELETE FROM subjects WHERE code = ?').run(oldCode)
+        } else {
+          db.prepare('UPDATE subjects SET code = ? WHERE code = ?').run(newCode, oldCode)
+        }
+      }
+      // sync name/color ให้ตรง canonical (DB subjects table ไม่ใช่ของที่ผู้ใช้แก้ — แก้ผ่าน localStorage)
+      for (const [name, code, color] of CANONICAL_SUBJECTS) {
+        db.prepare('UPDATE subjects SET name = ?, color = ? WHERE code = ?').run(name, color, code)
+      }
+    })
+    tx()
+  } catch (error) {
+    log.warn('[Migration] heal subject codes failed:', error)
+  }
+}
+
 // ─── Schema Migrations ───────────────────────────────────────
 // อัปเดต DB เก่าให้ตรง schema ใหม่ (unify กับ src/lib/db.ts)
 // ทำใน try/catch — ถ้า DB ใหม่ไม่มี table เก่า migration จะ skip
@@ -540,19 +596,11 @@ function initDatabase() {
     const subjectCount = db.prepare('SELECT COUNT(*) AS count FROM subjects').get()
     if (subjectCount.count === 0) {
       const insertSubject = db.prepare('INSERT INTO subjects (name, code, color) VALUES (?, ?, ?)')
-      const defaultSubjects = [
-        ['ภาษาไทย', 'TH', '#3B82F6'],
-        ['คณิตศาสตร์', 'MATH', '#10B981'],
-        ['วิทยาศาสตร์', 'SCI', '#F59E0B'],
-        ['สังคมศึกษา', 'SOC', '#8B5CF6'],
-        ['ประวัติศาสตร์', 'HIS', '#EC4899'],
-        ['สุขศึกษา', 'PE', '#14B8A6'],
-        ['ศิลปะ', 'ART', '#F97316'],
-        ['การงานอาชีพ', 'WORK', '#6366F1'],
-        ['ภาษาอังกฤษ', 'ENG', '#EF4444'],
-      ]
-      defaultSubjects.forEach((subject) => insertSubject.run(subject[0], subject[1], subject[2]))
+      CANONICAL_SUBJECTS.forEach((subject) => insertSubject.run(subject[0], subject[1], subject[2]))
     }
+
+    // Heal รหัสวิชาเก่า → canonical (ดู healSubjectCodes) — idempotent, ทำหลัง seed + legacy migration
+    healSubjectCodes()
 
     log.info('[DB] Initialized successfully')
     return true

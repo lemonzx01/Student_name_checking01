@@ -11,11 +11,26 @@ import {
   Student,
   StudentFormInput,
 } from '@/types'
+import { DEFAULT_SUBJECTS } from '@/lib/constants/subjects'
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const Database = require('better-sqlite3')
 import path from 'path'
 import { toLocalISO, formatLocalDateTime } from './local-date'
+
+// รหัสวิชาเก่า (seed รุ่นก่อน) → รหัส canonical ของ DEFAULT_SUBJECTS
+// ใช้ heal ฐานข้อมูลที่เคย seed ด้วยรหัสเก่า (MATH/SCI/...) ให้ตรงกับที่ UI ใช้จริง (MA/SC/...)
+// ต้อง sync กับ LEGACY_SUBJECT_CODE_MAP ใน electron/main.js
+const LEGACY_SUBJECT_CODE_MAP: Record<string, string> = {
+  MATH: 'MA',
+  SCI: 'SC',
+  SOC: 'SO',
+  HIS: 'HI',
+  PE: 'HE',
+  ART: 'AR',
+  WORK: 'WO',
+  ENG: 'EN',
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let db: any = null
@@ -332,7 +347,8 @@ function getDb(): any {
     }
   }
 
-  // Seed default subjects (ตรงกับ electron/main.js)
+  // Seed default subjects จาก DEFAULT_SUBJECTS (single source of truth — src/lib/constants/subjects.ts)
+  // ใช้รหัสชุดเดียวกับที่ UI ใช้จริง (TH/MA/EN/SC/...) เพื่อไม่ให้ palette/ตัวนับคาบ mismatch
   try {
     const subjectCount = db.prepare('SELECT COUNT(*) AS count FROM subjects').get() as {
       count: number
@@ -341,26 +357,43 @@ function getDb(): any {
       const insertSubject = db.prepare(
         'INSERT INTO subjects (name, code, color) VALUES (?, ?, ?)'
       )
-      const defaultSubjects: Array<[string, string, string]> = [
-        ['ภาษาไทย', 'TH', '#3B82F6'],
-        ['คณิตศาสตร์', 'MATH', '#10B981'],
-        ['วิทยาศาสตร์', 'SCI', '#F59E0B'],
-        ['สังคมศึกษา', 'SOC', '#8B5CF6'],
-        ['ประวัติศาสตร์', 'HIS', '#EC4899'],
-        ['สุขศึกษา', 'PE', '#14B8A6'],
-        ['ศิลปะ', 'ART', '#F97316'],
-        ['การงานอาชีพ', 'WORK', '#6366F1'],
-        ['ภาษาอังกฤษ', 'ENG', '#EF4444'],
-      ]
       const seed = db.transaction(() => {
-        for (const [name, code, color] of defaultSubjects) {
-          insertSubject.run(name, code, color)
+        for (const s of DEFAULT_SUBJECTS) {
+          insertSubject.run(s.name, s.code, s.color)
         }
       })
       seed()
     }
   } catch (err) {
     console.warn('[db] seed subjects skipped:', err)
+  }
+
+  // ── Heal รหัสวิชาเก่า → canonical ──
+  // ฐานข้อมูลที่เคย seed ด้วยรหัสเก่า (MATH/SCI/...) หรือ migrate มาจากเวอร์ชันก่อน
+  // จะถูกแก้ให้ตรงกับ DEFAULT_SUBJECTS — กัน palette/ตัวนับคาบจับคู่ไม่ได้ (ช่องคาบเทา, โชว์รหัสดิบ)
+  // Idempotent: ถ้าไม่มีรหัสเก่าก็ไม่ทำอะไร
+  try {
+    const heal = db.transaction(() => {
+      for (const [oldCode, newCode] of Object.entries(LEGACY_SUBJECT_CODE_MAP)) {
+        // schedules + grades: remap ตรง ๆ (ไม่มี UNIQUE constraint)
+        db.prepare('UPDATE schedules SET subject_code = ? WHERE subject_code = ?').run(newCode, oldCode)
+        db.prepare('UPDATE grades SET subject_code = ? WHERE subject_code = ?').run(newCode, oldCode)
+        // subjects: code เป็น UNIQUE — ถ้ารหัสใหม่มีแล้วให้ลบตัวเก่าทิ้ง ไม่งั้น rename
+        const hasNew = db.prepare('SELECT 1 FROM subjects WHERE code = ?').get(newCode)
+        if (hasNew) {
+          db.prepare('DELETE FROM subjects WHERE code = ?').run(oldCode)
+        } else {
+          db.prepare('UPDATE subjects SET code = ? WHERE code = ?').run(newCode, oldCode)
+        }
+      }
+      // sync name/color ของ subjects ให้ตรง canonical (DB subjects table ไม่ใช่ของที่ผู้ใช้แก้ — แก้ผ่าน localStorage)
+      for (const s of DEFAULT_SUBJECTS) {
+        db.prepare('UPDATE subjects SET name = ?, color = ? WHERE code = ?').run(s.name, s.color, s.code)
+      }
+    })
+    heal()
+  } catch (err) {
+    console.warn('[db] heal subject codes skipped:', err)
   }
 
   // ── Data healing: ลบ orphan rows ที่อาจหลงเหลือจากรุ่นก่อนหน้า ──

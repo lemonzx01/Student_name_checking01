@@ -1,5 +1,7 @@
 # ระบบจัดการชั้นเรียนและนักเรียน (Offline Classroom Management System)
 
+> อัพเดทล่าสุด: 11 มิ.ย. 2026 — ปรับ Design System (flat design + dark mode), แก้ Electron runtime detection, ยกเครื่องระบบตารางสอน (clash scope + grade parsing)
+
 ## 1. ภาพรวมโปรเจกต์
 
 - **ชื่อโปรเจกต์**: School Classroom Management System
@@ -23,28 +25,49 @@
 
 ## 3. UI/UX Design System
 
-### Color Palette
-- **Background**: `#F8FAFC` (slate-50)
-- **Surface**: `#FFFFFF`
-- **Primary**: `#3B82F6` (blue-500)
-- **Success**: `#10B981` (green-500)
-- **Warning**: `#F59E0B` (amber-500)
-- **Danger**: `#EF4444` (red-500)
-- **Text Primary**: `#0F172A` (slate-900)
-- **Text Secondary**: `#64748B` (slate-500)
-- **Border**: `#E2E8F0` (slate-200)
+### หลักการ (สำคัญ — ห้ามฝ่าฝืน)
+- **Flat design เท่านั้น** — ห้ามใช้ gradient/ไล่สีตกแต่ง (เคยใส่แล้วถูกถอดออกตาม feedback ผู้ใช้)
+  แยกชั้น UI ด้วยสีพื้นเดียว + เส้นขอบ + เงาบาง (`--shadow-xs/sm/md/lg`)
+- **ใช้ CSS token เท่านั้น** — ห้าม hardcode สีอ่อนแบบ `bg-blue-50`/`ring-blue-200` ใน component
+  เพราะ dark mode override เฉพาะ `bg-white`/`bg-slate-*`/`text-slate-*`/`border-slate-*`
+  สีอื่นจะสว่างผิดที่ในธีมมืด → ใช้ `var(--primary-ghost)`, `var(--warning-soft)` ฯลฯ แทน
+- **Animation ตอนเข้า ใช้ fill-mode `backwards` เท่านั้น** (ไม่ใช่ `both`/`forwards`)
+  เพราะ animation ที่ fill ค้างบน transform/opacity จะสร้าง stacking context ถาวร
+  ทำให้ element ที่มาทีหลังใน DOM วาดทับ dropdown/popup (เคยเป็นบั๊กปฏิทินโดนการ์ดทับ)
+- Keyframe สุดท้ายของ entry animation ต้องเป็น `transform: none` (= ค่าธรรมชาติ) เพื่อไม่ให้ภาพกระตุก
+
+### Color Tokens (กำหนดใน `src/app/globals.css` — มีครบทั้ง light + dark)
+| Token | Light | บทบาท |
+|---|---|---|
+| `--bg` | `#f5f7fb` | พื้นหลังแอป |
+| `--surface` / `--surface-soft` / `--surface-muted` | `#fff` / `#f8fafc` / `#f1f5f9` | การ์ด / พื้นรอง / hover row |
+| `--primary` / `--primary-strong` / `--primary-soft` / `--primary-ghost` | `#2563eb` / `#1d4ed8` / `#dbeafe` / `#eff6ff` | สีแบรนด์ |
+| `--accent` (warm) | `#f59e0b` | highlight ที่ไม่ใช่แบรนด์ |
+| `--success` / `--warning` / `--danger` / `--info` (+ `-soft`, `-strong`) | เขียว/เหลือง/แดง/ฟ้า | สถานะ |
+| `--text` / `--text-soft` / `--muted` / `--muted-soft` | `#0f1d35` → `#94a3b8` | ลำดับชั้นตัวอักษร |
+| `--line` / `--line-soft` / `--line-strong` | `#e1e7f0` ฯลฯ | เส้นขอบ |
+| `--nav` / `--nav-hover` / `--nav-active` | `#0f172a` / `#1e293b` / `#2563eb` | Sidebar |
+
+Dark theme: override ทุก token ผ่าน `[data-theme="dark"]` (toggle ที่หน้า ตั้งค่า, เก็บใน `localStorage.theme`)
 
 ### Typography
-- **Font Family**: Noto Sans Thai, system-ui
-- **Headings**: Bold, 24px/20px/16px
-- **Body**: Regular, 14px
-- **Caption**: Regular, 12px
+- **Font Family**: Noto Sans Thai (bundle ผ่าน @fontsource), fallback Kanit/Inter/system-ui
+- **Base font**: 17px (ขยายให้ครูอ่านง่าย) + ตัวเลือก large 19px / extra-large 21px (`data-font-size`)
+- **Headings**: Bold — h1 ~28px, section title 14px bold
 
-### Layout
-- **Sidebar**: 220px fixed width, dark theme
-- **Header**: 60px height
-- **Content Padding**: 24px
-- **Border Radius**: 8px (buttons), 12px (cards), 16px (modals)
+### Layout & Radius
+- **Sidebar**: 280px fixed, ธีมเข้ม (`--nav`), ซ่อนบนมือถือ (hamburger + drawer)
+- **Content Padding**: 20–28px (`p-5 md:p-7`)
+- **Radius scale**: `--radius-sm` 8px (chip) / `--radius` 12px (ปุ่ม, input) / `--radius-md` 16px / `--radius-lg` 20px (การ์ด) / `--radius-xl` 28px (modal)
+- **Touch target**: ปุ่มสูงขั้นต่ำ 40px (ยกเว้น `.btn-compact`)
+
+### Base Components (class ใน globals.css — ใช้ซ้ำแทนเขียน utility ยาว)
+`.card`, `.card-interactive`, `.btn` (+`-primary/-secondary/-ghost/-brand-ghost/-danger/-danger-ghost`, ขนาด `-sm/-lg/-icon`), `.input`, `.pill` (+โทนสี), `.empty-state`, `.hero-card` (การ์ดหัวหน้า — **ห้ามใส่ overflow:hidden** เพราะข้างในมี dropdown), `.nav-surface`, `.nav-item-active`, `.skeleton`, tooltip ผ่าน `[data-tip]`
+
+### Shared UI Components
+- `PageHeader` — หัวหน้าทุกหน้า: badge + title + subtitle + icon bubble สีตาม tone + ปุ่ม actions
+  (มี `relative z-20` เพื่อให้ dropdown ใน actions ลอยเหนือเนื้อหาเสมอ — ห้ามถอด)
+- `AutoSaveIndicator`, `Toast`/`UndoToast`, `ConfirmDialog`/`AlertDialog` (ผ่าน `useDialog`), `CalendarPicker` (พ.ศ.), `CustomSelect`, `GlobalSearch`, `StudentAvatar`, `Pagination`
 
 ## 4. สถาปัตยกรรมระบบ (Dual Data Layer)
 
@@ -64,6 +87,16 @@
 - CREATE TABLE ใช้ schema ตรงกัน
 - API contract (input/output shape) ตรงกัน
 - Validation rules เหมือนกัน
+
+### Runtime Detection (`src/lib/client-data.ts`)
+ตัวเลือกเส้นทาง Electron IPC vs Web API ทำงานดังนี้:
+1. ถ้า `window.electronAPI` มีอยู่ → ใช้ IPC ทันที (contextBridge inject ก่อน page script รันเสมอ)
+2. ถ้า UA มีคำว่า "Electron" แต่ API ยังไม่มา → รอ polling สูงสุด **2 วินาที**
+3. ถ้ารอแล้วยังไม่มา → **fallback ไป `/api/*`** (ห้าม throw)
+
+ข้อ 3 สำคัญ: เบราว์เซอร์ฐาน Electron ตัวอื่น (เช่น preview ของ Claude Code desktop)
+ก็มี "Electron" ใน UA — ถ้า throw แทน fallback หน้าเว็บจะว่างเปล่าทั้งที่ API ใช้ได้
+(เคยเป็นบั๊กจริง — แก้แล้ว อย่า revert กลับไปใช้ timeout 10s + throw)
 
 ## 5. Database Schema
 
@@ -132,10 +165,29 @@
 | academic_year | TEXT | |
 
 ### schedules
-ตารางสอน — day_of_week (1–7) × period (1–10) × subject
+ตารางสอน — ใช้จริง: day_of_week 1–5 (จันทร์–ศุกร์) × period 1–6
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | INTEGER PK | |
+| classroom_id | INTEGER FK | |
+| day_of_week | INTEGER | 1=จันทร์ … 5=ศุกร์ |
+| period | INTEGER | คาบ 1–6 (พักเที่ยงอยู่ระหว่างคาบ 3↔4 ไม่เก็บใน DB) |
+| subject_code, subject_name | TEXT | รหัส/ชื่อวิชา |
+| class_level | TEXT | ระดับชั้น (denormalized) |
+| room | TEXT | ห้องเรียนพิเศษ (ถ้ามี) |
+
+หมายเหตุ: คาบกิจกรรมคงที่ (พุธคาบ 6 = ลูกเสือ, พฤหัสคาบ 6 = ชุมนุม, ศุกร์คาบ 6 = สวดมนต์)
+เป็น constant ฝั่ง UI (`FIXED_SLOTS`) — ไม่บันทึกลง DB และแก้ไขไม่ได้
 
 ### subjects
 รายวิชา (default 9 วิชาหลัก + ผู้ใช้เพิ่มเองได้)
+
+> **รหัสวิชา canonical** = `src/lib/constants/subjects.ts` (`DEFAULT_SUBJECTS`): `TH, MA, EN, SC, SO, HI, HE, AR, WO`
+> - UI ใช้รายการนี้ผ่าน `useSubjects()` (เก็บ override ที่ localStorage `customSubjects`) — **ไม่ได้อ่านตาราง `subjects` ใน DB**
+> - DB seed (ทั้ง `db.ts` และ `main.js`) ต้อง seed ด้วยรหัสชุดนี้ — main.js mirror ไว้ใน `CANONICAL_SUBJECTS` (sync มือ)
+> - **Heal migration** (`healSubjectCodes`): DB ที่เคย seed/migrate ด้วยรหัสเก่า (`MATH/SCI/SOC/HIS/PE/ART/WORK/ENG`)
+>   จะถูก remap → canonical ทั้งใน `subjects`, `schedules`, `grades` ตอนเปิด DB (idempotent) — กันช่องตารางเทา/ตัวนับคาบขึ้น 0
 
 ### student_notes
 บันทึกพฤติกรรม/ข้อสังเกตรายบุคคลตามวันที่
@@ -158,7 +210,8 @@
 ### 6.3 เช็คชื่อ
 - Toggle: มา (เขียว) / ขาด (แดง) / ลาป่วย-ลากิจ (เหลือง) / สาย (ส้ม)
 - Date picker เปลี่ยนวัน + Keyboard navigation
-- Auto-save (debounce 800ms)
+- Auto-save (debounce 600ms)
+- ปุ่ม "ตั้งทั้งหมด" — เซ็ตสถานะเดียวกันให้ทุกคนในคลิกเดียว
 - หน้ารายงาน: สรุปช่วงวันที่ + Export Excel/PDF
 
 ### 6.4 คะแนนและเกรด
@@ -169,11 +222,28 @@
 - Auto-save พร้อม dirty flag กัน race condition
 
 ### 6.5 ตารางสอน
-- Time Grid: จันทร์–ศุกร์ × 8 คาบ
-- Paint mode (วาดตารางด้วยการคลิก-ลาก)
-- ตรวจคาบซ้ำข้ามห้อง (clash detection)
-- Copy ตาราง / Template
-- Undo (Ctrl+Z)
+- **Time Grid**: จันทร์–ศุกร์ × 6 คาบ + พักเที่ยงคั่นระหว่างคาบ 3↔4
+  คาบกิจกรรมคงที่ (`FIXED_SLOTS`): พุธ-6 ลูกเสือ, พฤหัส-6 ชุมนุม, ศุกร์-6 สวดมนต์ (แก้ไม่ได้)
+- **Paint mode**: กดเลือกวิชาในแถบ palette → คลิกช่องเพื่อวาง → คลิกขวาเพื่อลบ (Esc = ออกจากโหมด)
+- **Edit modal**: คลิกช่อง (ไม่ได้อยู่ paint mode) → เลือกวิชา + ระบุห้องเรียนพิเศษ
+- **สร้างอัตโนมัติ** (`ScheduleTemplateDialog`): ตั้งจำนวนคาบ/วิชา (มีค่าเริ่มต้นตามมาตรฐาน สพฐ.)
+  → ระบบวางวิชาหลักช่วงเช้า + กระจายข้ามวัน + รองรับคาบคู่ (ไม่เกิน 2 ติด, ไม่คร่อมพักเที่ยง)
+  → ใช้ได้หลายห้องพร้อมกัน + option "สลับคาบให้ไม่ชนกัน" (generate ต่อห้องหลบ slot ที่ห้องอื่นใช้)
+- **ตรวจคาบซ้ำข้ามห้อง** (clash detection): จับ "วิชาเดียวกันที่เวลาเดียวกันในหลายห้อง"
+  (ครู specialist สอนซ้ำไม่ได้) — ไม่ใช่แค่ "สอง slot ทับกัน" เพราะครูประจำชั้นคนละคน
+  - **ขอบเขตตรวจ (clash scope)**: `ทุกห้อง` (default) / `ระดับชั้น` / `เลือกเอง` — จำใน localStorage
+  - ปุ่มเลือกชั้นสร้างจากระดับชั้นที่มีจริงในข้อมูล (ไม่ hardcode ป.1–6)
+  - **Auto-fix**: "แก้ในห้องนี้" / "แก้ทุกห้อง" — greedy หา slot ว่างย้ายคาบที่ชนให้อัตโนมัติ
+  - **Smart suggestion**: แนะนำ slot ว่างที่ย้ายไปได้โดยไม่ชน
+- **ตัวนับคาบ/สัปดาห์** (`ScheduleHoursCounter`): เทียบกับมาตรฐาน สพฐ. ตามระดับชั้น (ป.1–3 vs ป.4–6)
+- **คู่มือเริ่มต้น**: กล่องแนะนำ 3 ขั้นตอนตอนเปิดครั้งแรก (ปิดได้, จำใน localStorage)
+- Auto-save (debounce 1200ms, บันทึกเฉพาะห้องที่แก้ — dirty set กัน wipe ห้องอื่น)
+- Undo (Ctrl+Z / ปุ่มใน toast) — รองรับลบช่อง / ล้างห้อง / ล้างทุกห้อง
+- Export PDF (ทุกห้อง หน้าละห้อง + ช่องลายเซ็น)
+
+> **Grade parsing** (`src/lib/grade.ts`): อ่านระดับชั้นจาก**ชื่อห้องก่อน** (เช่น "ป.3/1", "ม.4/4")
+> แล้ว fallback ไป `level` — เพราะข้อมูลจริง `level` มักเป็นแค่ "ประถมศึกษา" ไม่มีเลขชั้น
+> รองรับ อ./ป./ม. ใช้ร่วมกันทั้งหน้าตารางสอนและตัวนับคาบ
 
 ### 6.6 สุขภาพ
 - บันทึกน้ำหนัก/ส่วนสูง + BMI อัตโนมัติ
@@ -214,10 +284,12 @@ school_system/
 │   │   └── api/              # Web API routes (dev mode)
 │   ├── components/
 │   ├── lib/
-│   │   ├── db.ts             # SQLite client (Web API)
-│   │   ├── client-data.ts    # client helpers
-│   │   ├── electron.ts       # detect/wrap electronAPI
-│   │   └── hooks/            # useAutoSave, useConfirm, etc.
+│   │   ├── db.ts                 # SQLite client (Web API)
+│   │   ├── client-data.ts        # client helpers + runtime detection (Electron vs Web)
+│   │   ├── electron.ts           # detect/wrap electronAPI
+│   │   ├── grade.ts              # อ่านระดับชั้นจากชื่อห้อง/level (อ./ป./ม.)
+│   │   ├── schedule-templates.ts # generate ตาราง + clash detection + suggestion
+│   │   └── hooks/                # useAutoSave, useConfirm, useSubjects, useTheme, etc.
 │   └── types/
 ├── public/
 ├── package.json
@@ -281,7 +353,7 @@ npm run build:electron    # สร้าง dist/School Management System.exe (p
 - [x] เช็คชื่อรายวัน (keyboard navigation + auto-save)
 - [x] คะแนน + grade items + คำนวณเกรดอัตโนมัติ (dirty flag กัน race)
 - [x] บันทึกน้ำหนัก/ส่วนสูง + BMI
-- [x] ตารางสอน + clash detection + paint mode
+- [x] ตารางสอน + clash detection + paint mode + auto-fix + สร้างอัตโนมัติ (clash scope 3 แบบ)
 - [x] Import/Export Excel (นักเรียน, คะแนน, สุขภาพ)
 - [x] Export PDF (ปพ.5, ปพ.6, transcript)
 - [x] รายงานเช็คชื่อ
@@ -289,5 +361,6 @@ npm run build:electron    # สร้าง dist/School Management System.exe (p
 - [x] Auto-backup รายวัน + pre-destructive snapshot
 - [x] Promote ห้องเรียน (transaction-safe)
 - [x] Security hardening (sandbox, magic bytes, atomic backup)
-- [x] Dual data layer sync (Electron IPC + Web API)
+- [x] Dual data layer sync (Electron IPC + Web API) + runtime fallback ปลอดภัย
+- [x] Dark mode + ปรับขนาดฟอนต์ (flat design, สีจาก token ทั้งหมด)
 - [x] Build เป็น .exe portable

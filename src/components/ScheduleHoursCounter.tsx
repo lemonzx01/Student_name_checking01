@@ -3,6 +3,7 @@
 import { useMemo } from 'react'
 import { BarChart3, CheckCircle2, AlertCircle } from 'lucide-react'
 import { useSubjects } from '@/lib/hooks/useSubjects'
+import { getClassroomGrade } from '@/lib/grade'
 
 // ค่ามาตรฐานสพฐ. (คาบ/สัปดาห์) สำหรับอ้างอิง
 const TARGET_P13: Record<string, number> = {
@@ -14,29 +15,28 @@ const TARGET_P46: Record<string, number> = {
 
 interface ScheduleHoursCounterProps {
   schedule: Record<string, { subject_code: string }>
-  level?: string // "ป.1" / "ป.5" ฯลฯ ใช้เลือก target อัตโนมัติ
+  level?: string // level จากข้อมูลห้อง เช่น "ประถมศึกษา"
+  name?: string // ชื่อห้อง เช่น "ป.3/1" — ใช้อ่านชั้นเป็นหลัก (เจาะจงกว่า level)
 }
 
-export default function ScheduleHoursCounter({ schedule, level }: ScheduleHoursCounterProps) {
+export default function ScheduleHoursCounter({ schedule, level, name }: ScheduleHoursCounterProps) {
   // ดึงรายการวิชาจริงที่ครูตั้งไว้ — ให้ sync กับ Settings/useSubjects
   const { subjects: SUBJECTS } = useSubjects()
 
-  // เลือก target ตามระดับชั้น
+  // อ่านชั้นจากชื่อห้องก่อน แล้ว fallback ไป level — ข้อมูลจริง level มักไม่มีเลขชั้น
+  const grade = useMemo(() => getClassroomGrade({ name, level }), [name, level])
+
+  // เลือก target ตามระดับชั้น — ป.1-3 ใช้เกณฑ์เด็กเล็ก, ที่เหลือใช้เกณฑ์ ป.4-6
   const target = useMemo(() => {
-    if (!level) return TARGET_P46
-    const m = level.match(/ป\.?\s*(\d)/)
-    if (!m) return TARGET_P46
-    const num = Number(m[1])
-    return num <= 3 ? TARGET_P13 : TARGET_P46
-  }, [level])
+    if (grade?.stage === 'ป' && grade.num <= 3) return TARGET_P13
+    return TARGET_P46
+  }, [grade])
 
   const levelLabel = useMemo(() => {
-    if (!level) return 'ป.4 – ป.6'
-    const m = level.match(/ป\.?\s*(\d)/)
-    if (!m) return 'ป.4 – ป.6'
-    const num = Number(m[1])
-    return num <= 3 ? 'ป.1 – ป.3' : 'ป.4 – ป.6'
-  }, [level])
+    if (grade?.stage === 'ป') return grade.num <= 3 ? 'ป.1 – ป.3' : 'ป.4 – ป.6'
+    if (grade?.stage === 'ม') return 'ป.4 – ป.6 (อ้างอิง)'
+    return 'ป.4 – ป.6'
+  }, [grade])
 
   // นับคาบของแต่ละวิชา
   const counts = useMemo(() => {

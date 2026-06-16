@@ -39,6 +39,7 @@ import {
   generateMultiClassroomSchedules,
   suggestAlternativeSlots,
 } from '@/lib/schedule-templates'
+import { compareGradeKeys, getClassroomGradeKey } from '@/lib/grade'
 
 const loadThaiFont = () => import('@/lib/thai-font').then((m) => m.NotoSansThai)
 
@@ -75,30 +76,22 @@ interface Slot {
 type ScheduleMap = Record<string, Slot>
 type AllSchedules = Record<number, ScheduleMap>
 
-// ขอบเขตตรวจคาบซ้ำ: ระดับชั้นเดียวกัน / เลือกเอง
-type ClashScope = 'grade' | 'custom'
+// ขอบเขตตรวจคาบซ้ำ: ทุกห้อง / ระดับชั้นเดียวกัน / เลือกเอง
+// 'all' เป็นค่าเริ่มต้น — ใช้ได้กับทุกข้อมูลโดยไม่ต้องตั้งค่าอะไรก่อน
+type ClashScope = 'all' | 'grade' | 'custom'
 
-// ดึงเลขชั้น (1-6) จาก level เช่น "ป.1", "ป 2", "ประถม 3"
-function parseGradeNum(level: string | null | undefined): number | null {
-  if (!level) return null
-  const m1 = level.match(/ป\.?\s*(\d+)/)
-  if (m1) return Number(m1[1])
-  const m2 = level.match(/ประถม\s*(\d+)/)
-  if (m2) return Number(m2[1])
-  const m3 = level.match(/p\.?\s*(\d+)/i)
-  if (m3) return Number(m3[1])
-  return null
-}
-
+// อ่านระดับชั้นด้วย util กลาง (@/lib/grade) — ลองจากชื่อห้องก่อน ("ป.3/1", "ม.4/4")
+// แล้วค่อย fallback ไป level เพราะข้อมูลจริง level มักเป็นแค่ "ประถมศึกษา" (ไม่มีเลข)
 function isInScope(
   classroom: Classroom,
   scope: ClashScope,
   custom: Set<number>,
-  grade: number | null,
+  gradeKey: string | null,
 ): boolean {
+  if (scope === 'all') return true
   if (scope === 'grade') {
-    if (grade == null) return false
-    return parseGradeNum(classroom.level) === grade
+    if (!gradeKey) return false
+    return getClassroomGradeKey(classroom) === gradeKey
   }
   if (scope === 'custom') return custom.has(classroom.id)
   return false
@@ -141,10 +134,14 @@ function SchedulePageContent() {
   const [undoEntry, setUndoEntry] = useState<UndoEntry | null>(null)
 
   // ── ขอบเขตตรวจคาบซ้ำ ──
-  const [clashScope, setClashScope] = useState<ClashScope>('grade')
+  // เริ่มที่ 'all' — ตรวจทุกห้องโดยไม่ต้องตั้งค่า (ค่า 'grade' เดิมพังถ้า level ไม่มีเลขชั้น)
+  const [clashScope, setClashScope] = useState<ClashScope>('all')
   const [customScope, setCustomScope] = useState<Set<number>>(new Set())
-  const [gradeScope, setGradeScope] = useState<number | null>(null)
+  // gradeScope เป็น string key เช่น "ป.3" / "ม.4" (เดิมเป็นเลข 1-6 รองรับแค่ประถม)
+  const [gradeScope, setGradeScope] = useState<string | null>(null)
   const [showScopeSettings, setShowScopeSettings] = useState(false)
+  // คู่มือเริ่มต้นใช้งาน — โชว์จนกว่าครูจะกดปิด (จำใน localStorage)
+  const [showGuide, setShowGuide] = useState(false)
 
   const selectedClassroom = classrooms.find((c) => c.id === selectedId) || null
   const currentSchedule = selectedId ? allSchedules[selectedId] || {} : {}
@@ -166,9 +163,24 @@ function SchedulePageContent() {
     if (clashScope !== 'grade') return
     if (gradeScope != null) return
     if (!selectedClassroom) return
-    const g = parseGradeNum(selectedClassroom.level)
+    const g = getClassroomGradeKey(selectedClassroom)
     if (g) setGradeScope(g)
   }, [clashScope, gradeScope, selectedClassroom])
+
+  // โหลดสถานะคู่มือเริ่มต้น
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    setShowGuide(localStorage.getItem('scheduleGuideSeen') !== '1')
+  }, [])
+
+  const dismissGuide = () => {
+    setShowGuide(false)
+    try {
+      localStorage.setItem('scheduleGuideSeen', '1')
+    } catch {
+      /* ignore */
+    }
+  }
 
   useEffect(() => {
     if (!toast) return
@@ -191,8 +203,7 @@ function SchedulePageContent() {
     if (typeof window === 'undefined') return
     try {
       const s = localStorage.getItem('clashScope')
-      // legacy 'all' (และค่าอื่น) → fallback เป็น 'grade'
-      if (s === 'custom' || s === 'grade') setClashScope(s)
+      if (s === 'custom' || s === 'grade' || s === 'all') setClashScope(s)
       const raw = localStorage.getItem('clashScopeCustom')
       if (raw) {
         const ids = JSON.parse(raw) as number[]
@@ -200,8 +211,9 @@ function SchedulePageContent() {
       }
       const g = localStorage.getItem('clashScopeGrade')
       if (g) {
-        const n = Number(g)
-        if (Number.isFinite(n) && n >= 1 && n <= 6) setGradeScope(n)
+        // migration: ค่าเก่าเก็บเป็นเลข "3" (ยุคที่รองรับแค่ประถม) → "ป.3"
+        if (/^[1-6]$/.test(g)) setGradeScope(`ป.${g}`)
+        else if (/^[อปม]\.\d$/.test(g)) setGradeScope(g)
       }
     } catch {
       /* ignore */
@@ -566,14 +578,31 @@ function SchedulePageContent() {
     return m
   }, [classrooms, allSchedules])
 
+  // ── ระดับชั้นที่มีอยู่จริงในข้อมูล (ใช้สร้างปุ่มเลือกชั้น แทน hardcode ป.1-6) ──
+  const availableGradeKeys = useMemo(() => {
+    const s = new Set<string>()
+    for (const c of classrooms) {
+      const k = getClassroomGradeKey(c)
+      if (k) s.add(k)
+    }
+    return Array.from(s).sort(compareGradeKeys)
+  }, [classrooms])
+
+  // scope ที่ใช้จริง — กันทางตัน: ถ้าเลือก "ระดับชั้น" แต่ระบบอ่านชั้นไม่ออกเลย
+  // (เช่น ชื่อ/level ไม่มีเลขชั้น) ให้ตรวจทุกห้องแทนการตรวจ 0 ห้อง
+  const effectiveScope: ClashScope =
+    clashScope === 'grade' && (gradeScope == null || availableGradeKeys.length === 0)
+      ? 'all'
+      : clashScope
+
   // ── Classroom ids ที่อยู่ในขอบเขตตรวจ ──
   const scopedClassroomIds = useMemo(() => {
     const s = new Set<number>()
     for (const c of classrooms) {
-      if (isInScope(c, clashScope, customScope, gradeScope)) s.add(c.id)
+      if (isInScope(c, effectiveScope, customScope, gradeScope)) s.add(c.id)
     }
     return s
-  }, [classrooms, clashScope, customScope, gradeScope])
+  }, [classrooms, effectiveScope, customScope, gradeScope])
 
   // ── Schedules ที่ filter ตามขอบเขต ──
   const scopedSchedules = useMemo(() => {
@@ -1020,10 +1049,10 @@ function SchedulePageContent() {
                 type="button"
                 onClick={() => setShowScopeSettings((v) => !v)}
                 title={
-                  clashScope === 'grade'
-                    ? gradeScope
-                      ? `ตรวจกับ ป.${gradeScope} · ${scopedClassroomIds.size} ห้อง`
-                      : 'ตั้งค่าขอบเขตตรวจคาบซ้ำ'
+                  effectiveScope === 'all'
+                    ? `ตรวจทุกห้อง (${scopedClassroomIds.size} ห้อง)`
+                    : effectiveScope === 'grade'
+                    ? `ตรวจเฉพาะชั้น ${gradeScope} · ${scopedClassroomIds.size} ห้อง`
                     : `ตรวจกับ ${scopedClassroomIds.size} ห้องที่เลือก`
                 }
                 className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition ${
@@ -1048,16 +1077,23 @@ function SchedulePageContent() {
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="mr-1 text-[11px] font-semibold text-[var(--muted)]">รูปแบบ</span>
                 <ScopeButton
-                  label="ระดับชั้น"
-                  active={clashScope === 'grade'}
-                  onClick={() => {
-                    if (gradeScope == null && selectedClassroom) {
-                      const g = parseGradeNum(selectedClassroom.level)
-                      if (g) setGradeScope(g)
-                    }
-                    setClashScope('grade')
-                  }}
+                  label={`ทุกห้อง (${classrooms.length})`}
+                  active={clashScope === 'all'}
+                  onClick={() => setClashScope('all')}
                 />
+                {availableGradeKeys.length > 0 && (
+                  <ScopeButton
+                    label="ระดับชั้น"
+                    active={clashScope === 'grade'}
+                    onClick={() => {
+                      if (gradeScope == null && selectedClassroom) {
+                        const g = getClassroomGradeKey(selectedClassroom)
+                        if (g) setGradeScope(g)
+                      }
+                      setClashScope('grade')
+                    }}
+                  />
+                )}
                 <ScopeButton
                   label="เลือกเอง"
                   active={clashScope === 'custom'}
@@ -1104,26 +1140,23 @@ function SchedulePageContent() {
               {clashScope === 'grade' && (
                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
                   <span className="mr-1 text-[11px] text-[var(--muted)]">เลือกระดับชั้น:</span>
-                  {[1, 2, 3, 4, 5, 6].map((g) => {
-                    const active = gradeScope === g
-                    const count = classrooms.filter((c) => parseGradeNum(c.level) === g).length
-                    const disabled = count === 0
+                  {/* สร้างปุ่มจากชั้นที่มีอยู่จริง (อ่านจากชื่อห้อง เช่น "ป.3/1", "ม.4/4") */}
+                  {availableGradeKeys.map((key) => {
+                    const active = gradeScope === key
+                    const count = classrooms.filter((c) => getClassroomGradeKey(c) === key).length
                     return (
                       <button
-                        key={g}
+                        key={key}
                         type="button"
-                        disabled={disabled}
-                        onClick={() => setGradeScope(g)}
+                        onClick={() => setGradeScope(key)}
                         className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold transition ${
                           active
                             ? 'border-[var(--primary)] bg-[var(--primary-ghost)] text-[var(--primary-strong)]'
-                            : disabled
-                            ? 'cursor-not-allowed border-[var(--line-soft)] bg-[var(--surface-muted)] text-[var(--muted-soft)]'
                             : 'border-[var(--line)] bg-[var(--surface)] text-[var(--muted)] hover:border-[var(--primary-soft)]'
                         }`}
-                        title={disabled ? 'ไม่มีห้องในระดับนี้' : `${count} ห้อง`}
+                        title={`${count} ห้อง`}
                       >
-                        ป.{g}
+                        {key}
                         <span className="text-[9px] opacity-70">({count})</span>
                       </button>
                     )
@@ -1165,6 +1198,35 @@ function SchedulePageContent() {
         >
           {/* Main: palette + grid ใน card เดียว */}
           <div className="space-y-4">
+            {/* คู่มือเริ่มต้น — โชว์ครั้งแรกจนกว่าจะกดปิด ช่วยครูที่ยังไม่รู้ว่าเริ่มยังไง */}
+            {showGuide && (
+              <section className="card relative p-4">
+                <button
+                  type="button"
+                  onClick={dismissGuide}
+                  aria-label="ปิดคำแนะนำ"
+                  className="btn-compact absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-lg text-[var(--muted-soft)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--text)]"
+                >
+                  <X size={14} />
+                </button>
+                <p className="mb-2 text-sm font-bold text-[var(--text)]">เริ่มจัดตารางยังไง?</p>
+                <ol className="grid gap-2 text-[13px] text-[var(--text-soft)] sm:grid-cols-3">
+                  <li className="flex items-start gap-2">
+                    <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-[var(--primary-ghost)] text-[11px] font-bold text-[var(--primary)]">1</span>
+                    กดเลือกวิชาในแถบ &quot;โหมดระบาย&quot; ด้านล่าง
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-[var(--primary-ghost)] text-[11px] font-bold text-[var(--primary)]">2</span>
+                    คลิกช่องว่างในตารางเพื่อวางวิชา — คลิกขวาเพื่อลบ
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-[var(--primary-ghost)] text-[11px] font-bold text-[var(--primary)]">3</span>
+                    ระบบบันทึกให้อัตโนมัติ — หรือกด &quot;สร้างอัตโนมัติ&quot; ให้จัดทั้งสัปดาห์ในคลิกเดียว
+                  </li>
+                </ol>
+              </section>
+            )}
+
             <section className="card overflow-hidden p-0">
               {/* Subject palette — แถบบางบนสุด ติดกับ grid */}
               <div className="border-b border-[var(--line-soft)] px-4 py-3">
@@ -1380,7 +1442,13 @@ function SchedulePageContent() {
               clashes={clashes}
               currentClassroomId={selectedId}
               onJumpTo={handleJumpToClash}
-              scopeLabel={`เฉพาะ ${scopedClassroomIds.size} ห้อง`}
+              scopeLabel={
+                effectiveScope === 'all'
+                  ? `ทุกห้อง (${scopedClassroomIds.size})`
+                  : effectiveScope === 'grade'
+                  ? `ชั้น ${gradeScope} (${scopedClassroomIds.size} ห้อง)`
+                  : `เฉพาะ ${scopedClassroomIds.size} ห้อง`
+              }
               getSuggestions={getClashSuggestions}
               onMoveSlot={handleMoveClashSlot}
               onAutoFixCurrent={() => handleAutoFix('current')}
@@ -1389,6 +1457,7 @@ function SchedulePageContent() {
             <ScheduleHoursCounter
               schedule={currentSchedule}
               level={selectedClassroom?.level}
+              name={selectedClassroom?.name}
             />
           </aside>
         </div>

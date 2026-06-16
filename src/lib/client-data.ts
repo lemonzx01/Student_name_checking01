@@ -23,13 +23,15 @@ function isInsideElectron(): boolean {
   )
 }
 
-async function waitForElectronAPI(timeout = 10000): Promise<boolean> {
+async function waitForElectronAPI(timeout = 2000): Promise<boolean> {
   if (isElectronRuntime()) return true
   if (!isInsideElectron()) return false
 
-  // อยู่ใน Electron แต่ preload ยังไม่ inject — รอจนพร้อม
-  // ถ้า timeout แล้วยังไม่พร้อมให้ throw แทน fallback ไป /api/* ที่ไม่มีใน production
-  return new Promise((resolve, reject) => {
+  // UA บอกว่าเป็น Electron แต่ preload ยังไม่ inject — รอสั้นๆ เผื่อ timing
+  // ปกติ contextBridge inject ก่อน page script รันเสมอ ดังนั้นถ้ารอแล้วยังไม่มา
+  // แปลว่าไม่ใช่ shell ของแอปเรา (เช่น เบราว์เซอร์ฐาน Electron ตัวอื่นเปิด localhost)
+  // → fallback ไป /api/* แทนการ throw เพื่อให้ web mode ยังใช้งานได้
+  return new Promise((resolve) => {
     const start = Date.now()
     const check = () => {
       if (isElectronRuntime()) {
@@ -37,7 +39,7 @@ async function waitForElectronAPI(timeout = 10000): Promise<boolean> {
         return
       }
       if (Date.now() - start > timeout) {
-        reject(new Error('Electron preload API ยังไม่พร้อมใช้งาน'))
+        resolve(false)
         return
       }
       setTimeout(check, 50)

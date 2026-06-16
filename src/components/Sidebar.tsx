@@ -100,7 +100,7 @@ export default function Sidebar({ classroomId, mobileOpen = false, onMobileClose
           className={clsx(
             'group relative mb-0.5 flex items-center gap-3 rounded-xl px-3 py-3.5 transition-all',
             isActive
-              ? 'bg-[var(--nav-active)] text-white shadow-[var(--shadow-md)] ring-1 ring-white/10'
+              ? 'nav-item-active text-white ring-1 ring-white/10'
               : 'text-slate-300 hover:bg-white/[0.06] hover:text-white'
           )}
         >
@@ -136,7 +136,7 @@ export default function Sidebar({ classroomId, mobileOpen = false, onMobileClose
   }
 
   const sidebarContent = (
-    <aside className="flex h-full w-[280px] flex-col bg-[var(--nav)] text-white">
+    <aside className="nav-surface flex h-full w-[280px] flex-col text-white">
       {/* Header */}
       <div className="px-5 pb-4 pt-5">
         <div className="flex items-center justify-between">

@@ -126,21 +126,21 @@ export default function TodaySchedule({ classroomId, classroomName }: TodaySched
     <section className="rounded-[var(--radius-lg)] border border-[var(--line)] bg-white p-5 shadow-[var(--shadow-sm)] md:p-6">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+          <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-[var(--primary-ghost)] text-[var(--primary)]">
             <CalendarDays size={22} />
           </div>
           <div>
             <p className="text-base font-bold text-slate-900 md:text-lg">{todayLabel} — สอนอะไรบ้าง</p>
             <p className="mt-0.5 text-[13px] text-[var(--muted)]">
               ห้อง <span className="font-semibold">{classroomName}</span>
-              {currentPeriod > 0 && <> · ตอนนี้คาบ <span className="font-semibold text-blue-600">{currentPeriod}</span></>}
-              {inLunch && <> · <span className="font-semibold text-amber-600">พักกลางวัน</span></>}
+              {currentPeriod > 0 && <> · ตอนนี้คาบ <span className="font-semibold text-[var(--primary)]">{currentPeriod}</span></>}
+              {inLunch && <> · <span className="font-semibold text-[var(--warning-strong)]">พักกลางวัน</span></>}
             </p>
           </div>
         </div>
         <Link
           href={`/schedule?classroom=${classroomId}`}
-          className="btn-press hidden items-center gap-1 rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-semibold text-[var(--muted)] transition hover:border-blue-300 hover:text-blue-600 sm:inline-flex"
+          className="btn-press hidden items-center gap-1 rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-semibold text-[var(--muted)] transition hover:border-[var(--primary)] hover:text-[var(--primary)] sm:inline-flex"
         >
           ดูตารางทั้งสัปดาห์
         </Link>
@@ -173,7 +173,7 @@ export default function TodaySchedule({ classroomId, classroomName }: TodaySched
                 key={period}
                 className={`relative flex flex-col rounded-xl border-2 p-3 transition ${
                   isNow
-                    ? 'border-blue-500 bg-blue-50 shadow-md ring-2 ring-blue-200'
+                    ? 'border-[var(--primary)] bg-[var(--primary-ghost)]'
                     : isPast
                     ? 'border-[var(--line)] bg-slate-50 opacity-60'
                     : 'border-[var(--line)] bg-white'
@@ -211,7 +211,7 @@ export default function TodaySchedule({ classroomId, classroomName }: TodaySched
       )}
 
       {inLunch && (
-        <div className="mt-3 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-700">
+        <div className="mt-3 flex items-center gap-2 rounded-xl bg-[var(--warning-soft)] px-4 py-2.5 text-sm font-semibold text-[var(--warning-strong)]">
           <Coffee size={16} />
           ตอนนี้ช่วงพักกลางวัน ({PERIOD_LABELS[2].split('-')[1]}–{PERIOD_LABELS[3].split('-')[0]})
         </div>
@@ -219,7 +219,7 @@ export default function TodaySchedule({ classroomId, classroomName }: TodaySched
 
       <Link
         href={`/schedule?classroom=${classroomId}`}
-        className="btn-press mt-3 inline-flex w-full items-center justify-center gap-1 rounded-xl border border-[var(--line)] px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-blue-300 hover:text-blue-600 sm:hidden"
+        className="btn-press mt-3 inline-flex w-full items-center justify-center gap-1 rounded-xl border border-[var(--line)] px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-[var(--primary)] hover:text-[var(--primary)] sm:hidden"
       >
         ดูตารางทั้งสัปดาห์
       </Link>
