@@ -27,15 +27,11 @@ export const ATTENDANCE_STATUS = {
     bg: 'var(--info-soft)',
     text: 'var(--info)',
   },
-  late: {
-    label: 'มาสาย',
-    color: 'var(--accent)',
-    bg: 'var(--accent-soft)',
-    text: 'var(--accent-strong)',
-  },
 } as const
 
-export type AttendanceStatus = keyof typeof ATTENDANCE_STATUS
+// key สำหรับ lookup สี (present/absent/sick/personal) — คนละอย่างกับค่าสถานะที่เก็บใน DB
+// ซึ่งเป็นภาษาไทย ('มา'|'ขาด'|...) อยู่ใน type AttendanceStatus ที่ @/types
+export type AttendanceStatusKey = keyof typeof ATTENDANCE_STATUS
 
 /**
  * Tone presets สำหรับ Card / Stat / Pill — ให้ทุกหน้าใช้ตัวเดียวกัน

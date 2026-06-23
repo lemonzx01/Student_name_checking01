@@ -141,7 +141,7 @@ Dark theme: override ทุก token ผ่าน `[data-theme="dark"]` (toggle 
 | id | INTEGER PK | |
 | student_id, classroom_id | INTEGER FK | |
 | date | TEXT | YYYY-MM-DD |
-| status | TEXT | มา / ขาด / ลาป่วย / ลากิจ / สาย |
+| status | TEXT | มา / ขาด / ลาป่วย / ลากิจ |
 | note | TEXT | หมายเหตุ |
 
 ### health_check
@@ -208,7 +208,7 @@ Dark theme: override ทุก token ผ่าน `[data-theme="dark"]` (toggle 
 - Trash + restore (auto-purge หลัง 30 วัน)
 
 ### 6.3 เช็คชื่อ
-- Toggle: มา (เขียว) / ขาด (แดง) / ลาป่วย-ลากิจ (เหลือง) / สาย (ส้ม)
+- Toggle 4 สถานะ: มา (เขียว) / ขาด (แดง) / ลาป่วย (เหลือง) / ลากิจ (ฟ้า)
 - Date picker เปลี่ยนวัน + Keyboard navigation
 - Auto-save (debounce 600ms)
 - ปุ่ม "ตั้งทั้งหมด" — เซ็ตสถานะเดียวกันให้ทุกคนในคลิกเดียว
